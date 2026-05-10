@@ -76,7 +76,6 @@ use crate::{
             FileLocations, ServerOutputId,
         },
         ambient_agents::AmbientAgentTaskId,
-        get_relevant_files::controller::GetRelevantFilesController,
     },
     terminal::{
         model::session::{active_session::ActiveSession, ExecuteCommandOptions, Session},
@@ -256,19 +255,13 @@ impl BlocklistAIActionExecutor {
         terminal_model: Arc<FairMutex<TerminalModel>>,
         active_session: ModelHandle<ActiveSession>,
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
-        get_relevant_files_controller: ModelHandle<GetRelevantFilesController>,
         terminal_view_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         let read_files_executor =
             ctx.add_model(|_| ReadFilesExecutor::new(active_session.clone(), terminal_view_id));
         let search_codebase_executor = ctx.add_model(|ctx| {
-            SearchCodebaseExecutor::new(
-                active_session.clone(),
-                get_relevant_files_controller,
-                terminal_view_id,
-                ctx,
-            )
+            SearchCodebaseExecutor::new(active_session.clone(), terminal_view_id, ctx)
         });
         let shell_command_executor = ctx.add_model(|ctx| {
             ShellCommandExecutor::new(

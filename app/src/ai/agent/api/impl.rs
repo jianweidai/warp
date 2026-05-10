@@ -175,11 +175,9 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
 
     match params.session_context.session_type() {
         None | Some(SessionType::Local) => {
-            supported_tools.extend(&[
-                api::ToolType::ReadFiles,
-                api::ToolType::ApplyFileDiffs,
-                api::ToolType::SearchCodebase,
-            ]);
+            // OpenWarp:原这里还会告诉服务端支持 SearchCodebase。该 tool 未实现,
+            // 且 BYOP 不走服务端,一并从支持列表中去掉。
+            supported_tools.extend(&[api::ToolType::ReadFiles, api::ToolType::ApplyFileDiffs]);
 
             if FeatureFlag::ArtifactCommand.is_enabled() {
                 supported_tools.push(api::ToolType::UploadFileArtifact);
@@ -242,8 +240,9 @@ fn get_supported_cli_agent_tools(params: &RequestParams) -> Vec<api::ToolType> {
 
     match params.session_context.session_type() {
         None | Some(SessionType::Local) => {
-            supported_cli_agent_tools
-                .extend(&[api::ToolType::ReadFiles, api::ToolType::SearchCodebase]);
+            // OpenWarp:原 CLI agent 支持列表会包含 SearchCodebase 告知服务端。
+            // OpenWarp 不走服务端且该 tool 未实现,一并去掉。
+            supported_cli_agent_tools.push(api::ToolType::ReadFiles);
         }
         Some(SessionType::WarpifiedRemote { host_id: Some(_) }) => {
             supported_cli_agent_tools.push(api::ToolType::ReadFiles);

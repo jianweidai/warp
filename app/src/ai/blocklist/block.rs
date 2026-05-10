@@ -166,9 +166,6 @@ use crate::ai::blocklist::permissions::{
 };
 use crate::ai::blocklist::suggestion_chip_view::{SuggestedChipViewEvent, SuggestionChipView};
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel, AIDocumentVersion};
-use crate::ai::get_relevant_files::controller::{
-    GetRelevantFilesController, GetRelevantFilesControllerEvent,
-};
 use crate::auth::AuthStateProvider;
 use crate::code::editor::view::{CodeEditorEvent, CodeEditorView};
 use crate::notebooks::editor::model::FileLinkResolutionContext;
@@ -936,7 +933,6 @@ impl AIBlock {
         terminal_model: Arc<FairMutex<TerminalModel>>,
         client_ids: ClientIdentifiers,
         controller: ModelHandle<BlocklistAIController>,
-        get_relevant_files_controller: ModelHandle<GetRelevantFilesController>,
         current_working_directory: Option<String>,
         shell_launch_data: Option<ShellLaunchData>,
         action_model: ModelHandle<BlocklistAIActionModel>,
@@ -1060,13 +1056,9 @@ impl AIBlock {
             ActiveSessionEvent::Bootstrapped => {}
         });
 
-        ctx.subscribe_to_model(&get_relevant_files_controller, |me, _, event, ctx| {
-            if let GetRelevantFilesControllerEvent::Success { action_id, .. } = event {
-                if me.requested_action_ids.contains(action_id) {
-                    ctx.notify();
-                }
-            }
-        });
+        // OpenWarp:原这里订阅 GetRelevantFilesController 的 Success 事件以在 RAG
+        // 完成后走个 `ctx.notify` 刷新 UI。该 controller 已随 outline 推退下线,
+        // 订阅点一并删除。现在 SearchCodebase action 同步返回 Failed,不需要额外刷新。
 
         let manage_rules_button = ctx.add_typed_action_view(|_| {
             ActionButton::new(crate::t!("ai-block-manage-rules"), NakedTheme)

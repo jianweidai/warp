@@ -46,7 +46,6 @@ use crate::{
             history_model::BlocklistAIHistoryModel, model::AIBlockModelImpl, AIBlock,
             BlocklistAIActionModel, BlocklistAIController, ClientIdentifiers,
         },
-        get_relevant_files::controller::GetRelevantFilesController,
         restored_conversations::RestoredAgentConversations,
     },
     persistence::model::AgentConversationData,
@@ -163,7 +162,6 @@ impl ConversationRestorationInNewPaneType {
 #[derive(Debug)]
 pub struct AIBlockCreationParams {
     pub ai_controller: ModelHandle<BlocklistAIController>,
-    pub get_relevant_files_controller: ModelHandle<GetRelevantFilesController>,
     pub ai_action_model: ModelHandle<BlocklistAIActionModel>,
     pub ai_context_model: ModelHandle<BlocklistAIContextModel>,
     pub cli_subagent_controller: ModelHandle<CLISubagentController>,
@@ -572,7 +570,6 @@ impl TerminalView {
         for (exchange, command_block_index) in exchanges.into_iter().zip(command_block_indices) {
             let params = AIBlockCreationParams {
                 ai_controller: self.ai_controller.clone(),
-                get_relevant_files_controller: self.get_relevant_files_controller.clone(),
                 ai_action_model: self.ai_action_model.clone(),
                 ai_context_model: self.ai_context_model.clone(),
                 cli_subagent_controller: self.cli_subagent_controller.clone(),
@@ -709,7 +706,6 @@ impl TerminalView {
             .map(
                 |((exchange, conversation_id), command_block_index)| AIBlockCreationParams {
                     ai_controller: self.ai_controller.clone(),
-                    get_relevant_files_controller: self.get_relevant_files_controller.clone(),
                     ai_action_model: self.ai_action_model.clone(),
                     ai_context_model: self.ai_context_model.clone(),
                     cli_subagent_controller: self.cli_subagent_controller.clone(),
@@ -1045,7 +1041,6 @@ impl TerminalView {
                     response_stream_id: None,
                 },
                 params.ai_controller,
-                params.get_relevant_files_controller,
                 params.working_directory,
                 shell_launch_data,
                 params.ai_action_model,

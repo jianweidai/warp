@@ -14,8 +14,6 @@ use std::{
     time::Duration,
 };
 
-use crate::ai::blocklist::task_status_sync_model::TaskStatusSyncModel;
-use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEvent};
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::ai::mcp::MCPServerState;
 use crate::ai::skills::{SkillManager, SkillWatcher};
@@ -1869,55 +1867,8 @@ impl AgentDriver {
             }
         });
 
-        // Subscribe to document model events to emit artifact_created when plans sync to Warp Drive.
-        ctx.subscribe_to_model(&AIDocumentModel::handle(ctx), move |me, event, ctx| {
-            let AIDocumentModelEvent::DocumentSaveStatusUpdated(document_id) = event else {
-                return;
-            };
-
-            let doc_model = AIDocumentModel::as_ref(ctx);
-
-            // Only emit when the document transitions to "Saved" (has a ServerId)
-            if !doc_model.get_document_save_status(document_id).is_saved() {
-                return;
-            }
-
-            // Get the document to extract the notebook link
-            let Some(document) = doc_model.get_current_document(document_id) else {
-                return;
-            };
-
-            // Get the notebook link from the document model
-            let Some(notebook_link) =
-                doc_model.get_document_warp_drive_object_link(document_id, ctx)
-            else {
-                return;
-            };
-
-            let document_id_str = document_id.to_string();
-
-            report_if_error!(output::with_stdout_buffered(|buf| {
-                match me.output_format {
-                    OutputFormat::Json | OutputFormat::Ndjson => {
-                        output::json::plan_artifact_created(
-                            &document_id_str,
-                            &notebook_link,
-                            &document.title,
-                            buf,
-                        )
-                    }
-                    OutputFormat::Text | OutputFormat::Pretty => {
-                        output::text::plan_artifact_created(
-                            &document_id_str,
-                            &notebook_link,
-                            &document.title,
-                            buf,
-                        )
-                    }
-                }
-            })
-            .context("Failed to write artifact_created"));
-        });
+        // openWarp 不同步 plan 到 Warp Drive,原 "plan_artifact_created" CLI 输出依赖云 notebook_link,
+        // 这里不再订阅 AIDocumentModel 的 SaveStatusUpdated 事件。
 
         // Submit the AI query.
         // If we restored a conversation from --conversation, use that conversation ID
@@ -2025,14 +1976,6 @@ impl AgentDriver {
         ctx: &mut ModelContext<Self>,
     ) {
         let terminal_view_id = self.terminal_driver.as_ref(ctx).terminal_view().id();
-
-        // Register this session with TaskStatusSyncModel so CLI agent
-        // status changes are reported to the server.
-        if let Some(task_id) = self.task_id {
-            TaskStatusSyncModel::handle(ctx).update(ctx, |model, ctx| {
-                model.register_cli_session(terminal_view_id, task_id, ctx);
-            });
-        }
 
         ctx.subscribe_to_model(
             &CLIAgentSessionsModel::handle(ctx),

@@ -11,7 +11,6 @@ pub mod team;
 pub mod workspace;
 
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::get_relevant_files::api::{GetRelevantFiles, GetRelevantFilesResponse};
 use crate::ai::predict::generate_ai_input_suggestions;
 use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsRequest;
 use crate::ai::predict::generate_am_query_suggestions;
@@ -958,30 +957,8 @@ impl ServerApi {
         Ok(response)
     }
 
-    pub async fn get_relevant_files(
-        &self,
-        request: &GetRelevantFiles,
-    ) -> Result<GetRelevantFilesResponse, AIApiError> {
-        let auth_token = self.get_or_refresh_access_token().await?;
-
-        let request_builder = self.client.post(format!(
-            "{}/ai/relevant_files",
-            ChannelState::server_root_url()
-        ));
-        let response = if let Some(token) = auth_token.as_bearer_token() {
-            request_builder.bearer_auth(token)
-        } else {
-            request_builder
-        }
-        .json(request)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-
-        Ok(response)
-    }
+    // OpenWarp:原 `get_relevant_files` 走仪家服务端 RAG。已随 outline / GetRelevantFilesController
+    // 下线推退。默认 BYOP 不走服务端 RAG。
 
     /// Hits the /ai/generate_am_query_suggestions endpoint to get the predicted next query.
     pub async fn generate_am_query_suggestions(

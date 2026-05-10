@@ -51,6 +51,7 @@ mod modal;
 mod network;
 mod notebooks;
 mod notification;
+mod notifications;
 mod palette;
 mod persistence;
 mod platform;
@@ -128,7 +129,6 @@ pub mod settings_view;
 pub mod tab_configs;
 pub mod terminal;
 pub mod themes;
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::aws_credentials::AwsCredentialRefresher as _;
 use crate::ai::mcp::FileBasedMCPManager;
@@ -138,7 +138,6 @@ use crate::uri::web_intent_parser::maybe_rewrite_web_url_to_intent;
 use ::ai::project_context::model::ProjectContextModel;
 pub use ai::agent::{todos::AIAgentTodoList, AIAgentActionResultType, FileEdit, TodoOperation};
 use ai::agent_conversations_model::AgentConversationsModel;
-use ai::agent_management::AgentNotificationsModel;
 use ai::ambient_agents::scheduled::ScheduledAgentManager;
 use ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
 use ai::execution_profiles::editor::ExecutionProfileEditorManager;
@@ -196,7 +195,6 @@ use crate::ai::facts::manager::AIFactManager;
 use crate::ai::llms::LLMPreferences;
 use crate::ai::mcp::MCPGalleryManager;
 use crate::ai::mcp::TemplatableMCPServerManager;
-use crate::ai::outline::RepoOutlines;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
 use crate::ai::AIRequestUsageModel;
@@ -565,6 +563,21 @@ fn apply_scroll_multiplier(event: &mut Event, app: &AppContext) {
 
 /// Runs the app. If a subcommand was requested, it'll be run instead of the main application.
 pub fn run() -> Result<()> {
+    // POSIX locale 兜底:在 LANG/LC_* 全部未设置时,给依赖这些环境变量的 C/Rust 库
+    // (chrono 数字格式化、libc strftime 等) 一个合理的 UTF-8 默认值。Windows 上特意跳过
+    // —— Windows API (`GetUserPreferredUILanguages`) 才是 UI locale 的真实来源,这里
+    // 强制 `LANG=en_US.UTF-8` 会让 `DesktopLanguageRequester` 不论用户选什么 UI 语言
+    // 都返回 en,进而把 CJK Han 字形回退打偏 (日文 UI 反倒拿到简体字字形)。
+    // macOS 如果桌面打开 Bundle 也是没有环境变量的, 但它的 `DesktopLanguageRequester`
+    // 如果设置了 `LANG` 环境变量会直接返回该值而不询问系统, 因此同样需要跳过。
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    if std::env::var_os("LANG").is_none()
+        && std::env::var_os("LC_ALL").is_none()
+        && std::env::var_os("LC_CTYPE").is_none()
+    {
+        std::env::set_var("LANG", "en_US.UTF-8");
+    }
+
     // Perform any necessary platform-specific initialization.
     platform::init();
 
@@ -809,6 +822,16 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     let mut timer = IntervalTimer::new();
 
     init_common(&launch_mode, Some(&mut timer))?;
+
+    // SQLite 预热:在 app_builder.run() 调用之前就在后台线程起 init_db()
+    // (连接 + migration),让 SQLite 初始化与后续的 winit / wgpu 初始化
+    // 并发。主线程走到 persistence::initialize 时会接走预热连接。
+    // 仅 LaunchMode::App 需要(CLI / Worker / Test 走另外路径,这些不调用
+    // initialize_app 里的 persistence::initialize)。
+    if matches!(launch_mode, LaunchMode::App { .. }) {
+        log::info!("Triggering SQLite prewarm in background...");
+        crate::persistence::prewarm_db_in_background();
+    }
 
     // For wasm builds we have this special case to parse out the intent
     // from the url that is used to visite the app on web.
@@ -1301,13 +1324,17 @@ fn initialize_app(
     ctx.set_default_binding_validator(is_binding_cross_platform);
 
     if FeatureFlag::Autoupdate.is_enabled() {
-        // Attempt to clean up any old executable, whether or not we were
-        // explicitly launched as part of the auto-update process.  We may have
-        // failed to remove the executable on a previous launch of the app and
-        // should try again.
-        if let Err(e) = autoupdate::remove_old_executable() {
-            log::error!("Failed to remove old executable: {e:?}");
-        }
+        // 原:同步调用 remove_old_executable() 清理上一次 auto-update 遗留的旧
+        // 可执行文件。改:丢到 background_executor,跨平台路径当中只有 macOS
+        // 实际要做事(Linux/Windows 是 noop),在 macOS 上也只是 fs::remove_dir_all,
+        // 与主线程后续逻辑零依赖。失败原本就只是 log::error,后台跳不会丢信息。
+        ctx.background_executor()
+            .spawn(async {
+                if let Err(e) = autoupdate::remove_old_executable() {
+                    log::error!("Failed to remove old executable: {e:?}");
+                }
+            })
+            .detach();
     }
 
     experiments::init(ctx);
@@ -1406,6 +1433,9 @@ fn initialize_app(
         ctx.on_first_frame_drawn(move |ctx| {
             let timing_data = IntervalTimer::handle(ctx).update(ctx, |timer, _| {
                 timer.mark_interval_end("FIRST_FRAME_DRAWN");
+                // 本地调优出口:WARP_STARTUP_TRACE=1 时把完整启动时序表打到 stderr。
+                // 不影响遥测逻辑,仅为开发者使用。
+                timer.print_trace_to_stderr_if_enabled();
                 timer.compute_stats()
             });
             let event = TelemetryEvent::AppStartup(AppStartupInfo {
@@ -1446,6 +1476,15 @@ fn initialize_app(
             auth_state.clone(),
             ctx.background_executor().clone(),
         );
+
+        // 未登录用户也需要能查看启动时序(BYOP 场景占多数),在首帧后
+        // 打一次 WARP_STARTUP_TRACE 表。不发任何遥测,不影响逻辑。
+        ctx.on_first_frame_drawn(move |ctx| {
+            IntervalTimer::handle(ctx).update(ctx, |timer, _| {
+                timer.mark_interval_end("FIRST_FRAME_DRAWN");
+                timer.print_trace_to_stderr_if_enabled();
+            });
+        });
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -1538,6 +1577,7 @@ fn initialize_app(
     tips::tip_view::init(ctx);
     launch_configs::init(ctx);
     workflows::init(ctx);
+    notifications::init(ctx);
     themes::theme_chooser::init(ctx);
     themes::theme_creator_modal::init(ctx);
     themes::theme_deletion_modal::init(ctx);
@@ -1553,7 +1593,6 @@ fn initialize_app(
     ai::blocklist::init(ctx);
     ai::blocklist::block::status_bar::init(ctx);
     drive::index::init(ctx);
-    drive::sharing::dialog::init(ctx);
     ai_assistant::panel::init(ctx);
     settings_view::update_environment_form::init(ctx);
     env_vars::env_var_collection_block::init(ctx);
@@ -1569,6 +1608,8 @@ fn initialize_app(
     if FeatureFlag::CodeReviewSaveChanges.is_enabled() {
         code_review::init(ctx);
     }
+
+    timer.mark_interval_end("SUBSYSTEM_INITS_DONE");
 
     let display_count = ctx.windows().display_count();
     ctx.add_singleton_model(|_| DisplayCount(display_count));
@@ -1603,6 +1644,8 @@ fn initialize_app(
     ctx.add_singleton_model(|_| {
         VoiceTranscriber::new(Arc::new(ServerVoiceTranscriber::new(server_api.clone())))
     });
+
+    timer.mark_interval_end("CORE_SINGLETONS_REGISTERED");
 
     let notebooks = cloud_objects
         .iter()
@@ -1654,6 +1697,8 @@ fn initialize_app(
         )
     });
 
+    timer.mark_interval_end("CLOUD_MODEL_INITIALIZED");
+
     {
         let conversations = &multi_agent_conversations;
         ctx.add_singleton_model(move |_| BlocklistAIHistoryModel::new(ai_queries, conversations));
@@ -1683,19 +1728,16 @@ fn initialize_app(
         ctx.add_singleton_model(move |_| restored);
     }
     ctx.add_singleton_model(|_| CLIAgentSessionsModel::new());
-    // ActiveAgentViewsModel is used to track active agent conversations and notify listeners when they change.
-    ctx.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    ctx.add_singleton_model(AgentNotificationsModel::new);
     ctx.add_singleton_model(BlocklistAIPermissions::new);
+    // 通知中心单例 model:必须排在 BlocklistAIHistoryModel
+    // 和 CLIAgentSessionsModel 之后注册,因为构造时会订阅这两个 model。
+    ctx.add_singleton_model(crate::notifications::model::NotificationsModel::new);
     ctx.add_singleton_model(ai::blocklist::orchestration_events::OrchestrationEventService::new);
-    ctx.add_singleton_model(ai::blocklist::task_status_sync_model::TaskStatusSyncModel::new);
     if warp_core::features::FeatureFlag::OrchestrationV2.is_enabled() {
         ctx.add_singleton_model(
             ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer::new,
         );
     }
-
-    ctx.add_singleton_model(RepoOutlines::new);
 
     ctx.add_singleton_model(|_| UserProfiles::new(restored_user_profiles));
 

@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::mpsc::SyncSender;
-use std::sync::Once;
+use std::sync::{Mutex, Once, OnceLock};
 use std::{
     collections::{HashMap, VecDeque},
     convert::TryInto,
@@ -152,13 +152,153 @@ type DeleteCloudObjectFn =
 /// Runs any migrations and creates the Sqlite database if it doesn't exist.
 /// Reads from the sqlite database to get the app state for session restoration.
 /// Starts a writer thread that listens for ModelEvents and processes them.
-pub fn initialize(ctx: &mut AppContext) -> (Option<PersistedData>, Option<WriterHandles>) {
-    unsafe {
-        // Set up logging before any SQLite calls.
-        init_logging();
+/// 后台预热出来的 SQLite 连接。在 `prewarm_db_in_background` 启动后,
+/// 后台线程会把 `init_db()` 结果存到这里;`initialize` 会从这里取走。
+///
+/// 类型说明:
+/// - 外层 `OnceLock` 表示“是否已启动预热”。
+/// - 内层 `Mutex<PrewarmState>` 用于主线程取结果 · 后台线程存结果。
+static PREWARMED_DB: OnceLock<Mutex<PrewarmState>> = OnceLock::new();
+
+/// 预热状态机。`Pending` -> (`Done` | `Joining`)。`Joining` 表示主线程
+/// 拿走了 handle 但后台线程尚未写入 Done —— 后台线程仍应该能写入。
+/// `Taken` 表示主线程已拿走结果。
+enum PrewarmState {
+    Pending(std::thread::JoinHandle<()>),
+    /// 主线程拿走 handle 去 join 了,但后台线程还没写入结果。
+    /// 后台线程会把这个状态转为 Done。
+    Joining,
+    Done(Result<SqliteConnection>),
+    Taken,
+}
+
+/// 在后台线程预热 SQLite 连接 + 执行 migration。应该在 `app_builder.run`
+/// 调用之前发起,这样 SQLite 初始化可以与后续的 winit / wgpu 初始化
+/// 并发进行,冷启动上可省 ~70–90ms。
+///
+/// 如果未调用本函数,`initialize` 会 fallback 到同步路径(原行为)。
+/// 多次调用是幂等的 —— OnceLock 保证只启动一次后台线程。
+pub fn prewarm_db_in_background() {
+    // OnceLock::get_or_init 在多个调用者下只会跳一次闭包 —— 后台线程
+    // 只会被创建一次。spawn 失败会存 Failed 状态(unlikely)。
+    PREWARMED_DB.get_or_init(|| {
+        let handle_result = std::thread::Builder::new()
+            .name("warp-sqlite-prewarm".into())
+            .spawn(|| {
+                let start = std::time::Instant::now();
+                unsafe {
+                    init_logging();
+                }
+                let result = init_db();
+                let elapsed_ms = start.elapsed().as_millis();
+                log::info!("SQLite prewarm completed in {elapsed_ms} ms (success={})", result.is_ok());
+                if let Some(cell) = PREWARMED_DB.get() {
+                    if let Ok(mut guard) = cell.lock() {
+                        // 转换为 Done。Pending 和 Joining 两种状态都需要写入结果。
+                        // 如果主线程已 Taken(不应该发生),则丢弃连接。
+                        match *guard {
+                            PrewarmState::Pending(_) | PrewarmState::Joining => {
+                                *guard = PrewarmState::Done(result);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            });
+
+        match handle_result {
+            Ok(handle) => Mutex::new(PrewarmState::Pending(handle)),
+            Err(err) => {
+                log::warn!("Failed to spawn SQLite prewarm thread: {err:#}");
+                Mutex::new(PrewarmState::Done(Err(anyhow!(
+                    "failed to spawn prewarm thread: {err}"
+                ))))
+            }
+        }
+    });
+}
+
+/// 如果后台预热已启动,取走结果(可能要等后台线程 join)。
+/// 返回 `None` 表示从未发起预热,调用方走同步路径。
+fn take_prewarmed_db() -> Option<Result<SqliteConnection>> {
+    let cell = PREWARMED_DB.get()?;
+    let take_start = std::time::Instant::now();
+
+    // 先拿出 join handle(如果还在 Pending),转换为 Joining,join 完后再拿结果。
+    // 这个两阶段设计避免主线程拿着锁跳,同时保证后台线程能写入结果。
+    let handle = {
+        let mut guard = match cell.lock() {
+            Ok(g) => g,
+            // 锁中毒 = 之前某次 panic;走同步路径。
+            Err(_) => {
+                log::warn!("SQLite prewarm: mutex poisoned, falling back to sync");
+                return None;
+            }
+        };
+        // 先看状态:Done 直接拿结果;Pending 拿 handle 后 join。
+        match std::mem::replace(&mut *guard, PrewarmState::Taken) {
+            PrewarmState::Pending(h) => {
+                // 转为 Joining 状态(后台线程仍会写入 Done)。
+                *guard = PrewarmState::Joining;
+                Some(h)
+            }
+            PrewarmState::Done(result) => {
+                log::info!(
+                    "SQLite prewarm hit (already done): take took {} µs",
+                    take_start.elapsed().as_micros()
+                );
+                return Some(result);
+            }
+            PrewarmState::Joining | PrewarmState::Taken => {
+                // 不应该发生 —— take 只会调一次。返回 None 走同步路径。
+                log::warn!("SQLite prewarm: unexpected Joining/Taken state, sync fallback");
+                return None;
+            }
+        }
+    };
+
+    // join 后台线程。如果后台 panic,join 会返回 Err —— 这是不会死循环的关键。
+    if let Some(handle) = handle {
+        match handle.join() {
+            Ok(()) => {
+                let join_us = take_start.elapsed().as_micros();
+                log::info!("SQLite prewarm: main thread waited {join_us} µs for background");
+                // 后台线程运行完成后,结果应在 Mutex 里。
+                let mut guard = match cell.lock() {
+                    Ok(g) => g,
+                    Err(_) => return None,
+                };
+                match std::mem::replace(&mut *guard, PrewarmState::Taken) {
+                    PrewarmState::Done(result) => Some(result),
+                    // 后台线程 join 成功但 Done 未被写入 —— 不可能,防御性处理。
+                    _ => None,
+                }
+            }
+            Err(_panic) => {
+                log::warn!("SQLite prewarm thread panicked; falling back to sync init");
+                None
+            }
+        }
+    } else {
+        None
     }
+}
+
+pub fn initialize(ctx: &mut AppContext) -> (Option<PersistedData>, Option<WriterHandles>) {
     let database_path = database_file_path();
-    match init_db() {
+
+    // 优先取后台预热结果;拿不到则同步 init_db()(原行为)。
+    let init_result = match take_prewarmed_db() {
+        Some(result) => result,
+        None => {
+            unsafe {
+                init_logging();
+            }
+            init_db()
+        }
+    };
+
+    match init_result {
         Ok(mut conn) => {
             let user_uid = AuthStateProvider::as_ref(ctx).get().user_id();
             let app_state = match read_sqlite_data(&mut conn, user_uid) {

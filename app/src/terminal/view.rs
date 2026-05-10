@@ -171,7 +171,6 @@ pub use block_banner::{WithinBlockBanner, BLOCK_BANNER_HEIGHT};
 use block_onboarding::onboarding_agentic_suggestions_block::{
     OnboardingAgenticSuggestionsBlock, OnboardingAgenticSuggestionsBlockEvent, OnboardingChipType,
 };
-use block_onboarding::onboarding_drive_sharing_block::OnboardingDriveSharingBlock;
 pub use init::{
     init, CANCEL_COMMAND_KEYBINDING, TOGGLE_AUTOEXECUTE_MODE_KEYBINDING,
     TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING, TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING,
@@ -184,11 +183,11 @@ use session_sharing_protocol::sharer::{RoleUpdateReason, SessionEndedReason, Ses
 use ssh_file_upload::{FileUpload, FileUploadEvent};
 use uuid::Uuid;
 use warp_core::channel::ChannelState;
-use warpui::elements::{shimmering_text::ShimmeringTextStateHandle, Border, ChildView};
+use warpui::elements::{shimmering_text::ShimmeringTextStateHandle, ChildView};
 use warpui::fonts::Properties;
 use warpui::{ViewHandle, WeakModelHandle};
 
-use crate::ai::agent::conversation::{AIConversation, AIConversationId};
+use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 
 #[cfg(any(test, feature = "integration_tests"))]
 use crate::ai::agent::UserQueryMode;
@@ -222,7 +221,6 @@ use crate::ai::{
         PRE_REWIND_PREFIX,
     },
     execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId},
-    get_relevant_files::controller::GetRelevantFilesController,
 };
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
@@ -245,7 +243,6 @@ use crate::env_vars::{
 };
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::persistence::{self, FinishedCommandMetadata};
-use crate::safe_warn;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ObjectUid, SyncId};
 #[cfg(feature = "local_fs")]
@@ -334,6 +331,7 @@ use crate::workspaces::{user_workspaces::UserWorkspaces, workspace::CustomerType
 use crate::AIRequestUsageModel;
 use crate::ActiveSession as WindowActiveSession;
 use crate::{report_if_error, AIAgentActionResultType};
+use crate::{safe_error, safe_warn};
 
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};
@@ -2578,7 +2576,6 @@ pub struct TerminalView {
     ai_action_model: ModelHandle<BlocklistAIActionModel>,
     ai_input_model: ModelHandle<BlocklistAIInputModel>,
     ai_context_model: ModelHandle<BlocklistAIContextModel>,
-    get_relevant_files_controller: ModelHandle<GetRelevantFilesController>,
 
     pending_env_var_collection: Option<CloudEnvVarCollection>,
 
@@ -2706,18 +2703,6 @@ pub struct TerminalView {
 
     ambient_agent_view_model: ModelHandle<ambient_agent::AmbientAgentViewModel>,
 
-    /// Cloud mode conversation details panel (side panel showing task metadata).
-    cloud_mode_details_panel:
-        ViewHandle<crate::ai::conversation_details_panel::ConversationDetailsPanel>,
-    /// Whether the cloud mode details panel is currently open.
-    is_cloud_mode_details_panel_open: bool,
-    /// Whether we've already auto-opened the panel when the agent started running.
-    /// This prevents re-opening the panel if the user manually closes it.
-    has_auto_opened_cloud_mode_details_panel: bool,
-    /// Mouse state handle for the cloud mode details panel toggle button in the pane header.
-    /// Only available on non-WASM platforms (WASM uses a per-window button instead).
-    #[cfg(not(target_arch = "wasm32"))]
-    cloud_mode_details_panel_toggle_mouse_state: warpui::elements::MouseStateHandle,
     /// Mouse state handle for the ambient agent cancel button in the pane header.
     ambient_agent_cancel_mouse_state: warpui::elements::MouseStateHandle,
 
@@ -3261,13 +3246,11 @@ impl TerminalView {
             model
         });
 
-        let get_relevant_files_controller = ctx.add_model(GetRelevantFilesController::new);
         let ai_action_model = ctx.add_model(|ctx| {
             BlocklistAIActionModel::new(
                 model.clone(),
                 active_session.clone(),
                 &model_events_handle,
-                get_relevant_files_controller.clone(),
                 terminal_view_id,
                 ctx,
             )
@@ -3429,15 +3412,6 @@ impl TerminalView {
 
         ctx.subscribe_to_model(&ai_controller, |me, handle, event, ctx| {
             me.handle_ai_controller_event(handle, event, ctx);
-            // Refresh cloud mode details panel when agent output completes (may include new artifacts)
-            if matches!(
-                event,
-                BlocklistAIControllerEvent::FinishedReceivingOutput { .. }
-            ) && me.is_cloud_mode_details_panel_open
-                && me.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
-            {
-                me.fetch_and_update_cloud_mode_details_panel(ctx);
-            }
         });
 
         // Subscribe to agent conversations model for task status updates
@@ -3451,21 +3425,6 @@ impl TerminalView {
                 );
                 if is_task_update {
                     me.maybe_insert_tombstone_for_non_running_shared_ambient_task(ctx);
-                }
-                let should_refresh_details_panel = matches!(
-                    event,
-                    AgentConversationsModelEvent::TasksUpdated
-                        | AgentConversationsModelEvent::NewTasksReceived
-                        | AgentConversationsModelEvent::ConversationUpdated
-                        | AgentConversationsModelEvent::ConversationArtifactsUpdated { .. }
-                );
-                // Only refresh panel if it's currently open (avoids unnecessary work)
-                if should_refresh_details_panel
-                    && me.is_cloud_mode_details_panel_open
-                    && me.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
-                {
-                    me.fetch_and_update_cloud_mode_details_panel(ctx);
-                    ctx.notify();
                 }
             },
         );
@@ -3954,29 +3913,6 @@ impl TerminalView {
             })
         });
 
-        // Cloud mode conversation details panel
-        let cloud_mode_details_panel = ctx.add_typed_action_view(|ctx| {
-            crate::ai::conversation_details_panel::ConversationDetailsPanel::new(
-                false, // don't show "Open" button since we're already viewing the conversation
-                320.0, // initial width
-                ctx,
-            )
-        });
-        ctx.subscribe_to_view(&cloud_mode_details_panel, |me, _, event, ctx| {
-            use crate::ai::conversation_details_panel::ConversationDetailsPanelEvent;
-            match event {
-                ConversationDetailsPanelEvent::Close => {
-                    me.is_cloud_mode_details_panel_open = false;
-                    ctx.notify();
-                }
-                ConversationDetailsPanelEvent::OpenPlanNotebook { notebook_uid } => {
-                    // Convert NotebookId -> SyncId -> ObjectUid (String)
-                    let object_uid = SyncId::from(*notebook_uid).uid();
-                    ctx.emit(Event::OpenWarpDriveObjectInPane(object_uid));
-                }
-            }
-        });
-
         let window_id = ctx.window_id();
         let mut terminal_view = Self {
             model,
@@ -4064,7 +4000,6 @@ impl TerminalView {
             passive_suggestions_models,
             ai_action_model,
             ai_render_context,
-            get_relevant_files_controller,
             shared_session: None,
             pending_share_source: None,
             auto_stop_sharing_on_cli_end: false,
@@ -4107,11 +4042,6 @@ impl TerminalView {
             agent_view_back_button,
             is_using_conversation_for_pane_header_title: false,
             ambient_agent_view_model,
-            cloud_mode_details_panel,
-            is_cloud_mode_details_panel_open: false,
-            has_auto_opened_cloud_mode_details_panel: false,
-            #[cfg(not(target_arch = "wasm32"))]
-            cloud_mode_details_panel_toggle_mouse_state: Default::default(),
             ambient_agent_cancel_mouse_state: Default::default(),
 
             is_pending_aws_login: false,
@@ -5103,7 +5033,6 @@ impl TerminalView {
                             response_stream_id: response_stream_id.clone(),
                         },
                         self.ai_controller.clone(),
-                        self.get_relevant_files_controller.clone(),
                         self.pwd(),
                         self.shell_launch_data_if_local(ctx),
                         self.ai_action_model.clone(),
@@ -6157,7 +6086,7 @@ impl TerminalView {
                     .conversation_id_for_action(action_id, ctx.view_id())
                     .and_then(|id| history_model.conversation(&id))
                 else {
-                    safe_warn!(
+                    safe_error!(
                         safe: ("No conversation ID found for command with ID: {:?}", action_id),
                         full: (
                             "No conversation ID found for requested command: ID: {:?}, command: \
@@ -12050,33 +11979,6 @@ impl TerminalView {
         None
     }
 
-    pub fn insert_drive_sharing_onboarding_block(
-        &mut self,
-        object_id: CloudObjectTypeAndId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.reset_onboarding_blocks(ctx);
-
-        WarpDriveSettings::handle(ctx).update(ctx, |settings, ctx| {
-            report_if_error!(settings.sharing_onboarding_block_shown.set_value(true, ctx));
-        });
-
-        let block_view_handle =
-            ctx.add_view(|ctx| OnboardingDriveSharingBlock::new(object_id, ctx));
-
-        self.insert_rich_content(
-            None,
-            block_view_handle,
-            None,
-            RichContentInsertionPosition::Append {
-                insert_below_long_running_block: false,
-            },
-            ctx,
-        );
-
-        send_telemetry_from_ctx!(TelemetryEvent::DriveSharingOnboardingBlockShown, ctx);
-    }
-
     fn should_display_vim_banner(
         &self,
         session: &Arc<Session>,
@@ -12662,16 +12564,6 @@ impl TerminalView {
         self.model
             .lock()
             .selection_to_string(semantic_selection, inverted, ctx)
-    }
-
-    /// Gets the selected text from AI rich content blocks, if any.
-    fn selected_text_from_ai_rich_content(&self, ctx: &AppContext) -> Option<String> {
-        self.rich_content_views.iter().find_map(|rich_content| {
-            rich_content
-                .ai_block_metadata()
-                .and_then(|metadata| metadata.ai_block_handle.as_ref(ctx).selected_text(ctx))
-                .filter(|selection| !selection.is_empty())
-        })
     }
 
     /// Gets the selected text from the terminal input editor, if any.
@@ -14017,9 +13909,14 @@ impl TerminalView {
         else {
             return;
         };
-        if conversation.is_entirely_passive()
-            || !conversation.status().should_trigger_notification()
-        {
+        let status = conversation.status();
+        let should_trigger = matches!(
+            status,
+            ConversationStatus::Success
+                | ConversationStatus::Blocked { .. }
+                | ConversationStatus::Error
+        );
+        if conversation.is_entirely_passive() || !should_trigger {
             return;
         }
 
@@ -14631,10 +14528,14 @@ impl TerminalView {
             }
         }
 
-        // Then check if there's selected text in regular AI rich content blocks.
-        if let Some(selected_text) = self.selected_text_from_ai_rich_content(ctx) {
-            ctx.clipboard()
-                .write(ClipboardContent::plain_text(selected_text));
+        // Then check if there's selected text inside any AI block (rich content). The grid-level
+        // `selection_to_string` below ignores AI block `SelectableArea` selections, so without this
+        // branch Ctrl+Shift+C silently does nothing when the user has selected text inside an AI reply.
+        if let Some(selected_text) = self.selected_text_from_visible_ai_blocks(ctx) {
+            if !selected_text.is_empty() {
+                ctx.clipboard()
+                    .write(ClipboardContent::plain_text(selected_text));
+            }
             return;
         }
 
@@ -16483,7 +16384,10 @@ impl TerminalView {
 
     fn maybe_copy_selection_to_clipboard(&mut self, ctx: &mut ViewContext<Self>) {
         let selection_settings = SelectionSettings::handle(ctx);
-        if let Some(selected) = self.selected_text_from_ai_rich_content(ctx) {
+        if let Some(selected) = self
+            .selected_text_from_visible_ai_blocks(ctx)
+            .filter(|selected| !selected.is_empty())
+        {
             selection_settings.update(ctx, |selection_settings, ctx| {
                 selection_settings
                     .maybe_copy_on_select(ClipboardContent::plain_text(selected), ctx);
@@ -18725,6 +18629,19 @@ impl TerminalView {
         })
     }
 
+    /// 在所有可见的 AI block 子视图层里查找已被用户选中的文本。
+    ///
+    /// AI block 的 rich content 选区由 `SelectableArea` 维护,与终端 grid 选区是两套
+    /// 互不通气的系统;`selection_to_string` 只会读 grid 选区,因此 Ctrl+Shift+C 与右键
+    /// 菜单的 `Copy` 都会漏掉 AI block 内的选区。这里集中提供一个兜底:遍历所有 AI block,
+    /// 取第一个 `selected_text(ctx).is_some()` 的结果即可。
+    fn selected_text_from_visible_ai_blocks(&self, ctx: &AppContext) -> Option<String> {
+        self.rich_content_views.iter().find_map(|rich_content| {
+            let ai_metadata = rich_content.ai_block_metadata()?;
+            ai_metadata.ai_block_handle.as_ref(ctx).selected_text(ctx)
+        })
+    }
+
     /// Returns the last block's `EnvVarCollectionBlock` if it is uncompleted, scoped to the
     /// currently visible conversation.
     fn active_env_var_collection_block(
@@ -19029,22 +18946,27 @@ impl TerminalView {
     }
 
     fn context_menu_copy_selected_text(&mut self, ctx: &mut ViewContext<Self>) {
-        {
-            send_telemetry_from_ctx!(TelemetryEvent::ContextMenuCopySelectedText, ctx);
-            if let Some(selected_text) = self.selected_text_from_ai_rich_content(ctx) {
+        send_telemetry_from_ctx!(TelemetryEvent::ContextMenuCopySelectedText, ctx);
+
+        // 优先试 AI block 内选区(详见 `selected_text_from_visible_ai_blocks` 注释)。
+        // 放在 `model.lock()` 之前,避免在终端模型锁持锁期间调用可能再次加锁的代码。
+        if let Some(selected_text) = self.selected_text_from_visible_ai_blocks(ctx) {
+            if !selected_text.is_empty() {
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(selected_text));
-            } else {
-                let semantic_selection = SemanticSelection::as_ref(ctx);
-                let model = self.model.lock();
-                if let Some(selected_text) = model.selection_to_string(
-                    semantic_selection,
-                    self.is_inverted_blocklist(ctx),
-                    ctx,
-                ) {
-                    ctx.clipboard()
-                        .write(ClipboardContent::plain_text(selected_text));
-                }
+            }
+            self.close_context_menu(ctx, true);
+            return;
+        }
+
+        {
+            let semantic_selection = SemanticSelection::as_ref(ctx);
+            let model = self.model.lock();
+            if let Some(selected_text) =
+                model.selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
+            {
+                ctx.clipboard()
+                    .write(ClipboardContent::plain_text(selected_text));
             }
         }
         self.close_context_menu(ctx, true);
@@ -19183,6 +19105,8 @@ impl TerminalView {
     fn handle_input_event(&mut self, event: &InputEvent, ctx: &mut ViewContext<Self>) {
         match event {
             InputEvent::Enter => self.clear_prompt_suggestions(ctx),
+            InputEvent::PageUp => self.page_up(ctx),
+            InputEvent::PageDown => self.page_down(ctx),
             InputEvent::ExecuteCommand(event) => {
                 self.update_scroll_position_locking(
                     ScrollPositionUpdate::AfterCommandExecutionStarted,
@@ -20510,7 +20434,6 @@ impl TerminalView {
                     response_stream_id: None,
                 },
                 self.ai_controller.clone(),
-                self.get_relevant_files_controller.clone(),
                 None,
                 None,
                 self.ai_action_model.clone(),
@@ -23501,22 +23424,31 @@ impl TerminalView {
     }
 
     /// Starts all enabled LSP servers for the current working directory.
+    ///
+    /// 优先使用检测到的 git 仓库根 (`current_repo_path`) 作为
+    /// `workspace_root` 传给 LSP——这样在子目录里 cd 时也能正确取到整仓库,
+    /// 避免为同一仓库不同子路径重复启动 LSP。拿不到 repo 根时 fallback 到 cwd,
+    /// 交给下游 `workspace_root_for_lsp` 再判断是否要启动。
     #[cfg(feature = "local_fs")]
     fn start_lsp_server_in_active_pwd(&self, ctx: &mut ViewContext<Self>) {
         use crate::ai::persisted_workspace::LspTask;
 
-        let Some(cwd) = self
+        let workspace_root = if let Some(repo_path) = self.current_repo_path.clone() {
+            repo_path
+        } else if let Some(cwd) = self
             .pwd_if_local(ctx)
             .map(PathBuf::from)
             .and_then(|p| p.canonicalize().ok())
-        else {
+        {
+            cwd
+        } else {
             return;
         };
 
         PersistedWorkspace::handle(ctx).update(ctx, |workspace, ctx| {
             workspace.execute_lsp_task(
                 LspTask::Spawn {
-                    file_path: cwd,
+                    file_path: workspace_root,
                     server_type: None,
                 },
                 ctx,
@@ -24845,11 +24777,6 @@ impl TypedActionView for TerminalView {
                 self.handle_aws_cli_not_installed_banner_action(*action, ctx);
             }
             ToggleCloudModeDetailsPanel => {
-                let will_open = !self.is_cloud_mode_details_panel_open;
-                self.is_cloud_mode_details_panel_open = will_open;
-                if will_open {
-                    self.fetch_and_update_cloud_mode_details_panel(ctx);
-                }
                 ctx.notify();
             }
             CancelAmbientAgentTask => {
@@ -25375,34 +25302,8 @@ impl View for TerminalView {
             element
         };
 
-        // Wrap with cloud mode details panel on the right if open
-        // On WASM, the panel is rendered in the wasm_view instead
-        let should_show_panel = !cfg!(target_family = "wasm")
-            && self.is_cloud_mode_details_panel_open
-            && Self::can_show_cloud_mode_details_ui_for_task_id(
-                ambient_agent_task_id_for_details_panel,
-            );
-
-        if should_show_panel {
-            // Wrap panel with agent view background for visual consistency
-            let panel_with_background =
-                Container::new(ChildView::new(&self.cloud_mode_details_panel).finish())
-                    .with_background(agent_view_bg_fill(app))
-                    .finish();
-
-            Container::new(
-                Flex::row()
-                    .with_main_axis_size(warpui::elements::MainAxisSize::Max)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                    .with_child(Shrinkable::new(1., final_element).finish())
-                    .with_child(panel_with_background)
-                    .finish(),
-            )
-            .with_border(Border::top(1.0).with_border_fill(appearance.theme().outline()))
-            .finish()
-        } else {
-            final_element
-        }
+        let _ = ambient_agent_task_id_for_details_panel;
+        final_element
     }
 
     fn on_focus(&mut self, focus_ctx: &FocusContext, ctx: &mut ViewContext<Self>) {

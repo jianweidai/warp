@@ -1,6 +1,4 @@
 use anyhow::Result;
-#[cfg(feature = "local_fs")]
-use repo_metadata::repositories::RepoDetectionSource;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use warpui::{Entity, ModelContext, SingletonEntity};
@@ -196,12 +194,19 @@ impl ProjectContextModel {
         ctx.spawn(
             async move { Self::read_persisted_rules(persisted_rules).await },
             |me, mut res, ctx| {
-                for root in res.keys() {
-                    me.try_initialize_and_register_watcher(root, ctx);
-                }
-
-                // If we have any rules detected before fully loading the persisted rules, we want to
-                // keep the detected rules since it's more up to date.
+                // OpenWarp:原这里会对每个持久化的 root 调
+                // `try_initialize_and_register_watcher`,后者内部走
+                // `DetectedRepositories::detect_possible_git_repo(ProjectRulesIndexing)`
+                // 触发事件,让 RepoMetadataModel 全量索引 6 个持久化仓库
+                // (对 OpenWarp BYOP 是冷启动最大后台 CPU 耗费头)。
+                //
+                // 现只填充 in-memory 的 path_to_rules cache,不主动发
+                // detect 事件。用户后续通过 terminal cd 进入仓库时,
+                // RepoDetectionSource::TerminalNavigation 会自然触发独立的 detect,
+                // 到时再走 register_watcher_for_path。
+                //
+                // 实际影响:持久化 rules 未被实时 watch,直到用户进入该仓库。
+                // cache 本身仍可用,AI 查 rule 不受影响。
                 res.extend(me.path_to_rules.drain());
                 me.path_to_rules = res;
                 ctx.emit(ProjectContextModelEvent::PathIndexed);
@@ -269,37 +274,10 @@ impl ProjectContextModel {
         Ok(())
     }
 
-    /// This should be used when we are bootstrapping project rules from persisted rule paths. In this case,
-    /// the actual repo watcher might not have been registered yet. We will attempt to register that repo watcher
-    /// if it doesn't yet exists.
-    #[cfg(feature = "local_fs")]
-    fn try_initialize_and_register_watcher(&self, path: &Path, ctx: &mut ModelContext<Self>) {
-        use repo_metadata::repositories::DetectedRepositories;
-
-        let directory_watcher = DirectoryWatcher::handle(ctx);
-        if directory_watcher
-            .as_ref(ctx)
-            .get_watched_directory_for_path(path)
-            .is_some()
-        {
-            self.register_watcher_for_path(path, ctx);
-            return;
-        }
-
-        let fut = DetectedRepositories::handle(ctx).update(ctx, |model, ctx| {
-            model.detect_possible_git_repo(
-                &path.to_string_lossy(),
-                RepoDetectionSource::ProjectRulesIndexing,
-                ctx,
-            )
-        });
-
-        ctx.spawn(fut, move |me, repo_path_opt, ctx| {
-            if let Some(path) = repo_path_opt {
-                me.register_watcher_for_path(&path, ctx);
-            }
-        });
-    }
+    // OpenWarp:原 `try_initialize_and_register_watcher` 是从持久化 rule 路径启动时
+    // 强制 detect repo 的入口,启动后续走 RepoMetadataModel 全量索引。已随
+    // `new_from_persisted` 中的 detect 调用一并删除;现在仅靠 terminal cd 触发的
+    // `RepoDetectionSource::TerminalNavigation` 路径被动走 register_watcher_for_path。
 
     #[cfg(feature = "local_fs")]
     fn register_watcher_for_path(&self, path: &Path, ctx: &mut ModelContext<Self>) {

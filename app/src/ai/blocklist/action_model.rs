@@ -54,7 +54,6 @@ use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonE
 use crate::{
     ai::{
         agent::{AIAgentAction, AIAgentActionId, AIAgentActionResult},
-        get_relevant_files::controller::GetRelevantFilesController,
     },
     terminal::{
         model::session::active_session::ActiveSession, model_events::ModelEventDispatcher,
@@ -259,7 +258,6 @@ impl BlocklistAIActionModel {
         terminal_model: Arc<FairMutex<TerminalModel>>,
         active_session: ModelHandle<ActiveSession>,
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
-        get_relevant_files_controller: ModelHandle<GetRelevantFilesController>,
         terminal_view_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
@@ -268,7 +266,6 @@ impl BlocklistAIActionModel {
                 terminal_model,
                 active_session.clone(),
                 model_event_dispatcher,
-                get_relevant_files_controller,
                 terminal_view_id,
                 ctx,
             )

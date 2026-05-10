@@ -4,7 +4,6 @@ use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::facts::manager::AIFactManager;
 use crate::ai::llms::LLMPreferences;
-use crate::ai::outline::RepoOutlines;
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
@@ -57,7 +56,6 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::terminal::local_tty::spawner::PtySpawner;
 use crate::terminal::shared_session::{SharedSessionScrollbackType, SharedSessionStatus};
 
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
 use crate::ai::mcp::{
@@ -70,8 +68,8 @@ use crate::test_util::settings::initialize_settings_for_tests;
 use crate::undo_close::UndoCloseSettings;
 use crate::warp_managed_paths_watcher::WarpManagedPathsWatcher;
 use crate::workflows::local_workflows::LocalWorkflows;
+use crate::ObjectActions;
 use crate::{experiments, workspace, GlobalResourceHandlesProvider};
-use crate::{AgentNotificationsModel, ObjectActions};
 
 use crate::settings::cloud_preferences_syncer::CloudPreferencesSyncer;
 
@@ -135,8 +133,6 @@ fn initialize_app(app: &mut App) {
     });
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
-    app.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    app.add_singleton_model(AgentNotificationsModel::new);
     app.add_singleton_model(AgentConversationsModel::new);
     app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(LLMPreferences::new);
@@ -155,7 +151,7 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|ctx| {
         AIExecutionProfilesModel::new(&crate::LaunchMode::new_for_unit_test(), ctx)
     });
-    app.add_singleton_model(RepoOutlines::new_for_test);
+    // OpenWarp:RepoOutlines 已删除,不再注册。
     #[cfg(feature = "voice_input")]
     app.add_singleton_model(voice_input::VoiceInput::new);
     app.add_singleton_model(BlocklistAIPermissions::new);
@@ -2933,43 +2929,5 @@ fn test_standard_tab_context_menu_shows_hover_only_tab_bar() {
     });
 }
 
-#[test]
-fn test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempotent() {
-    let _agent_management_guard = FeatureFlag::AgentManagementView.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-
-            workspace.handle_action(&WorkspaceAction::OpenCloudAgentSetupGuide, ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-            assert!(workspace
-                .agent_management_view
-                .as_ref(ctx)
-                .is_showing_setup_guide());
-
-            workspace.handle_action(&WorkspaceAction::OpenCloudAgentSetupGuide, ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-            assert!(workspace
-                .agent_management_view
-                .as_ref(ctx)
-                .is_showing_setup_guide());
-        });
-    });
-}
+// 已删:test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempotent
+// agent_management_view 字段连同 cloud agent setup guide 整片功能在 Phase 2c 已删。

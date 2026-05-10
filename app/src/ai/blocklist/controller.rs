@@ -45,7 +45,6 @@ use crate::ai::{
     llms::LLMPreferences,
     AIRequestUsageModel,
 };
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::features::FeatureFlag;
 use crate::global_resource_handles::GlobalResourceHandlesProvider;
 use crate::network::NetworkStatus;
@@ -806,28 +805,19 @@ impl BlocklistAIController {
                 continue;
             }
 
-            // Look up notebook to get title and sync_id
-            let cloud_model = CloudModel::as_ref(ctx);
-            let notebook_data = cloud_model
-                .get_all_active_notebooks()
-                .find(|nb| nb.model().ai_document_id.as_ref() == Some(&document_id))
-                .map(|nb| (nb.model().title.clone(), nb.id));
-
-            if let Some((title, sync_id)) = notebook_data {
-                AIDocumentModel::handle(ctx).update(ctx, |model, model_ctx| {
-                    model.create_document_from_notebook(
-                        document_id,
-                        sync_id,
-                        title,
-                        content,
-                        conversation_id,
-                        file_link_resolution_context.clone(),
-                        model_ctx,
-                    );
-                });
-            } else {
-                log::warn!("Notebook not found for ai_document_id: {document_id}");
-            }
+            // openWarp 本地化:plan 只存本地 SQLite。会话恢复时如果 plan 不在内存中,
+            // 从 attachment 携带的 content 重建。title 从 attachment 调用方没携带,
+            // 先用默认 planning 标题占位；apply_persisted_content 恢复时会被 SQLite 中存的 title 覆盖。
+            AIDocumentModel::handle(ctx).update(ctx, |model, model_ctx| {
+                model.create_document_with_id(
+                    document_id,
+                    crate::ai::ai_document_view::DEFAULT_PLANNING_DOCUMENT_TITLE,
+                    content.clone(),
+                    conversation_id,
+                    file_link_resolution_context.clone(),
+                    model_ctx,
+                );
+            });
         }
     }
 
@@ -1428,7 +1418,7 @@ impl BlocklistAIController {
         }
 
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
-            history.set_active_conversation_id(conversation_id, self.terminal_view_id, ctx);
+            history.mark_active_conversation_id(conversation_id, self.terminal_view_id, ctx);
         });
 
         if !FeatureFlag::AgentView.is_enabled() && trigger == FollowUpTrigger::Auto {
@@ -2204,7 +2194,7 @@ impl BlocklistAIController {
         });
         if !is_passive_request {
             BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                history_model.set_active_conversation_id(
+                history_model.mark_active_conversation_id(
                     conversation_data.id,
                     self.terminal_view_id,
                     ctx,

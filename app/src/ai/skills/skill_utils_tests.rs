@@ -97,7 +97,7 @@ fn test_unique_skills_dedupes_identical_skills_same_dir() {
 }
 
 #[test]
-fn test_unique_skills_does_not_dedupe_different_dirs() {
+fn test_unique_skills_name_dedup_different_dirs_same_provider() {
     let home_dir = PathBuf::from("/home/user");
     let project_dir = PathBuf::from("/home/user/projects/repo");
     let home_path = home_dir.join(".agents/skills/my-skill/SKILL.md");
@@ -128,18 +128,27 @@ fn test_unique_skills_does_not_dedupe_different_dirs() {
     skills_by_path.insert(home_path.clone(), home_skill);
     skills_by_path.insert(project_path.clone(), project_skill);
 
-    let skill_paths = vec![(home_dir, home_path), (project_dir, project_path)];
+    let skill_paths = vec![(home_dir, home_path.clone()), (project_dir, project_path)];
 
     let result = unique_skills(&skill_paths, &skills_by_path);
     assert_eq!(
         result.len(),
-        2,
-        "Skills with same content but different directories should not be deduped"
+        1,
+        "同名 + 同 provider 跨目录应被 name-dedup 合并为 1"
+    );
+    // 同 provider 时 reference 路径短者胜——home_path 比 project_path 短。
+    assert!(
+        result[0]
+            .reference
+            .to_string()
+            .contains("/home/user/.agents"),
+        "同 rank 应取路径最短的 reference,实际={}",
+        result[0].reference,
     );
 }
 
 #[test]
-fn test_unique_skills_does_not_dedupe_different_content() {
+fn test_unique_skills_name_dedup_same_name_different_providers() {
     let shared_skill_dir = PathBuf::from("/home/user");
     let skill_path1 = shared_skill_dir.join(".agents/skills/my-skill/SKILL.md");
     let skill_path2 = shared_skill_dir.join(".claude/skills/my-skill/SKILL.md");
@@ -179,7 +188,12 @@ fn test_unique_skills_does_not_dedupe_different_content() {
     let result = unique_skills(&skill_paths, &skills_by_path);
     assert_eq!(
         result.len(),
-        2,
-        "Skills with different content should not be deduped even if same directory and name"
+        1,
+        "同名不同内容不同 provider 应 name-dedup,仅保留最高优先级 provider"
+    );
+    assert_eq!(
+        result[0].provider,
+        SkillProvider::Agents,
+        "name-dedup 应保留高优先级 provider(Agents > Claude)"
     );
 }

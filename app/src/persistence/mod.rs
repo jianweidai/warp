@@ -80,6 +80,18 @@ pub fn initialize(ctx: &mut AppContext) -> (Option<PersistedData>, Option<Writer
     }
 }
 
+/// 在后台线程预热 SQLite 连接 + 跑 migration。应该在 `app_builder.run`
+/// 之前调用,这样 SQLite 初始化可以与 winit / wgpu 初始化并发进行,
+/// 冷启动上可省 ~70–90ms。多次调用幂等。未调用会 fallback 到同步路径。
+#[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+pub fn prewarm_db_in_background() {
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "local_fs")] {
+            sqlite::prewarm_db_in_background();
+        }
+    }
+}
+
 // Remove sqlite database as part of Logout v0.
 // TODO: Implement per user scoping of sqlite.
 #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]

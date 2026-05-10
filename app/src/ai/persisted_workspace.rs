@@ -384,6 +384,39 @@ impl PersistedWorkspace {
             .find(|&path| self.workspaces.contains_key(path))
     }
 
+    /// LSP 启动专用:返回 `path` 应当使用的 workspace_root。
+    ///
+    /// 解析优先级:
+    /// 1. `path` 的 ancestor 在 `self.workspaces` 已注册(旧的持久化 workspace)
+    ///    → 返回该 ancestor;
+    /// 2. `RepoMetadataModel` 已索引的 git 仓库根包含 `path` → 返回仓库根;
+    /// 3. 这两者都没命中 → `None`,不应该启动 LSP。
+    ///
+    /// 这让"进入任意已索引的 git 仓库按全局 `enabled_lsp_servers` 实时启动 LSP"的
+    /// 语义不再依赖持久化 workspace 注册。同时避免:
+    /// - 在单个文件路径(如 `Cargo.toml`)上启动 LSP → Windows 上会报
+    ///   "目录名称无效 (os error 267)";
+    /// - 在任意非仓库目录(如用户主目录)启动 LSP 。
+    #[cfg(feature = "local_fs")]
+    pub fn workspace_root_for_lsp(&self, path: &Path, ctx: &AppContext) -> Option<PathBuf> {
+        if let Some(registered) = self.root_for_workspace(path) {
+            return Some(registered.to_path_buf());
+        }
+
+        // Fallback: 查已索引的 git 仓库根。这里调用的是同步 in-memory
+        // 查询,不会阅磁盘。拿不到就返回 None——不要尝试在未索引的
+        // 任意路径上 spawn LSP。
+        repo_metadata::RepoMetadataModel::as_ref(ctx)
+            .find_repository_for_path(path, ctx)
+            .and_then(|std_path| std_path.to_local_path())
+    }
+
+    /// `local_fs` feature 关闭时的 stub:只靠已注册的 persisted workspace。
+    #[cfg(not(feature = "local_fs"))]
+    pub fn workspace_root_for_lsp(&self, path: &Path, _ctx: &AppContext) -> Option<PathBuf> {
+        self.root_for_workspace(path).map(Path::to_path_buf)
+    }
+
     /// Returns the enabled lsp servers for a given repo path.
     pub fn enabled_lsp_servers(
         &self,
@@ -782,24 +815,42 @@ impl PersistedWorkspace {
     }
 
     /// Starts all enabled LSP servers for the given file path.
-    /// This looks up the workspace root and starts any servers that are enabled but not yet running.
+    ///
+    /// 工作流:
+    /// - 优先用已注册的 `self.workspaces` 条目作为 workspace_root(向后兼容旧的
+    ///   持久化 workspace);
+    /// - 没注册时 fallback 到 `RepoMetadataModel` 已索引的 git 仓库根,以支持
+    ///   "进入任意已索引仓库后按全局 enabled_lsp_servers 实时启动 LSP";
+    /// - 两者都拿不到时不启动。详见 `workspace_root_for_lsp`。
+    ///
+    /// 要启动的 server 集合 = `enabled_lsp_servers`(用户强制启用) ∩ server_type_filter
+    /// ···∧ `auto_start_servers`(仓库相关 + 已安装,由调用方异步计算后传入)。
     #[cfg(feature = "local_fs")]
     fn handle_spawn_lsp(
         &self,
         file_path: &Path,
         server_type_filter: Option<LSPServerType>,
         path_env_var: Option<String>,
+        auto_start_servers: Vec<LSPServerType>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let Some(workspace_root) = self.root_for_workspace(file_path) else {
+        let Some(workspace_root) = self.workspace_root_for_lsp(file_path, ctx) else {
+            log::debug!(
+                "Skipping LSP spawn: no workspace root resolved for {}",
+                file_path.display()
+            );
             return;
         };
 
-        let supported_servers = CodeSettings::as_ref(ctx)
+        // 并集: 用户在全局设置里强制启用的 + 仓库相关且已安装的。
+        let enabled_global = CodeSettings::as_ref(ctx)
             .enabled_lsp_servers
             .value()
-            .iter()
-            .copied()
+            .clone();
+        let union = merge_enabled_and_auto_start(enabled_global, auto_start_servers);
+
+        let supported_servers = union
+            .into_iter()
             .filter(|server_type| match server_type_filter {
                 Some(filter) => *server_type == filter,
                 None => true,
@@ -811,7 +862,6 @@ impl PersistedWorkspace {
         }
 
         let mut new_servers_available_to_start = false;
-        let workspace_root = workspace_root.to_path_buf();
 
         for server in supported_servers {
             if LspManagerModel::as_ref(ctx).server_registered_and_started(
@@ -912,42 +962,68 @@ impl PersistedWorkspace {
 
     /// Executes an LSP task after capturing the interactive shell PATH.
     /// This is the main entry point for LSP operations that need the full PATH.
+    ///
+    /// 对 Spawn:
+    /// 1. 同步解出 workspace_root。拿不到就不起动(避免仅打个零散文件就启 LSP)。
+    /// 2. 在后台 task 同时拿 PATH 和"仓库相关 + 已安装"的 server 集合。
+    /// 3. 应用到 `handle_spawn_lsp`,以 enabled_lsp_servers ∩ auto_start_servers 启动。
     #[cfg(feature = "local_fs")]
     pub fn execute_lsp_task(&mut self, task: LspTask, ctx: &mut ModelContext<Self>) {
-        // For Spawn tasks, check synchronously whether there are any enabled LSP
-        // servers for this workspace before kicking off the expensive interactive
-        // shell PATH capture.
-        if let LspTask::Spawn { ref file_path, .. } = task {
-            let has_servers = self.root_for_workspace(file_path).is_some()
-                && !CodeSettings::as_ref(ctx)
-                    .enabled_lsp_servers
-                    .value()
-                    .is_empty();
-            if !has_servers {
-                return;
-            }
-        }
+        // Spawn 同步预检:拿不到 workspace_root 就跳过。这避免为任意孤立
+        // 文件/未索引路径 spawn LSP。不再以全局 `enabled_lsp_servers` 是否为空
+        // 作为早返回条件 —— 现在 BYOP 默认依赖 auto-start 路径。
+        let workspace_root_for_spawn = match &task {
+            LspTask::Spawn { file_path, .. } => match self.workspace_root_for_lsp(file_path, ctx) {
+                Some(root) => Some(root),
+                None => return,
+            },
+            LspTask::Install { .. } => None,
+        };
 
-        // Get a future for the interactive PATH
+        // 拿 interactive PATH 的 future。
         let path_future = LocalShellState::handle(ctx).update(ctx, |shell_state, ctx| {
             shell_state.get_interactive_path_env_var(ctx)
         });
 
-        ctx.spawn(path_future, move |me, path_env_var, ctx| match task {
-            LspTask::Install {
-                file_path,
-                repo_root,
-                server_type,
-            } => {
-                me.handle_install_lsp(file_path, repo_root, server_type, path_env_var, ctx);
-            }
-            LspTask::Spawn {
-                file_path,
-                server_type,
-            } => {
-                me.handle_spawn_lsp(&file_path, server_type, path_env_var, ctx);
-            }
-        });
+        // Spawn 路径额外要拿 `auto_start_servers` —— 仓库相关 ∩ 已安装。
+        // 这是 BYOP “装好就用”的核心路径:不再要求用户去设置里手动勾 Enable。
+        let http_client = ServerApiProvider::as_ref(ctx).get_http_client();
+        let combined = async move {
+            let path_env_var = path_future.await;
+            let auto_start_servers = match workspace_root_for_spawn {
+                Some(workspace_root) => {
+                    detect_auto_start_servers(&workspace_root, path_env_var.clone(), http_client)
+                        .await
+                }
+                None => Vec::new(),
+            };
+            (path_env_var, auto_start_servers)
+        };
+
+        ctx.spawn(
+            combined,
+            move |me, (path_env_var, auto_start_servers), ctx| match task {
+                LspTask::Install {
+                    file_path,
+                    repo_root,
+                    server_type,
+                } => {
+                    me.handle_install_lsp(file_path, repo_root, server_type, path_env_var, ctx);
+                }
+                LspTask::Spawn {
+                    file_path,
+                    server_type,
+                } => {
+                    me.handle_spawn_lsp(
+                        &file_path,
+                        server_type,
+                        path_env_var,
+                        auto_start_servers,
+                        ctx,
+                    );
+                }
+            },
+        );
     }
 
     /// Kicks off detection (deduped via Checking) and returns the best immediate status.
@@ -976,18 +1052,28 @@ impl PersistedWorkspace {
 
     pub fn detect_lsp_workspace_status(
         &mut self,
-        _repo_root: PathBuf,
+        repo_root: PathBuf,
         server_type: LSPServerType,
         ctx: &mut ModelContext<Self>,
     ) -> LspRepoStatus {
-        // Determine enablement
-        let is_enabled = CodeSettings::as_ref(ctx)
+        // 1. 用户在全局 `enabled_lsp_servers` 里强制启用 → 直接 Enabled。
+        if CodeSettings::as_ref(ctx)
             .enabled_lsp_servers
             .value()
-            .contains(&server_type);
+            .contains(&server_type)
+        {
+            return LspRepoStatus::Enabled;
+        }
 
-        // If enabled, do not check installation.
-        if is_enabled {
+        // 2. 该 server 已经为当前 repo_root(或其祖先)启动并运行中 → Enabled。
+        // 这覆盖了 BYOP auto-start 路径:server 是被 `handle_spawn_lsp` 自动拉起来的,
+        // 设置里不会出现,但 LSP manager 能看到。这样 footer 首次渲染就不
+        // 会错误地跳出 "Enable xxx" CTA。
+        if LspManagerModel::as_ref(ctx)
+            .server_for_path(&repo_root, ctx)
+            .map(|server| server.as_ref(ctx).server_type() == server_type)
+            .unwrap_or(false)
+        {
             return LspRepoStatus::Enabled;
         }
 
@@ -1039,6 +1125,56 @@ impl PersistedWorkspace {
     }
 }
 
+/// 合并“全局强制启用”和“仓库相关 ∩ 已安装”两个集合,保持原顺序去重。
+///
+/// 选择 Vec + `contains` 而不是 HashSet 是因为 `LSPServerType` 的变体数量很少
+/// (当前 5 个),线性扫描反而更便宜,也保证了输出顺序可预测、便于测试。
+#[cfg(feature = "local_fs")]
+fn merge_enabled_and_auto_start(
+    enabled_global: Vec<LSPServerType>,
+    auto_start_servers: Vec<LSPServerType>,
+) -> Vec<LSPServerType> {
+    let mut merged = enabled_global;
+    for server_type in auto_start_servers {
+        if !merged.contains(&server_type) {
+            merged.push(server_type);
+        }
+    }
+    merged
+}
+
+/// 异步探测哪些 LSP server 应该为该 workspace 自动启动。
+///
+/// 返回集合 = 仓库相关 (`should_suggest_for_repo` 返 true)
+///   ∩ 已安装(`is_installed` 返 true)。
+///
+/// 这个函数是纯异步、不需要 `&self` 或 ctx,方便在后台 task 里调用。调用
+/// 者需要提供与 PATH 一致的环境(主要是 gopls 需要 `go` 可见)。
+#[cfg(feature = "local_fs")]
+async fn detect_auto_start_servers(
+    workspace_root: &Path,
+    path_env_var: Option<String>,
+    http_client: std::sync::Arc<http_client::Client>,
+) -> Vec<LSPServerType> {
+    let executor = lsp::CommandBuilder::new(path_env_var);
+    let mut auto_start = Vec::new();
+    for server_type in LSPServerType::all() {
+        let candidate = server_type.candidate(http_client.clone());
+        // 顺序上先查“仓库相关”再查“是否安装”:大多数仓库不会同时命中多语言,
+        // 提前过滤可以减少 is_installed 的 spawn 检测(尤其是走 PATH 的那些)。
+        if !candidate
+            .should_suggest_for_repo(workspace_root, &executor)
+            .await
+        {
+            continue;
+        }
+        if candidate.is_installed(&executor).await {
+            auto_start.push(server_type);
+        }
+    }
+    auto_start
+}
+
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 pub fn all_working_directories(app: &AppContext) -> HashSet<PathBuf> {
     let mut working_directories = HashSet::new();
@@ -1057,3 +1193,7 @@ pub fn all_working_directories(app: &AppContext) -> HashSet<PathBuf> {
     }
     working_directories
 }
+
+#[cfg(test)]
+#[path = "persisted_workspace_tests.rs"]
+mod tests;
