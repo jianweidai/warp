@@ -12664,6 +12664,16 @@ impl TerminalView {
             .selection_to_string(semantic_selection, inverted, ctx)
     }
 
+    /// Gets the selected text from AI rich content blocks, if any.
+    fn selected_text_from_ai_rich_content(&self, ctx: &AppContext) -> Option<String> {
+        self.rich_content_views.iter().find_map(|rich_content| {
+            rich_content
+                .ai_block_metadata()
+                .and_then(|metadata| metadata.ai_block_handle.as_ref(ctx).selected_text(ctx))
+                .filter(|selection| !selection.is_empty())
+        })
+    }
+
     /// Gets the selected text from the terminal input editor, if any.
     pub fn selected_text_from_input(&self, ctx: &AppContext) -> Option<String> {
         let text = self
@@ -14621,6 +14631,13 @@ impl TerminalView {
             }
         }
 
+        // Then check if there's selected text in regular AI rich content blocks.
+        if let Some(selected_text) = self.selected_text_from_ai_rich_content(ctx) {
+            ctx.clipboard()
+                .write(ClipboardContent::plain_text(selected_text));
+            return;
+        }
+
         // Then check if there's selected text in the cloud mode error screen
         let error_selected_text = self
             .ambient_agent_view_model
@@ -16466,6 +16483,14 @@ impl TerminalView {
 
     fn maybe_copy_selection_to_clipboard(&mut self, ctx: &mut ViewContext<Self>) {
         let selection_settings = SelectionSettings::handle(ctx);
+        if let Some(selected) = self.selected_text_from_ai_rich_content(ctx) {
+            selection_settings.update(ctx, |selection_settings, ctx| {
+                selection_settings
+                    .maybe_copy_on_select(ClipboardContent::plain_text(selected), ctx);
+            });
+            return;
+        }
+
         let semantic_selection = SemanticSelection::as_ref(ctx);
         let model = self.model.lock();
         if let Some(selected) =
@@ -19006,13 +19031,20 @@ impl TerminalView {
     fn context_menu_copy_selected_text(&mut self, ctx: &mut ViewContext<Self>) {
         {
             send_telemetry_from_ctx!(TelemetryEvent::ContextMenuCopySelectedText, ctx);
-            let semantic_selection = SemanticSelection::as_ref(ctx);
-            let model = self.model.lock();
-            if let Some(selected_text) =
-                model.selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
-            {
+            if let Some(selected_text) = self.selected_text_from_ai_rich_content(ctx) {
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(selected_text));
+            } else {
+                let semantic_selection = SemanticSelection::as_ref(ctx);
+                let model = self.model.lock();
+                if let Some(selected_text) = model.selection_to_string(
+                    semantic_selection,
+                    self.is_inverted_blocklist(ctx),
+                    ctx,
+                ) {
+                    ctx.clipboard()
+                        .write(ClipboardContent::plain_text(selected_text));
+                }
             }
         }
         self.close_context_menu(ctx, true);

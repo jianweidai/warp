@@ -1083,14 +1083,29 @@ impl AgentProvidersWidget {
             },
             appearance,
         );
-        let fetch_button = Self::render_card_button(
-            crate::t!("settings-agent-providers-fetch-from-api"),
-            row.fetch_button_state.clone(),
-            AISettingsPageAction::FetchAgentProviderModels {
-                provider_id: provider.id.clone(),
-            },
-            appearance,
-        );
+        let provider_id_for_fetch = provider.id.clone();
+        let base_url_editor_for_fetch = row.base_url_editor.clone();
+        let api_key_editor_for_fetch = row.api_key_editor.clone();
+        let fetch_button = appearance
+            .ui_builder()
+            .button(ButtonVariant::Secondary, row.fetch_button_state.clone())
+            .with_style(UiComponentStyles {
+                font_size: Some(CARD_BUTTON_FONT_SIZE),
+                padding: Some(Coords::uniform(CARD_BUTTON_PADDING)),
+                ..Default::default()
+            })
+            .with_centered_text_label(crate::t!("settings-agent-providers-fetch-from-api"))
+            .build()
+            .on_click(move |ctx, app, _| {
+                let base_url = base_url_editor_for_fetch.as_ref(app).buffer_text(app);
+                let api_key = api_key_editor_for_fetch.as_ref(app).buffer_text(app);
+                ctx.dispatch_typed_action(AISettingsPageAction::FetchAgentProviderModels {
+                    provider_id: provider_id_for_fetch.clone(),
+                    base_url,
+                    api_key,
+                });
+            })
+            .finish();
         let sync_models_dev_button = Self::render_card_button(
             crate::t!("settings-agent-providers-sync-models-dev"),
             row.sync_models_dev_button_state.clone(),

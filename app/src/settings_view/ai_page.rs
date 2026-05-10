@@ -2329,6 +2329,8 @@ pub enum AISettingsPageAction {
     },
     FetchAgentProviderModels {
         provider_id: String,
+        base_url: String,
+        api_key: String,
     },
     /// 触发一次 models.dev 目录加载(磁盘缓存 + 必要时网络刷新)。Providers 子页打开即触发。
     EnsureModelsDevLoaded,
@@ -3271,15 +3273,38 @@ impl TypedActionView for AISettingsPageView {
                 });
                 ctx.notify();
             }
-            AISettingsPageAction::FetchAgentProviderModels { provider_id } => {
+            AISettingsPageAction::FetchAgentProviderModels {
+                provider_id,
+                base_url,
+                api_key,
+            } => {
                 let provider_id = provider_id.clone();
+                let base_url = base_url.clone();
+                let api_key = api_key.clone();
+
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let mut providers = settings.agent_providers.value().clone();
+                    if let Some(p) = providers.iter_mut().find(|p| p.id == provider_id) {
+                        p.base_url = base_url.clone();
+                    }
+                    let _ = settings.agent_providers.set_value(providers, ctx);
+                });
+                crate::ai::agent_providers::AgentProviderSecrets::handle(ctx).update(
+                    ctx,
+                    |secrets, ctx| {
+                        secrets.set(&provider_id, api_key.clone(), ctx);
+                    },
+                );
+
                 let providers = AISettings::as_ref(ctx).agent_providers.value().clone();
                 let Some(provider) = providers.into_iter().find(|p| p.id == provider_id) else {
                     return;
                 };
-                let api_key = crate::ai::agent_providers::AgentProviderSecrets::as_ref(ctx)
-                    .get(&provider_id)
-                    .map(str::to_owned);
+                let api_key = if api_key.trim().is_empty() {
+                    None
+                } else {
+                    Some(api_key)
+                };
                 let client = http_client::Client::new();
                 let provider_id_for_handler = provider_id.clone();
                 ctx.spawn(
