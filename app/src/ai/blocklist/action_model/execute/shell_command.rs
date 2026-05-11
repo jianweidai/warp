@@ -40,6 +40,8 @@ use crate::{send_telemetry_from_ctx, TelemetryEvent};
 
 use super::{ActionExecution, AnyActionExecution, ExecuteActionInput, PreprocessActionInput};
 
+const FORCED_SHORT_POLL_DURATION: Duration = Duration::from_secs(5);
+
 /// Text returned to the agent for `run_shell_command` / related tools.
 ///
 /// Prefer unobfuscated grid text; some shells / timing paths leave the primary serialization empty
@@ -71,6 +73,38 @@ fn agent_shell_command_block_output(block: &Block) -> String {
         .unwrap_or_default()
 }
 
+fn should_force_short_polling_for_command(command: &str) -> bool {
+    let command = command.to_ascii_lowercase();
+    command.contains("journalctl")
+        || command.contains("launchctl print")
+        || command.contains("log show")
+        || command.contains("find /")
+        || command.contains("du /")
+        || command.contains("du -")
+        || command.contains("tail -f")
+        || command.contains("tcpdump")
+        || command.contains("dmesg")
+        || command.contains('|')
+        || command.contains("&&")
+        || command.contains("||")
+        || command.contains(';')
+}
+
+fn force_short_polling_delay_for_command(
+    command: &str,
+    delay: Option<ShellCommandDelay>,
+) -> Option<ShellCommandDelay> {
+    if !should_force_short_polling_for_command(command) {
+        return delay;
+    }
+
+    let duration = match delay {
+        Some(ShellCommandDelay::Duration(duration)) => duration.min(FORCED_SHORT_POLL_DURATION),
+        Some(ShellCommandDelay::OnCompletion) | None => FORCED_SHORT_POLL_DURATION,
+    };
+    Some(ShellCommandDelay::Duration(duration))
+}
+
 pub struct ShellCommandExecutor {
     active_session: ModelHandle<ActiveSession>,
     block_finished_senders: HashMap<BlockSelector, oneshot::Sender<()>>,
@@ -86,10 +120,14 @@ pub struct ShellCommandExecutor {
 
 impl ShellCommandExecutor {
     pub const MAX_WAIT_DURATION: Duration = Duration::from_secs(2);
-    /// Maximum delay we will honor for any agent-requested wait. Applies both  
-    /// to finite `ShellCommandDelay::Duration` requests and to  
-    /// `ShellCommandDelay::OnCompletion`, which would otherwise wait indefinitely.  
-    pub const MAX_AGENT_DELAY_DURATION: Duration = Duration::from_secs(120);
+    /// Maximum delay we will honor for any agent-requested wait. Applies both
+    /// to finite `ShellCommandDelay::Duration` requests and to
+    /// `ShellCommandDelay::OnCompletion`, which would otherwise wait indefinitely.
+    ///
+    /// OpenWarp:这里要保守一些。很多系统诊断命令会输出很大或运行很久,如果
+    /// agent 选择 `OnCompletion`,用户会感觉整个 agent 卡住。较短的上限能让
+    /// agent 更快拿到 snapshot,再决定继续轮询、停止或把控制权交还用户。
+    pub const MAX_AGENT_DELAY_DURATION: Duration = Duration::from_secs(20);
 
     pub fn new(
         active_session: ModelHandle<ActiveSession>,
@@ -259,12 +297,6 @@ impl ShellCommandExecutor {
         // Determine the action we want to take based on the input.
         let action_id = input.action.id.clone();
 
-        let command = model
-            .block_list()
-            .active_block()
-            .command_with_secrets_unobfuscated(false)
-            .clone();
-
         let handle = ctx.handle();
         match &input.action.action {
             AIAgentActionType::RequestCommandOutput {
@@ -404,11 +436,13 @@ impl ShellCommandExecutor {
                         },
                     ));
                 }
+                let command = block.command_with_secrets_unobfuscated(false);
+                let delay = force_short_polling_delay_for_command(&command, delay.clone());
                 drop(model);
 
                 let block_selector = BlockSelector::Id(block_id.clone());
                 ActionExecution::new_async(
-                    self.action_result_future(block_selector.clone(), delay.clone()),
+                    self.action_result_future(block_selector.clone(), delay),
                     move |result, ctx| {
                         // Remove the senders from the maps.
                         if let Some(handle) = handle.upgrade(ctx) {
@@ -944,3 +978,7 @@ enum ActionResult {
     Cancelled,
     BlockNotFound,
 }
+
+#[cfg(test)]
+#[path = "shell_command_tests.rs"]
+mod tests;

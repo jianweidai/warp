@@ -160,10 +160,12 @@ pub static WRITE_TO_LONG_RUNNING_SHELL_COMMAND: OpenAiTool = OpenAiTool {
 #[derive(Debug, Deserialize)]
 struct ReadArgs {
     command_id: String,
-    /// "on_completion"(默认)或 number(秒数 → Duration)
+    /// 不填时默认短轮询,避免模型无意中等待长命令完成。
     #[serde(default)]
     delay_seconds: Option<u64>,
 }
+
+const DEFAULT_READ_SNAPSHOT_DELAY_SECONDS: u64 = 5;
 
 fn read_parameters() -> Value {
     json!({
@@ -175,7 +177,7 @@ fn read_parameters() -> Value {
             },
             "delay_seconds": {
                 "type": "integer",
-                "description": "可选: 在指定秒数后返回当前 snapshot;不填则等到命令完成才返回。",
+                "description": "可选: 在指定秒数后返回当前 snapshot;不填默认 5 秒短轮询。只有非常确定命令马上结束时才传更长时间。",
                 "minimum": 0
             }
         },
@@ -187,13 +189,13 @@ fn read_parameters() -> Value {
 fn read_from_args(args: &str) -> Result<api::message::tool_call::Tool> {
     let parsed: ReadArgs = serde_json::from_str(args)?;
     use api::message::tool_call::read_shell_command_output::Delay;
-    let delay = match parsed.delay_seconds {
-        Some(secs) => Delay::Duration(prost_types::Duration {
-            seconds: secs as i64,
-            nanos: 0,
-        }),
-        None => Delay::OnCompletion(()),
-    };
+    let delay_seconds = parsed
+        .delay_seconds
+        .unwrap_or(DEFAULT_READ_SNAPSHOT_DELAY_SECONDS);
+    let delay = Delay::Duration(prost_types::Duration {
+        seconds: delay_seconds as i64,
+        nanos: 0,
+    });
     Ok(api::message::tool_call::Tool::ReadShellCommandOutput(
         api::message::tool_call::ReadShellCommandOutput {
             command_id: parsed.command_id,

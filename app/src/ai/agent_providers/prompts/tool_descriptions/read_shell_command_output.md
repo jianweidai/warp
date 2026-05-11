@@ -9,5 +9,7 @@ The returned snapshot contains:
 
 Typical loop:
 1. Start a server / watcher with `run_shell_command(wait_until_complete=false)`.
-2. Use this tool to poll output until you see a "ready"-style line.
+2. Use this tool with a short `delay_seconds` value (usually 5-10 seconds) to poll output until you see a "ready"-style line.
 3. Move on to running the next step (tests, requests, etc.) in parallel.
+
+Do not wait for command completion when the command may be slow, verbose, or continuous. For commands like `journalctl`, `find`, `du`, `launchctl print`, build logs, dev servers, watchers, or anything with a large pipeline, prefer short polling snapshots so the agent can keep responding.

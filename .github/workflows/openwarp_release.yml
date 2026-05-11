@@ -1,4 +1,4 @@
-# OpenWarp 发布流水线 — 在 openWarp 分支上 push tag (v*) 即触发
+# OpenWarp 发布流水线 — push 到 release 分支、push tag (v*) 或手动触发时运行
 #
 # 与上游 create_release.yml 的差异:
 # - 仅 macOS arm64 + Windows x64 + Linux x86_64(AppImage),
@@ -18,9 +18,12 @@
 name: OpenWarp Release
 
 # PR 验证由 .github/workflows/pr-check.yml 负责(Linux cargo check)。
-# 本 workflow 只在 push tag / 手动 dispatch 时跑全量三平台打包,避免 PR 跑 ~3h 浪费。
+# 本 workflow 只在 release 分支 push / push tag / 手动 dispatch 时跑全量三平台打包,
+# 避免 PR 跑 ~3h 浪费。
 on:
   push:
+    branches:
+      - release
     tags:
       - "v*"
   workflow_dispatch:
@@ -262,6 +265,7 @@ jobs:
         with:
           name: ${{ needs.prepare_metadata.outputs.release_name }}
           tag_name: ${{ needs.prepare_metadata.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
           body: ${{ needs.prepare_metadata.outputs.release_body }}
           draft: false
           prerelease: false
