@@ -17,13 +17,12 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use warpui::AppContext;
 
-use crate::server::cloud_objects::update_manager::InitiatedBy;
 use crate::{
     ai::document::ai_document_model::AIDocumentId,
     appearance::Appearance,
     cloud_object::{
-        CloudModelType, CloudObjectEventEntrypoint, CreateCloudObjectResult, CreateObjectRequest,
-        GenericCloudObject, GenericServerObject, ObjectType, Owner, Revision, ServerCloudObject,
+        CloudModelType, CreateCloudObjectResult, CreateObjectRequest, GenericCloudObject,
+        GenericServerObject, ObjectType, Owner, Revision, ServerCloudObject,
         UpdateCloudObjectResult,
     },
     drive::{
@@ -34,9 +33,10 @@ use crate::{
     server::{
         ids::{ServerId, SyncId},
         server_api::object::ObjectClient,
-        sync_queue::{QueueItem, SerializedModel},
     },
 };
+
+use crate::cloud_object::SerializedModel;
 
 /// Serialized representation of a notebook for sync queue
 /// The AIDocumentID and ConversationID are stored here to avoid polluting the
@@ -98,42 +98,6 @@ impl CloudModelType for CloudNotebookModel {
 
     fn bulk_upsert_event(objects: &[CloudNotebook]) -> ModelEvent {
         ModelEvent::UpsertNotebooks(objects.to_vec())
-    }
-
-    fn create_object_queue_item(
-        &self,
-        notebook: &CloudNotebook,
-        entrypoint: CloudObjectEventEntrypoint,
-        initiated_by: InitiatedBy,
-    ) -> Option<QueueItem> {
-        if let SyncId::ClientId(client_id) = notebook.id {
-            let title = Some(notebook.model().display_name())
-                .filter(|name| !name.is_empty())
-                .map(Arc::new);
-
-            let serialized_model = Some(Arc::new(notebook.model().serialized()));
-
-            return Some(QueueItem::CreateObject {
-                object_type: self.object_type(),
-                owner: notebook.permissions.owner,
-                id: client_id,
-                title,
-                serialized_model,
-                initial_folder_id: notebook.metadata.folder_id,
-                entrypoint,
-                initiated_by,
-            });
-        }
-        None
-    }
-
-    fn update_object_queue_item(
-        &self,
-        _revision_ts: Option<Revision>,
-        _notebook: &CloudNotebook,
-    ) -> Option<QueueItem> {
-        // OpenWarp: notebooks are local-only, never enqueued to the cloud sync queue.
-        None
     }
 
     fn should_update_after_server_conflict(&self) -> bool {

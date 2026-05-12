@@ -110,7 +110,8 @@ pub enum SettingsPageViewHandle {
     About(ViewHandle<AboutPageView>),
     Code(ViewHandle<CodeSettingsPageView>),
     Teams(ViewHandle<TeamsPageView>),
-    OzCloudAPIKeys(ViewHandle<super::platform_page::PlatformPageView>),
+    // OpenWarp Wave 3-1:`OzCloudAPIKeys` variant 随 `platform_page` 一同物理删。
+    // 云端 API key 管理 UI 完全代表 Warp Inc 云端账号,与 BYOP 无关。
     Privacy(ViewHandle<PrivacyPageView>),
     Warpify(ViewHandle<WarpifyPageView>),
     Referrals(ViewHandle<ReferralsPageView>),
@@ -132,7 +133,7 @@ impl SettingsPageViewHandle {
             About(view_handle) => ChildView::new(view_handle).finish(),
             Code(view_handle) => ChildView::new(view_handle).finish(),
             Teams(view_handle) => ChildView::new(view_handle).finish(),
-            OzCloudAPIKeys(view_handle) => ChildView::new(view_handle).finish(),
+            // OpenWarp Wave 3-1:`OzCloudAPIKeys` arm 随 `platform_page` 一同物理删。
             Privacy(view_handle) => ChildView::new(view_handle).finish(),
             Warpify(view_handle) => ChildView::new(view_handle).finish(),
             Referrals(view_handle) => ChildView::new(view_handle).finish(),

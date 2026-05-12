@@ -1,4 +1,4 @@
-use alias_bar::{AliasBar, AliasBarEvent};
+﻿use alias_bar::{AliasBar, AliasBarEvent};
 use argument_editor::{ArgumentEditorRow, DEFAULT_ARGUMENT_PREFIX};
 use env_var_selector::{EnvVarSelector, EnvVarSelectorEvent};
 use itertools::Itertools;
@@ -15,7 +15,7 @@ use url::Url;
 use crate::{
     ai::blocklist::secret_redaction::find_secrets_in_text,
     appearance::Appearance,
-    auth::{auth_state::AuthState, AuthStateProvider},
+    auth::{AuthState, AuthStateProvider},
     cloud_object::{
         breadcrumbs::ContainingObject,
         model::{

@@ -1594,10 +1594,8 @@ impl AgentInputFooter {
 
         match &self.cli_voice_input_state {
             CLIVoiceInputState::Stopped => {
-                if !crate::ai::AIRequestUsageModel::as_ref(ctx).can_request_voice() {
-                    self.show_cli_voice_error_toast(crate::t!("voice-input-limit-reached"), ctx);
-                    return;
-                }
+                // OpenWarp(Phase 3c A1):删除 `AIRequestUsageModel::can_request_voice`
+                // 额度闸。本地化后语音输入不受云端额度限制，统一可发送。
 
                 let session_result = voice_input::VoiceInput::handle(ctx)
                     .update(ctx, |voice_input, ctx| {

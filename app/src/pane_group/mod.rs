@@ -15,9 +15,9 @@ use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel, AIDo
 use crate::ai::execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId};
 use crate::ai::llms::LLMId;
 use crate::ai::restored_conversations::RestoredAgentConversations;
-use crate::auth::auth_manager::AuthManager;
-use crate::auth::auth_view_modal::AuthViewVariant;
+use crate::auth::AuthManager;
 use crate::auth::AuthStateProvider;
+use crate::auth::AuthViewVariant;
 use crate::cloud_object::Space;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
@@ -173,7 +173,6 @@ pub use pane::env_var_collection_pane::EnvVarCollectionPane;
 pub use pane::environment_management_pane::EnvironmentManagementPane;
 pub use pane::execution_profile_editor_pane::ExecutionProfileEditorPane;
 pub use pane::file_pane::FilePane;
-pub use pane::network_log_pane::NetworkLogPane;
 pub use pane::notebook_pane::NotebookPane;
 pub use pane::settings_pane::SettingsPane;
 pub use pane::terminal_pane::TerminalPane;
@@ -696,10 +695,6 @@ pub enum Event {
     },
     RunTabConfigSkill {
         path: PathBuf,
-    },
-    /// Request to open LSP logs in a terminal pane
-    OpenLspLogs {
-        log_path: PathBuf,
     },
     FreeTierLimitCheckTriggered,
     #[cfg(not(target_family = "wasm"))]
@@ -1837,26 +1832,6 @@ impl PaneGroup {
                 // in the left panel.
                 Err(anyhow::anyhow!(
                     "SSH server pane should not have been persisted, as it cannot be restored"
-                ))
-            }
-            LeafContents::NetworkLog => {
-                // Network log panes are intentionally not restored. Two
-                // reasons:
-                //
-                // 1. The in-memory log starts empty on each launch, so a
-                //    restored pane would display a blank editor anyway.
-                // 2. More importantly, persisting the pane's contents would
-                //    effectively regress back to a persisted, on-disk
-                //    network log (via the SQLite app-state database) on app
-                //    shutdown, defeating the purpose of moving the log off
-                //    disk in the first place.
-                //
-                // `save_pane_state` in `persistence/sqlite.rs` skips network
-                // log panes entirely, so reaching this arm indicates a
-                // programmer error on the persistence side. Users reopen the
-                // pane on demand via Privacy settings or the keybinding.
-                Err(anyhow::anyhow!(
-                    "Network log pane should not have been persisted, as it cannot be restored"
                 ))
             }
             LeafContents::GetStarted => {

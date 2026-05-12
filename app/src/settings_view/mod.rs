@@ -27,7 +27,6 @@ use crate::{
 use about_page::AboutPageView;
 use ai_page::{AISettingsPageAction, AISettingsPageEvent, AISettingsPageView, AISubpage};
 use appearance_page::{AppearancePageAction, AppearanceSettingsPageView};
-use code_page::CodeSubpage;
 use code_page::{CodeSettingsPageAction, CodeSettingsPageEvent};
 use environments_page::EnvironmentsPageView;
 use features_page::{FeaturesPageView, FeaturesSettingsPageEvent};
@@ -91,8 +90,8 @@ pub mod mcp_servers;
 pub mod mcp_servers_page;
 mod nav;
 pub mod pane_manager;
-mod platform;
-mod platform_page;
+// OpenWarp Wave 3-1:`platform` / `platform_page` 随 `OzCloudAPIKeys` settings 入口 +
+// Warp Inc 云端 API key 管理 UI 一同物理删。
 mod privacy;
 mod privacy_page;
 mod referrals_page;
@@ -162,7 +161,6 @@ pub enum SettingsViewEvent {
     Pane(PaneEvent),
     StartResize,
     CheckForUpdate,
-    LaunchNetworkLogging,
     OpenWarpDrive,
     SignupAnonymousUser,
     ShowToast {
@@ -172,9 +170,6 @@ pub enum SettingsViewEvent {
     OpenAIFactCollection,
     OpenMCPServerCollection,
     OpenExecutionProfileEditor(ClientProfileId),
-    OpenLspLogs {
-        log_path: PathBuf,
-    },
     OpenProjectRulesPane {
         rule_paths: Vec<PathBuf>,
     },
@@ -211,17 +206,16 @@ pub enum SettingsSection {
     AgentProviders,
     Knowledge,
     ThirdPartyCLIAgents,
-    /// Internal backing-page identifier for CodeSettingsPageView. Multiple subpages
-    /// (CodeIndexing, EditorAndCodeReview) share this single backing page,
-    /// so this variant is needed as the key in `settings_pages`.
-    /// External callers should navigate to a specific subpage instead.
+    /// Internal backing-page identifier for CodeSettingsPageView. EditorAndCodeReview
+    /// is currently the only sub-page label, but we keep `Code` as the backing-page
+    /// key so that page lookup still works after the LSP-management subpage was
+    /// removed.
     Code,
-    // ── Code umbrella subpages ──
-    CodeIndexing,
     EditorAndCodeReview,
     // ── Cloud platform umbrella subpages ──
     CloudEnvironments,
-    OzCloudAPIKeys,
+    // OpenWarp Wave 3-1:`OzCloudAPIKeys` enum variant 随 Warp Inc API key 管理 UI
+    // 一同物理删。
 }
 
 use crate::util::bindings::custom_tag_to_keystroke;
@@ -252,12 +246,11 @@ impl Display for SettingsSection {
                 crate::t!("settings-section-third-party-cli-agents")
             }
             SettingsSection::Code => crate::t!("settings-section-code"),
-            SettingsSection::CodeIndexing => crate::t!("settings-section-code-indexing"),
             SettingsSection::EditorAndCodeReview => {
                 crate::t!("settings-section-editor-and-code-review")
             }
             SettingsSection::CloudEnvironments => crate::t!("settings-section-cloud-environments"),
-            SettingsSection::OzCloudAPIKeys => crate::t!("settings-section-oz-cloud-api-keys"),
+            // OpenWarp Wave 3-1:`OzCloudAPIKeys` Display arm 随 variant 一同物理删。
         };
         write!(f, "{s}")
     }
@@ -266,7 +259,7 @@ impl Display for SettingsSection {
 impl SettingsSection {
     /// Returns true if this section is a subpage under any umbrella.
     pub fn is_subpage(&self) -> bool {
-        self.is_ai_subpage() || self.is_code_subpage() || self.is_cloud_platform_subpage()
+        self.is_ai_subpage() || self.is_cloud_platform_subpage()
     }
 
     /// Returns true if this section is a subpage under the "Agents" umbrella.
@@ -282,14 +275,9 @@ impl SettingsSection {
         )
     }
 
-    /// Returns true if this section is a subpage under the "Code" umbrella.
-    pub fn is_code_subpage(&self) -> bool {
-        matches!(self, Self::CodeIndexing | Self::EditorAndCodeReview)
-    }
-
     /// Returns true if this section is a subpage under the "Cloud platform" umbrella.
     pub fn is_cloud_platform_subpage(&self) -> bool {
-        matches!(self, Self::CloudEnvironments | Self::OzCloudAPIKeys)
+        matches!(self, Self::CloudEnvironments)
     }
 
     /// Maps subpage sections back to their parent page section for page lookup.
@@ -300,10 +288,10 @@ impl SettingsSection {
             Self::AgentMCPServers => Self::MCPServers,
             // All other AI subpages render within the AI page.
             s if s.is_ai_subpage() => Self::AI,
-            // Code subpages render within the Code page.
-            s if s.is_code_subpage() => Self::Code,
-            // CloudEnvironments and OzCloudAPIKeys ARE their own backing pages
-            // (1:1 mapping), so they return themselves.
+            // EditorAndCodeReview is the only label still pointing at the Code page.
+            Self::EditorAndCodeReview => Self::Code,
+            // CloudEnvironments 是自身如独立 backing page。
+            // OpenWarp Wave 3-1:`OzCloudAPIKeys` 随 UI 一同物理删。
             other => *other,
         }
     }
@@ -320,14 +308,9 @@ impl SettingsSection {
         ]
     }
 
-    /// The ordered list of Code subpage sections shown under the Code umbrella.
-    pub fn code_subpages() -> &'static [Self] {
-        &[Self::CodeIndexing, Self::EditorAndCodeReview]
-    }
-
     /// The ordered list of Cloud platform subpage sections.
     pub fn cloud_platform_subpages() -> &'static [Self] {
-        &[Self::CloudEnvironments, Self::OzCloudAPIKeys]
+        &[Self::CloudEnvironments]
     }
 }
 
@@ -357,10 +340,9 @@ impl FromStr for SettingsSection {
             "Providers" | "AgentProviders" => Ok(Self::AgentProviders),
             "Knowledge" => Ok(Self::Knowledge),
             "Third party CLI agents" | "ThirdPartyCLIAgents" => Ok(Self::ThirdPartyCLIAgents),
-            "LSP Management" | "Indexing and projects" | "CodeIndexing" => Ok(Self::CodeIndexing),
             "Editor and Code Review" | "EditorAndCodeReview" => Ok(Self::EditorAndCodeReview),
             "CloudEnvironments" => Ok(Self::CloudEnvironments),
-            "Oz Cloud API Keys" | "OzCloudAPIKeys" => Ok(Self::OzCloudAPIKeys),
+            // OpenWarp Wave 3-1:`OzCloudAPIKeys` 随 UI 一同物理删。
             _ => Err(()),
         }
     }
@@ -472,8 +454,6 @@ pub mod flags {
     pub const IS_ACTIVE_AI_ENABLED: &str = "IsActiveAIEnabled";
     pub const IS_VOICE_INPUT_ENABLED: &str = "IsVoiceInputEnabled";
     pub const IS_BLOCK_AI_SUMMARIES_ENABLED: &str = "IsBlockAISummariesEnabled";
-    pub const IS_CODEBASE_INDEXING_ENABLED: &str = "IsCodebaseIndexingEnabled";
-    pub const IS_AUTOINDEXING_ENABLED: &str = "IsAutoIndexingEnabled";
     pub const LIGATURE_RENDERING_CONTEXT_FLAG: &str = "Ligature_Rendering_Enabled";
     pub const HAS_SETTINGS_TO_IMPORT_FLAG: &str = "HasSettingsToImport";
     /// The user's setting enabled UDI, but we may show a classic input (e.g. ssh/subshell warpification)
@@ -980,7 +960,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::Keybindings(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Teams(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Warpify(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::OzCloudAPIKeys(handle) => $ctx.update_view(handle, $update),
+            // OpenWarp Wave 3-1:`OzCloudAPIKeys` arm 随 variant 一同物理删。
             SettingsPageViewHandle::Privacy(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Referrals(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::AI(handle) => $ctx.update_view(handle, $update),
@@ -1132,10 +1112,7 @@ impl SettingsView {
             me.handle_warp_drive_page_event(event, ctx);
         });
 
-        let platform_page_handle = ctx.add_typed_action_view(platform_page::PlatformPageView::new);
-        ctx.subscribe_to_view(&platform_page_handle, |me, _, event, ctx| {
-            me.handle_platform_page_event(event, ctx);
-        });
+        // OpenWarp Wave 3-1:`platform_page_handle` 随 `platform_page` 一同物理删。
 
         // MCP Servers page
         let mcp_servers_page_handle = ctx.add_typed_action_view(MCPServersSettingsPageView::new);
@@ -1179,7 +1156,7 @@ impl SettingsView {
             SettingsPage::new(appearance_page_handle),
             SettingsPage::new(features_page_handle),
             SettingsPage::new(keybindings_handle),
-            SettingsPage::new(platform_page_handle),
+            // OpenWarp Wave 3-1:`platform_page_handle` 随 UI 一同物理删。
             SettingsPage::new(warpify_page_handle),
             SettingsPage::new(referrals_page_handle),
             SettingsPage::new(show_blocks_view_handle),
@@ -1201,23 +1178,17 @@ impl SettingsView {
                 "Agents",
                 SettingsSection::ai_subpages().to_vec(),
             )),
-            SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Code",
-                vec![
-                    SettingsSection::CodeIndexing,
-                    SettingsSection::EditorAndCodeReview,
-                ],
-            )),
+            SettingsNavItem::Page(SettingsSection::Code),
             SettingsNavItem::Page(SettingsSection::Appearance),
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Warpify),
             // 去中心化分支:Privacy 页恢复入口。原以为"全部内容是云端能力"判断有误——
             // 页内核心 widget 多数纯本地:SecretRedactionWidget(敏感信息混淆,本地正则)、
-            // NetworkLogWidget(网络日志控制台,本地代理)、DataManagementWidget(外链)、
-            // PrivacyPolicyWidget(外链)。CloudConversationStorageWidget 的本地开关
-            // 控制是否把 AI 对话推到云,P4c 已 stub 掉同步外发。AppAnalyticsWidget /
-            // CrashReportsWidget 自身有 should_render 在 OpenWarp 自动隐藏。
+            // DataManagementWidget(外链)、PrivacyPolicyWidget(外链)。
+            // CloudConversationStorageWidget 的本地开关控制是否把 AI 对话推到云,
+            // P4c 已 stub 掉同步外发。AppAnalyticsWidget / CrashReportsWidget 自身
+            // 有 should_render 在 OpenWarp 自动隐藏。
             SettingsNavItem::Page(SettingsSection::Privacy),
             SettingsNavItem::Page(SettingsSection::About),
         ];
@@ -1225,7 +1196,6 @@ impl SettingsView {
         // Resolve the initial page: map internal backing-page sections to their default subpage.
         let initial_page = match page {
             Some(SettingsSection::AI) => SettingsSection::WarpAgent,
-            Some(SettingsSection::Code) => SettingsSection::CodeIndexing,
             Some(section) if section.is_subpage() => section,
             other => other.unwrap_or_default(),
         };
@@ -1353,18 +1323,6 @@ impl SettingsView {
                             self.subpage_filter.insert(subpage_section, match_data);
                         }
                     }
-                    // Do the same for Code subpages.
-                    for &subpage_section in SettingsSection::code_subpages() {
-                        if let Some(subpage) = CodeSubpage::from_section(subpage_section) {
-                            self.code_page_handle.update(ctx, |view, ctx| {
-                                view.set_active_subpage(Some(subpage), ctx);
-                            });
-                            let match_data = self
-                                .code_page_handle
-                                .update(ctx, |view, ctx| view.update_filter(&search_query, ctx));
-                            self.subpage_filter.insert(subpage_section, match_data);
-                        }
-                    }
                 } else {
                     // Search cleared: restore umbrella expanded state.
                     for item in &mut self.nav_items {
@@ -1379,13 +1337,10 @@ impl SettingsView {
 
                 // Run the standard page-level filter (needed for non-subpage pages
                 // and for subpages with their own backing page like AgentMCPServers).
-                // Switch AI/Code to all-widgets mode so standalone backing page
+                // Switch AI to all-widgets mode so the standalone backing-page
                 // filter is correct for pages_filter.
                 if is_search_active {
                     self.ai_page_handle.update(ctx, |view, ctx| {
-                        view.set_active_subpage(None, ctx);
-                    });
-                    self.code_page_handle.update(ctx, |view, ctx| {
                         view.set_active_subpage(None, ctx);
                     });
                 }
@@ -1408,13 +1363,6 @@ impl SettingsView {
                     if current.is_ai_subpage() && current != SettingsSection::AgentMCPServers {
                         if let Some(subpage) = AISubpage::from_section(current) {
                             self.ai_page_handle.update(ctx, |view, ctx| {
-                                view.set_active_subpage(Some(subpage), ctx);
-                            });
-                        }
-                    }
-                    if current.is_code_subpage() {
-                        if let Some(subpage) = CodeSubpage::from_section(current) {
-                            self.code_page_handle.update(ctx, |view, ctx| {
                                 view.set_active_subpage(Some(subpage), ctx);
                             });
                         }
@@ -1678,9 +1626,6 @@ impl SettingsView {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            PrivacyPageViewEvent::LaunchNetworkLogging => {
-                ctx.emit(SettingsViewEvent::LaunchNetworkLogging);
-            }
             PrivacyPageViewEvent::ShowAddRegexModal => {
                 // Modal rendering is handled in get_modal_content_for_page
                 ctx.notify();
@@ -1692,22 +1637,8 @@ impl SettingsView {
         }
     }
 
-    fn handle_platform_page_event(
-        &mut self,
-        event: &platform_page::PlatformPageViewEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            platform_page::PlatformPageViewEvent::ShowCreateApiKeyModal => {
-                // Modal rendering is handled in get_modal_content_for_page
-                ctx.notify();
-            }
-            platform_page::PlatformPageViewEvent::HideCreateApiKeyModal => {
-                // Modal rendering is handled in get_modal_content_for_page
-                ctx.notify();
-            }
-        }
-    }
+    // OpenWarp Wave 3-1:`handle_platform_page_event` 随 `platform_page::PlatformPageViewEvent`
+    // 一同物理删。
 
     fn handle_mcp_servers_page_event(
         &mut self,
@@ -1796,11 +1727,6 @@ impl SettingsView {
             CodeSettingsPageEvent::SignupAnonymousUser => {
                 ctx.emit(SettingsViewEvent::SignupAnonymousUser)
             }
-            CodeSettingsPageEvent::OpenLspLogs { log_path } => {
-                ctx.emit(SettingsViewEvent::OpenLspLogs {
-                    log_path: log_path.clone(),
-                });
-            }
             CodeSettingsPageEvent::OpenProjectRules { rule_paths } => {
                 ctx.emit(SettingsViewEvent::OpenProjectRulesPane {
                     rule_paths: rule_paths.clone(),
@@ -1843,7 +1769,6 @@ impl SettingsView {
         // External callers should use subpage variants directly.
         let section = match section {
             SettingsSection::AI => SettingsSection::WarpAgent,
-            SettingsSection::Code => SettingsSection::CodeIndexing,
             other => other,
         };
 
@@ -1882,13 +1807,6 @@ impl SettingsView {
             if section.is_ai_subpage() && section != SettingsSection::AgentMCPServers {
                 let subpage = AISubpage::from_section(section);
                 self.ai_page_handle.update(ctx, |view, ctx| {
-                    view.set_active_subpage(subpage, ctx);
-                });
-            }
-            // Code subpages: update the Code page's subpage mode.
-            if section.is_code_subpage() {
-                let subpage = CodeSubpage::from_section(section);
-                self.code_page_handle.update(ctx, |view, ctx| {
                     view.set_active_subpage(subpage, ctx);
                 });
             }
@@ -1945,7 +1863,7 @@ impl SettingsView {
             SettingsPageViewHandle::Features(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Appearance(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::About(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::OzCloudAPIKeys(v) => v.as_ref(app).should_render(app),
+            // OpenWarp Wave 3-1:`OzCloudAPIKeys` arm 随 variant 一同物理删。
             SettingsPageViewHandle::Privacy(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Warpify(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Referrals(v) => v.as_ref(app).should_render(app),
@@ -2164,9 +2082,7 @@ impl SettingsView {
             SettingsPageViewHandle::Privacy(view) => {
                 view.read(app, |view, _| view.get_modal_content())
             }
-            SettingsPageViewHandle::OzCloudAPIKeys(view) => {
-                view.read(app, |view, _| view.get_modal_content())
-            }
+            // OpenWarp Wave 3-1:`OzCloudAPIKeys` modal arm 随 UI 一同物理删。
             SettingsPageViewHandle::MCPServers(view) => {
                 view.read(app, |view, _| view.get_modal_content(app))
             }

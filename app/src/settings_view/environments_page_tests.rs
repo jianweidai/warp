@@ -6,9 +6,9 @@ use crate::ai::cloud_environments::{
 use crate::auth::AuthStateProvider;
 use crate::network::NetworkStatus;
 use crate::root_view::CreateEnvironmentArg;
+use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ClientId, ServerId, SyncId};
 use crate::server::server_api::ServerApiProvider;
-use crate::server::{cloud_objects::update_manager::UpdateManager, sync_queue::SyncQueue};
 use crate::settings::PrivacySettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::terminal::view::init_environment::mode_selector::EnvironmentSetupModeSelector;
@@ -102,7 +102,6 @@ fn init_env_page_view_test_models(app: &mut App) {
 
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
     app.add_singleton_model(|_| GitHubAuthNotifier::new());

@@ -28,7 +28,7 @@ use crate::{
     auth::AuthStateProvider,
     cloud_object::model::persistence::CloudModel,
     network::NetworkStatus,
-    server::{cloud_objects::update_manager::UpdateManager, sync_queue::SyncQueue},
+    server::cloud_objects::update_manager::UpdateManager,
     settings::{AgentModeCommandExecutionPredicate, PrivacySettings},
     test_util::settings::initialize_settings_for_tests_with_mode,
     workspaces::{
@@ -75,7 +75,6 @@ fn initialize_permissions_test_with_mode(
     let permissions = app.add_singleton_model(BlocklistAIPermissions::new);
     let terminal_view_id = EntityId::new();
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(UpdateManager::mock);

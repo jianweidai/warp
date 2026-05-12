@@ -1,5 +1,7 @@
 pub mod ai;
-pub mod auth;
+// OpenWarp Wave 3-1:`server_api/auth.rs`(AuthClient trait + impl)整文件物理删,
+// `AuthManager` 改为本地 stub。两个 HTTP header 常量直接迁入本文件,供 ambient agent
+// 路径继续使用(实际运行时永远不命中,因 OpenWarp 已无云端 ambient workload)。
 pub mod block;
 pub mod harness_support;
 pub mod integrations;
@@ -7,54 +9,41 @@ pub mod managed_secrets;
 pub mod object;
 pub(crate) mod presigned_upload;
 pub mod referral;
-pub mod team;
-pub mod workspace;
+// OpenWarp(Wave 3-2):`team` / `workspace` 两个 client trait 与 impl 已物理删,
+// 在 app/ 外 0 消费,UserWorkspaces / TeamUpdateManager 已在 Phase 5 本地化为 no-op。
 
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::predict::generate_ai_input_suggestions;
-use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsRequest;
-use crate::ai::predict::generate_am_query_suggestions;
-use crate::ai::predict::generate_am_query_suggestions::GenerateAMQuerySuggestionsRequest;
-use crate::ai::predict::predict_am_queries::{PredictAMQueriesRequest, PredictAMQueriesResponse};
-use crate::ai::voice::transcribe::{TranscribeRequest, TranscribeResponse};
-use crate::auth::auth_manager::AuthManager;
-use crate::auth::auth_state::AuthState;
+use crate::auth::AuthState;
 use crate::server::graphql::default_request_options;
-use crate::server::server_api::presigned_upload::HttpStatusError;
 use ai::AIClient;
-use auth::{AuthClient, AMBIENT_WORKLOAD_TOKEN_HEADER, CLOUD_AGENT_ID_HEADER};
-use base64::prelude::BASE64_URL_SAFE;
-use base64::Engine;
 use block::BlockClient;
 use channel_versions::ChannelVersions;
 use futures::StreamExt;
 use object::ObjectClient;
-use prost::Message;
 use referral::ReferralsClient;
-use team::TeamClient;
 use url::Url;
-use warp_core::context_flag::ContextFlag;
 use warp_core::errors::{register_error, AnyhowErrorExt, ErrorExt};
 use warp_managed_secrets::client::ManagedSecretsClient;
 use warpui::{r#async::BoxFuture, ModelContext};
-use workspace::WorkspaceClient;
 
-use crate::server::telemetry::TelemetryApi;
+// OpenWarp Wave 5-3:原 `AMBIENT_WORKLOAD_TOKEN_HEADER` 随 `generate_multi_agent_output` 云端
+// SSE 路径 stub 化后在全仓库 0 消费,物理删。`get_or_create_ambient_workload_token`
+// 在 W3-1 后永返 `None`,代码中不再有 header 注入点。
+
+/// Header key for the cloud agent task ID attached to requests from ambient agents.
+pub const CLOUD_AGENT_ID_HEADER: &str = "X-Warp-Cloud-Agent-ID";
+
 use crate::settings::PrivacySettingsSnapshot;
 use crate::settings_view;
 
 use crate::ChannelState;
 
-use ::http::header::CONTENT_LENGTH;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, FixedOffset};
 use instant::Instant;
 use parking_lot::{Mutex, RwLock};
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::fmt;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use warp_core::telemetry::TelemetryEvent;
@@ -125,10 +114,7 @@ pub struct CloudAgentCapacityError {
     pub running_agents: i32,
 }
 
-#[derive(Deserialize, Debug)]
-struct TimeResponse {
-    current_time: DateTime<FixedOffset>,
-}
+// OpenWarp Wave 5-3:`TimeResponse` 随云端 `/current_time` GET 接口 stub 化后 0 消费,物理删。
 
 #[derive(Debug, Clone)]
 pub struct ServerTime {
@@ -362,34 +348,16 @@ cfg_if::cfg_if! {
 /// An event related to the server API itself (and not a particular API call).
 /// Most errors should be handled in callbacks to individual APIs, rather than sent over the
 /// server API channel.
-#[derive(Clone)]
+//
+// OpenWarp Wave 6-1:`NeedsReauth` 与 `AccessTokenRefreshed` 两个 variant 在 Wave 3-1
+// 删 auth 子系统后已无任何 emit 点(全仓 0 处 `try_send`),订阅链(`wire_auth_token_rotation`
+// + `ServerApiProvider::new` 内 match 分支)随之物理删。
+#[derive(Clone, Debug)]
 pub enum ServerApiEvent {
     /// We made a staging API call that was blocked, which may indicate a firewall misconfiguration.
     StagingAccessBlocked,
-    /// The user's access token was invalid, so they need to reauth before they can make
-    /// requests to warp-server.
-    NeedsReauth,
     /// The user's account has been disabled.
     UserAccountDisabled,
-    /// The current bearer token was refreshed.
-    AccessTokenRefreshed {
-        #[cfg_attr(target_family = "wasm", allow(dead_code))]
-        token: String,
-    },
-}
-
-impl fmt::Debug for ServerApiEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::StagingAccessBlocked => f.write_str("StagingAccessBlocked"),
-            Self::NeedsReauth => f.write_str("NeedsReauth"),
-            Self::UserAccountDisabled => f.write_str("UserAccountDisabled"),
-            Self::AccessTokenRefreshed { .. } => f
-                .debug_struct("AccessTokenRefreshed")
-                .field("token", &"<redacted>")
-                .finish(),
-        }
-    }
 }
 
 /// An API wrapper struct with methods to requests to warp-server.
@@ -401,13 +369,16 @@ pub struct ServerApi {
     client: Arc<http_client::Client>,
     auth_state: Arc<AuthState>,
     event_sender: async_channel::Sender<ServerApiEvent>,
-    // TODO(jeff): Make `TelemetryApi` another type of client, and move it off `ServerApi`.
-    telemetry_api: TelemetryApi,
+    // OpenWarp Wave 5-2:`telemetry_api: TelemetryApi` 字段物理删 — TelemetryApi
+    // 以全 no-op 实现存在于 `server/telemetry/mod.rs`，但 `flush_telemetry_events` /
+    // `flush_and_persist_events` / `flush_persisted_events_to_rudder` 均 0 外部消费，
+    // `send_telemetry_event` 仅 view.rs:25525 一处调用，直接折 no-op 到本 struct。
     last_server_time: Arc<Mutex<Option<ServerTime>>>,
-    // We technically use OAuth2 for headless device authentication.
-    oauth_client: self::auth::OAuth2Client,
-    /// Cached ambient workload token for requests from ambient agents.
-    ambient_workload_token: Arc<Mutex<Option<warp_isolation_platform::WorkloadToken>>>,
+    // OpenWarp Wave 3-1:原 `oauth_client: self::auth::OAuth2Client` 随 auth.rs 一同
+    // 物理删。CLI headless device auth 路径在 OpenWarp 下线。
+    // OpenWarp Wave 6-1:`ambient_workload_token: Arc<Mutex<Option<WorkloadToken>>>` 字段
+    // 物理删 — 仅在 `new` / `new_for_test` 初始化为 `None`,永无 get/set;
+    // `get_or_create_ambient_workload_token` 实现已是 `Ok(None)` 不读字段。
     /// The ambient agent task ID for requests from cloud agents.
     ambient_agent_task_id: Arc<RwLock<Option<AmbientAgentTaskId>>>,
     /// The source of agent runs (e.g. CLI, GitHub Action). Set once at startup and immutable.
@@ -425,25 +396,20 @@ impl ServerApi {
     ) -> Self {
         // We generate a random user ID for evals so we can run evals in parallel.
         #[cfg(feature = "agent_mode_evals")]
-        let eval_user_id = {
+        let oauth_user_id = {
             use rand::Rng;
             Some(EVAL_USER_IDS[rand::thread_rng().gen_range(0..EVAL_USER_IDS.len())])
         };
-
-        let oauth_client = Self::create_oauth_client();
 
         Self {
             client: Arc::new(http_client::Client::new()),
             auth_state,
             event_sender,
-            telemetry_api: TelemetryApi::new(),
             last_server_time: Arc::new(Mutex::new(None)),
-            oauth_client,
-            ambient_workload_token: Arc::new(Mutex::new(None)),
             ambient_agent_task_id: Arc::new(RwLock::new(None)),
             agent_source,
             #[cfg(feature = "agent_mode_evals")]
-            eval_user_id,
+            eval_user_id: oauth_user_id,
         }
     }
 
@@ -451,16 +417,11 @@ impl ServerApi {
     fn new_for_test() -> Self {
         let (tx, _) = async_channel::unbounded();
 
-        let oauth_client = Self::create_oauth_client();
-
         Self {
             client: Arc::new(http_client::Client::new_for_test()),
             auth_state: Arc::new(AuthState::new_for_test()),
             event_sender: tx,
-            telemetry_api: TelemetryApi::new(),
             last_server_time: Arc::new(Mutex::new(None)),
-            oauth_client,
-            ambient_workload_token: Arc::new(Mutex::new(None)),
             ambient_agent_task_id: Arc::new(RwLock::new(None)),
             agent_source: None,
             #[cfg(feature = "agent_mode_evals")]
@@ -474,12 +435,13 @@ impl ServerApi {
     }
 
     /// Returns ambient agent headers to attach to requests.
-    async fn ambient_agent_headers(&self) -> Result<Vec<(&'static str, String)>> {
-        let workload_token = self
-            .get_or_create_ambient_workload_token()
-            .await
-            .context("Failed to get ambient workload token")?;
-
+    ///
+    /// OpenWarp Wave 4-1:原调用 `get_or_create_ambient_workload_token().await`
+    /// 获取 `X-Warp-Ambient-Workload-Token` header,W3-1 后该 token 代库永返 None
+    /// (企业号 federation 路径随 auth.rs 下线),直接删掉该分支。`task_id`
+    /// + `agent_source` header 仍按设置动态附加,运行时 BYOP 路径可能仍会
+    /// `set_ambient_agent_task_id(Some(_))`。
+    fn ambient_agent_headers(&self) -> Vec<(&'static str, String)> {
         let task_id = self
             .ambient_agent_task_id
             .read()
@@ -488,29 +450,31 @@ impl ServerApi {
 
         let agent_source = self.agent_source.as_ref().map(|s| s.as_str().to_string());
 
-        Ok(workload_token
-            .map(|token| (AMBIENT_WORKLOAD_TOKEN_HEADER, token))
+        task_id
+            .map(|id| (CLOUD_AGENT_ID_HEADER, id))
             .into_iter()
-            .chain(task_id.map(|id| (CLOUD_AGENT_ID_HEADER, id)))
             .chain(agent_source.map(|s| (AGENT_SOURCE_HEADER, s)))
-            .collect())
+            .collect()
     }
 
-    fn create_oauth_client() -> self::auth::OAuth2Client {
-        let server_root =
-            Url::parse(&ChannelState::server_root_url()).expect("Server root URL must be valid");
+    // OpenWarp Wave 3-1:`create_oauth_client` 随 `OAuth2Client` 类型与
+    // `request_device_code` / `exchange_device_access_token` RPC 一同物理删。
+    // CLI headless device auth 路径在 OpenWarp 下线。
 
-        let token_url = server_root
-            .join("/api/v1/oauth/token")
-            .expect("Invalid token URL");
+    // OpenWarp Wave 3-1:`get_or_refresh_access_token()` 原是 `AuthClient` trait method。
+    // trait 随 auth.rs 一同物理删,但 ServerApi 内部仍有 ~9 处调用。
+    // 这里提供本地 stub:bearer token 取 AuthState 本地缓存(使用 `crate::auth::AuthToken`
+    // 作为返回类型以兼容原 trait 签名)。
+    //
+    // OpenWarp Wave 6-1:`get_or_create_ambient_workload_token` 全仓 0 外部消费 + 实现
+    // 已是 `Ok(None)`,物理删。
 
-        let device_url = server_root
-            .join("/api/v1/oauth/device/auth")
-            .expect("Invalid device URL");
-
-        oauth2::basic::BasicClient::new(oauth2::ClientId::new("warp-cli".to_string()))
-            .set_token_uri(oauth2::TokenUrl::from_url(token_url))
-            .set_device_authorization_url(oauth2::DeviceAuthorizationUrl::from_url(device_url))
+    pub async fn get_or_refresh_access_token(&self) -> Result<crate::auth::AuthToken> {
+        Ok(self
+            .auth_state
+            .credentials()
+            .map(|c| c.bearer_token())
+            .unwrap_or(crate::auth::AuthToken::NoAuth))
     }
 
     pub fn send_graphql_request<'a, QF, O: warp_graphql::client::Operation<QF> + Send + 'a>(
@@ -533,22 +497,22 @@ impl ServerApi {
 
         Box::pin(async move {
             let operation_name = operation.operation_name().map(Cow::into_owned);
-            let auth_token = self
-                .get_or_refresh_access_token()
-                .await
-                .context("Failed to get access token for GraphQL request")?;
+            // OpenWarp Wave 3-1:原 `self.get_or_refresh_access_token().await` (AuthClient method)
+            // 随 auth.rs 一同物理删。本地化后 bearer token 直接读 AuthState 缓存,
+            // OpenWarp 路径下绝大多数为 `None`。
+            let auth_token = self.auth_state.get_access_token_ignoring_validity();
 
             #[cfg(feature = "agent_mode_evals")]
             let mut headers = headers;
             #[cfg(not(feature = "agent_mode_evals"))]
             let mut headers = std::collections::HashMap::new();
 
-            for (name, value) in self.ambient_agent_headers().await? {
+            for (name, value) in self.ambient_agent_headers() {
                 headers.insert(name.to_string(), value);
             }
 
             let options = warp_graphql::client::RequestOptions {
-                auth_token: auth_token.bearer_token(),
+                auth_token,
                 timeout,
                 headers,
                 ..default_request_options()
@@ -611,516 +575,94 @@ impl ServerApi {
         })
     }
 
-    /// Sends a GET request to a public API endpoint.
-    ///
-    /// # Arguments
-    /// * `path` - Endpoint path relative to `/api/v1` (e.g., "agent/tasks/{task_id}")
-    async fn get_public_api<R>(&self, path: &str) -> Result<R>
-    where
-        R: serde::de::DeserializeOwned,
-    {
-        let response = self.get_public_api_response(path).await?;
-        let url = response.url().clone();
-        response
-            .json::<R>()
-            .await
-            .with_context(|| format!("Failed to deserialize response from {url}"))
-    }
-
-    /// Sends a GET request to a public API endpoint and returns the raw response on success.
-    ///
-    /// Unlike [`get_public_api`], this does not attempt JSON deserialization on the
-    /// response body, allowing the caller to decode it however they need.
-    async fn get_public_api_response(&self, path: &str) -> Result<http_client::Response> {
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .context("Failed to get access token for API request")?;
-
-        let url = format!("{}/api/v1/{}", ChannelState::server_root_url(), path);
-
-        let mut request = self.client.get(&url);
-        if let Some(token) = auth_token.as_bearer_token() {
-            request = request.bearer_auth(token);
-        }
-
-        for (name, value) in self.ambient_agent_headers().await? {
-            request = request.header(name, value);
-        }
-
-        let response = request
-            .send()
-            .await
-            .with_context(|| format!("Failed to send API request to {url}"))?;
-
-        if response.status().is_success() {
-            Ok(response)
-        } else {
-            // Put `HttpStatusError` in the error chain so shared retry classifiers
-            // (`is_transient_http_error`) can distinguish transient 5xx / 408 / 429
-            // from permanent 4xx without string-matching the Display output.
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            let status_err = HttpStatusError {
-                status: status.as_u16(),
-                body: body.clone(),
-            };
-            match serde_json::from_str::<ClientError>(&body) {
-                Ok(error_response) => {
-                    Err(anyhow::Error::new(status_err).context(error_response.error))
-                }
-                Err(_) => Err(anyhow::Error::new(status_err)
-                    .context(format!("API request failed with status {status}"))),
-            }
-        }
-    }
-
     /// Opens an SSE stream to the agent event-push endpoint.
     ///
-    /// The returned `EventSourceStream` yields `reqwest_eventsource::Event`
-    /// items until the connection closes or an error occurs. The caller is
-    /// responsible for reading the stream and handling reconnection.
-    ///
-    /// The stream is served by warp-server-rtc (not the main warp-server pool),
-    /// so the URL is built from `ChannelState::rtc_http_url()` rather than
-    /// `server_root_url()`.
+    /// OpenWarp Wave 5-3:本方法原走 RTC 云端 SSE 端点 (云端 RTC `/api/v1/agent/events/stream`)
+    /// 用于接收 cloud agent run 的事件推送。OpenWarp 已剩离云端 RTC pool,该 URL
+    /// 不可达 — 直接 stub 返回错误。两个消费方都 graceful 处理 Err:
+    /// - `ai/agent_sdk/ambient.rs:949`: 重连 retry 退避到最大重试后上抓,initial 连接
+    ///   失败直接传播 Err
+    /// - `ai/agent_events/driver.rs:126`: `.await?` 立即向上传播
     pub async fn stream_agent_events(
         &self,
-        run_ids: &[String],
-        since_sequence: i64,
+        _run_ids: &[String],
+        _since_sequence: i64,
     ) -> Result<http_client::EventSourceStream> {
-        debug_assert!(!run_ids.is_empty(), "run_ids must not be empty");
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .context("Failed to get access token for SSE stream")?;
-
-        let run_ids_param: String = run_ids
-            .iter()
-            .map(|id| format!("run_ids[]={}", urlencoding::encode(id)))
-            .collect::<Vec<_>>()
-            .join("&");
-        let url = format!(
-            "{}/api/v1/agent/events/stream?{run_ids_param}&since={since_sequence}",
-            ChannelState::rtc_http_url()
-        );
-
-        let mut request = self.client.get(&url);
-        if let Some(token) = auth_token.as_bearer_token() {
-            request = request.bearer_auth(token);
-        }
-
-        for (name, value) in self.ambient_agent_headers().await? {
-            request = request.header(name, value);
-        }
-
-        Ok(request.eventsource())
+        Err(anyhow!(
+            "Cloud agent event stream disabled in OpenWarp — RTC endpoint is removed"
+        ))
     }
 
-    /// Sends a POST request to a public API endpoint and returns the raw response on success.
-    async fn post_public_api_response<B>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> Result<http_client::Response>
-    where
-        B: Serialize,
-    {
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .context("Failed to get access token for API request")?;
+    // OpenWarp Wave 5-3:`get_public_api` / `get_public_api_response` /
+    // `post_public_api` / `post_public_api_response` / `post_public_api_unit` /
+    // `patch_public_api_unit` / `error_from_response` 七个 private helper 原为
+    // /api/v1/* HTTP REST 调用准备,server_api/* 8 个文件 stub 化后 0 外部消费,
+    // 整体物理删。需要权限代理 / X-Warp 错误码 / HttpStatusError 包装的 BYOP
+    // 路径依然会走 `send_graphql_request`(BYOP OAuth + cloud env image fetch),同路径与
+    // public-api 拆开。本次顺手删除 `HttpStatusError` 在 server_api.rs 内唯一
+    // 消费点后,外部 `presigned_upload.rs` 仅作为错误类型保留本体,import 需同步删。
 
-        let url = format!("{}/api/v1/{}", ChannelState::server_root_url(), path);
+    // OpenWarp Wave 4-1:`notify_login` (原向 /client/login 发生命令心跳) 0 消费方，物理删。
 
-        let mut request = self.client.post(&url).json(body);
-        if let Some(token) = auth_token.as_bearer_token() {
-            request = request.bearer_auth(token);
-        }
-
-        for (name, value) in self.ambient_agent_headers().await? {
-            request = request.header(name, value);
-        }
-
-        let response = request
-            .send()
-            .await
-            .with_context(|| format!("Failed to send API request to {url}"))?;
-
-        if response.status().is_success() {
-            Ok(response)
-        } else {
-            Err(Self::error_from_response(response).await)
-        }
-    }
-
-    /// Converts a non-success public API response into the most specific client error available.
-    async fn error_from_response(response: http_client::Response) -> anyhow::Error {
-        let status = response.status();
-        let is_at_capacity = response
-            .headers()
-            .get(WARP_ERROR_CODE_HEADER)
-            .and_then(|v| v.to_str().ok())
-            == Some(WARP_ERROR_CODE_AT_CAPACITY);
-        let is_out_of_credits = response
-            .headers()
-            .get(WARP_ERROR_CODE_HEADER)
-            .and_then(|v| v.to_str().ok())
-            == Some(WARP_ERROR_CODE_OUT_OF_CREDITS);
-
-        // Get the response text first since we may need to try multiple deserializations.
-        let response_text = response.text().await.unwrap_or_default();
-
-        // Check for AT_CAPACITY error code header.
-        if is_at_capacity {
-            if let Ok(capacity_error) =
-                serde_json::from_str::<CloudAgentCapacityError>(&response_text)
-            {
-                return capacity_error.into();
-            }
-        }
-        if status == StatusCode::TOO_MANY_REQUESTS && is_out_of_credits {
-            return AIApiError::QuotaLimit.into();
-        }
-
-        // Try to deserialize error response as { "error": "message" }
-        match serde_json::from_str::<ClientError>(&response_text) {
-            Ok(error_response) => error_response.into(),
-            Err(_) => anyhow!("API request failed with status {status}"),
-        }
-    }
-
-    /// Sends a POST request to a public API endpoint.
+    /// 向 远端 Rudderstack 发送 [`TelemetryEvent`]。
     ///
-    /// # Arguments
-    /// * `path` - Endpoint path relative to `/api/v1` (e.g., "agent/run")
-    /// * `body` - Request body to serialize as JSON
-    async fn post_public_api<B, R>(&self, path: &str, body: &B) -> Result<R>
-    where
-        B: Serialize,
-        R: serde::de::DeserializeOwned,
-    {
-        let response = self.post_public_api_response(path, body).await?;
-        let url = response.url().clone();
-        response
-            .json::<R>()
-            .await
-            .with_context(|| format!("Failed to deserialize response from {url}"))
-    }
-
-    /// Sends a POST request to a public API endpoint that returns no response body.
-    async fn post_public_api_unit<B>(&self, path: &str, body: &B) -> Result<()>
-    where
-        B: Serialize,
-    {
-        self.post_public_api_response(path, body).await?;
-        Ok(())
-    }
-
-    /// Sends a PATCH request to a public API endpoint that returns no response body.
-    async fn patch_public_api_unit<B>(&self, path: &str, body: &B) -> Result<()>
-    where
-        B: Serialize,
-    {
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .context("Failed to get access token for API request")?;
-
-        let url = format!("{}/api/v1/{}", ChannelState::server_root_url(), path);
-
-        let mut request = self.client.patch(&url).json(body);
-        if let Some(token) = auth_token.as_bearer_token() {
-            request = request.bearer_auth(token);
-        }
-
-        for (name, value) in self.ambient_agent_headers().await? {
-            request = request.header(name, value);
-        }
-
-        let response = request
-            .send()
-            .await
-            .with_context(|| format!("Failed to send API request to {url}"))?;
-
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(Self::error_from_response(response).await)
-        }
-    }
-
-    /// Sends an authenticated empty POST request to /client/login, which signals to the server
-    /// that the user is logged in.
-    pub async fn notify_login(&self) {
-        match self.get_or_refresh_access_token().await {
-            Ok(auth_token) => {
-                let url = format!("{}/client/login", ChannelState::server_root_url());
-                let mut request = self.client.post(&url);
-                if let Some(token) = auth_token.as_bearer_token() {
-                    request = request.bearer_auth(token);
-                }
-                request = request
-                    // Set the content-length header to 0 because the request has no body.
-                    // Otherwise, the server will return a 411 error. (In other cases, setting
-                    // content-type is sufficient (elides the content-length requirement), but
-                    // since this request has no body, it makes more sense to set content-length.
-                    .header(CONTENT_LENGTH, 0);
-
-                let response = request.send().await;
-                if let Err(err) = response {
-                    log::error!("Failed to send POST request to /client/login: {err:?}");
-                }
-            }
-            Err(err) => {
-                log::error!("Could not retrieve access token for notifying user login: {err:?}");
-            }
-        }
-    }
-
-    /// Synchronously sends a [`TelemetryEvent`] to the Rudderstack API. Prefer not to call this
-    /// directly, use the macros defined in crate::server::telemetry::macros. If telemetry is
-    /// disabled, this is a no-op.
+    /// OpenWarp Wave 5-2：Rudder 网络层在 Phase 4-2(commit 60e37e160)中已全部物理删。
+    /// 本方法仅为保留 `terminal/view.rs:25525` 一处现有调用点的调用签名兼容 —
+    /// 方法体仅做轻量类型检查 + drain，返回 `Ok(())`。后续如果以后只剩
+    /// 零 个调用点可连同该方法一同删。隔层的 `TelemetryApi` struct 与
+    /// `flush_telemetry_events` / `flush_and_persist_events` / `flush_persisted_events_to_rudder`
+    /// 均 0 外部消费 — 随本 PR 一起物理删。
     pub async fn send_telemetry_event(
         &self,
         event: impl TelemetryEvent,
-        settings_snapshot: PrivacySettingsSnapshot,
+        _settings_snapshot: PrivacySettingsSnapshot,
     ) -> Result<()> {
-        let user_id = self.auth_state.user_id();
-        let anonymous_id = self.auth_state.anonymous_id();
-        self.telemetry_api
-            .send_telemetry_event(user_id, anonymous_id, event, settings_snapshot)
-            .await
+        let _ = event.name();
+        Ok(())
     }
 
-    /// Drains all queued [`TelemetryEvent`]s into Rudderstack requests containing the corresponding
-    /// batch of events. Events are queued using the [`send_telemetry_from_ctx`] or
-    /// [`send_telemetry_from_app_ctx`] macros. If telemetry is disabled for the user, this flushes
-    /// the UI framework event queue and does nothing with them (no request is made).
-    ///
-    /// Returns the number of events that were flushed.
-    pub async fn flush_telemetry_events(
-        &self,
-        settings_snapshot: PrivacySettingsSnapshot,
-    ) -> Result<usize> {
-        self.telemetry_api.flush_events(settings_snapshot).await
-    }
+    // OpenWarp Wave 5-2：`flush_telemetry_events` 及 `flush_persisted_events_to_rudder` /
+    // `persist_telemetry_events` 等均 0 外部消费，随 `TelemetryApi` 一同物理删。
+    // 历史语义：本地落盘 telemetry batch 回放 → Rudderstack。
 
-    /// Sends a batched Rudder request containing events written to the file at `path`. This is a
-    /// no-op if telemetry is disabled.
-    pub async fn flush_persisted_events_to_rudder(
-        &self,
-        path: &Path,
-        settings_snapshot: PrivacySettingsSnapshot,
-    ) -> Result<()> {
-        self.telemetry_api
-            .flush_persisted_events_to_rudder(path, settings_snapshot)
-            .await
-    }
-
-    /// Writes all queued [`TelemetryEvent`]s to a file, limiting the number of written
-    /// events to `max_events`. Events are queued using the [`send_telemetry_from_ctx`] or
-    /// [`send_telemetry_from_app_ctx`] macros. If telemetry is disabled, no events are written to
-    /// disk.
-    pub fn persist_telemetry_events(
-        &self,
-        max_event_count: usize,
-        settings_snapshot: PrivacySettingsSnapshot,
-    ) -> Result<()> {
-        self.telemetry_api
-            .flush_and_persist_events(max_event_count, settings_snapshot)
-    }
-
-    /// Hits the /ai/generate_input_suggestions endpoint to get the predicted next action, based on past context.
-    pub async fn generate_ai_input_suggestions(
-        &self,
-        request: &GenerateAIInputSuggestionsRequest,
-    ) -> Result<generate_ai_input_suggestions::GenerateAIInputSuggestionsResponseV2, AIApiError>
-    {
-        let auth_token = self.get_or_refresh_access_token().await?;
-
-        let request_builder = self.client.post(format!(
-            "{}/ai/generate_input_suggestions",
-            ChannelState::server_root_url()
-        ));
-        let response = if let Some(token) = auth_token.as_bearer_token() {
-            request_builder.bearer_auth(token)
-        } else {
-            request_builder
-        }
-        .json(request)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-        Ok(response)
-    }
-
-    // OpenWarp:原 `get_relevant_files` 走仪家服务端 RAG。已随 outline / GetRelevantFilesController
-    // 下线推退。默认 BYOP 不走服务端 RAG。
-
-    /// Hits the /ai/generate_am_query_suggestions endpoint to get the predicted next query.
-    pub async fn generate_am_query_suggestions(
-        &self,
-        request: &GenerateAMQuerySuggestionsRequest,
-    ) -> Result<generate_am_query_suggestions::GenerateAMQuerySuggestionsResponse, AIApiError> {
-        let auth_token = self.get_or_refresh_access_token().await?;
-
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "agent_mode_evals")] {
-                let url = format!(
-                    "{}/agent-mode-evals/generate_am_query_suggestions",
-                    ChannelState::server_root_url()
-                );
-            } else {
-                let url = format!(
-                    "{}/ai/generate_am_query_suggestions",
-                    ChannelState::server_root_url()
-                );
-            }
-        }
-
-        let request_builder = self.client.post(url);
-        let response = if let Some(token) = auth_token.as_bearer_token() {
-            request_builder.bearer_auth(token)
-        } else {
-            request_builder
-        }
-        .json(request)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-        Ok(response)
-    }
-
-    pub async fn predict_am_queries(
-        &self,
-        request: &PredictAMQueriesRequest,
-    ) -> Result<PredictAMQueriesResponse, AIApiError> {
-        let auth_token = self.get_or_refresh_access_token().await?;
-        let request_builder = self.client.post(format!(
-            "{}/ai/predict_am_queries",
-            ChannelState::server_root_url()
-        ));
-        let response = if let Some(token) = auth_token.as_bearer_token() {
-            request_builder.bearer_auth(token)
-        } else {
-            request_builder
-        }
-        .json(request)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-        Ok(response)
-    }
-
-    /// 语音转写 — OpenWarp 已禁用。
-    ///
-    /// BYOP genai chat 协议无法承载音频流,且 OpenWarp 已剥离 Warp Inc 云端,
-    /// `/ai/transcribe` 端点不可达。直接返回 `Disabled`,UI 层显示禁用提示。
-    pub async fn transcribe(
-        &self,
-        _request: &TranscribeRequest,
-    ) -> Result<TranscribeResponse, TranscribeError> {
-        log::debug!("transcribe disabled in OpenWarp (BYOP cannot carry audio)");
-        Err(TranscribeError::Disabled)
-    }
+    // OpenWarp Wave 6-1:`pub async fn transcribe` 全仓 0 外部消费(语音 UI 走
+    // `Transcriber` trait,实现在 `voice/transcriber.rs`),物理删 + 同步清
+    // `TranscribeRequest` / `TranscribeResponse` import。`TranscribeError` enum 本身
+    // 保留,继续被 `voice/transcriber.rs` 消费。
 
     pub async fn generate_multi_agent_output(
         &self,
-        request: &warp_multi_agent_api::Request,
+        _request: &warp_multi_agent_api::Request,
     ) -> std::result::Result<AIOutputStream<warp_multi_agent_api::ResponseEvent>, Arc<AIApiError>>
     {
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .map_err(Into::into)
-            .map_err(Arc::new)?;
-
-        let is_passive = request.input.as_ref().is_some_and(|input| {
-            matches!(
-                input.r#type,
-                Some(warp_multi_agent_api::request::input::Type::GeneratePassiveSuggestions(_))
-            )
+        // OpenWarp Wave 5-3:`generate_multi_agent_output` 是云端 agent SSE 端点
+        // (`/ai/multi-agent` 与 `/ai/passive-suggestions`) 的唯一入口。OpenWarp 主走
+        // BYOP 路径(`crate::ai::agent_providers::chat_stream::generate_byop_output`),
+        // 本方法仅在 `byop_dispatch_info` 返回 `None` 时被调用作为 fallback,
+        // 但云端已剩离,fallback 会被 dns 拒绝 / 404 拒绝 — 直接 stub
+        // 为返回 `Disabled` 错误流。
+        //
+        // 所有消费点都通过 `take_until(cancellation_rx)` 或 channel 包装
+        // graceful 处理 stream Err:
+        // - `ai/agent/api/impl.rs:139` -> err event 走 channel
+        // - `blocklist/controller/response_stream.rs:269/375` -> response_stream_result
+        //   会走 retry/error handling
+        // - `blocklist/passive_suggestions/maa.rs:177` -> passive suggestion 提取到 None
+        //   后静默退出
+        //
+        // BYOP 主路径已配 provider 用户 → 不受影响(走不到本方法)。
+        // 未配 BYOP 用户 → 立即报错而非超时拒绝,UX 改进。
+        log::debug!("generate_multi_agent_output disabled in OpenWarp (BYOP-only)");
+        let error_stream = futures::stream::once(async {
+            Err(Arc::new(AIApiError::Other(anyhow!(
+                "Cloud multi-agent endpoint disabled in OpenWarp — configure a BYOP provider in Settings"
+            ))))
         });
-        let is_evals = cfg!(feature = "agent_mode_evals");
-        let url = format!(
-            "{}/{}/{}",
-            ChannelState::server_root_url(),
-            if is_evals { "agent-mode-evals" } else { "ai" },
-            if is_passive {
-                "passive-suggestions"
-            } else {
-                "multi-agent"
-            }
-        );
-
-        let ambient_workload_token = self
-            .get_or_create_ambient_workload_token()
-            .await
-            .map_err(Into::into)
-            .map_err(Arc::new)?;
-
-        let mut request_builder = self
-            .client
-            .post(url)
-            .proto(request)
-            .prevent_sleep("Agent Mode request in-progress");
-        if let Some(token) = auth_token.as_bearer_token() {
-            request_builder = request_builder.bearer_auth(token);
-        }
-
-        if let Some(token) = ambient_workload_token {
-            request_builder = request_builder.header(AMBIENT_WORKLOAD_TOKEN_HEADER, token);
-        }
-
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "agent_mode_evals")] {
-                let mut request = request_builder;
-                if let Some(eval_user_id) = self.eval_user_id {
-                    request = request.header(EVAL_USER_ID_HEADER, eval_user_id.to_string());
-                }
-            } else {
-                let request = request_builder;
-            }
-        }
-
-        let output_stream = request.eventsource().filter_map(|event| async {
-            let result = match event {
-                Ok(reqwest_eventsource::Event::Message(message_event)) => {
-                    match BASE64_URL_SAFE.decode(message_event.data.trim_matches('"')) {
-                        Ok(decoded_data) => {
-                            let action = warp_multi_agent_api::ResponseEvent::decode(
-                                decoded_data.as_slice(),
-                            );
-                            Some(action.map_err(|e| AIApiError::Other(anyhow::Error::from(e))))
-                        }
-                        Err(e) => Some(Err(AIApiError::Other(anyhow::Error::from(e)))),
-                    }
-                }
-                Ok(reqwest_eventsource::Event::Open) => None,
-                Err(err) => Some(Err(AIApiError::from_stream_error(
-                    "GenerateMultiAgentOutput",
-                    err,
-                )
-                .await)),
-            }
-            // Wrap errors in an Arc so that they're cloneable by downstream event
-            // handlers.
-            .map(|item| item.map_err(Arc::new));
-            result
-        });
-
         cfg_if::cfg_if! {
             if #[cfg(target_family = "wasm")] {
-                Ok(output_stream.boxed_local())
+                Ok(error_stream.boxed_local())
             } else {
-                Ok(output_stream.boxed())
+                Ok(error_stream.boxed())
             }
         }
     }
@@ -1141,36 +683,25 @@ impl ServerApi {
         &self.client
     }
 
+    /// 返回用于计算 autoupdate update-by 截止时间的「服务器时间」。
+    ///
+    /// OpenWarp Wave 5-3:原实现 GET `云端/current_time` 端点进行时钟同步,
+    /// OpenWarp 剩离云端 → 该端点不可达。唯一消费方 `root_view.rs::server_time_updated`
+    /// 是在 autoupdate ready + 有 `update_by` 时以服务器时间为准决定是否马上重启,
+    /// 不依赖时钟「权威」ⓓⓒⓓ。1987·仅为防本地时钟被用户手动拨后。OpenWarp
+    /// 环境下允许使用本地时钟 → 返回本地 [`Utc::now()`] 包装的 [`ServerTime`],
+    /// autoupdate 逻辑不变,且不再产生云端 HTTP 请求。
     pub async fn server_time(&self) -> Result<ServerTime> {
         if let Some(cached) = self.cached_server_time() {
             return Ok(cached);
         }
 
-        let time_endpoint = format!("{}/current_time", ChannelState::server_root_url());
-        log::info!("Sending server time request to {}", &time_endpoint);
-        let res = self.client.get(&time_endpoint).send().await?;
-
-        match res.status() {
-            StatusCode::OK => {
-                let time_response: TimeResponse = res.json().await?;
-                log::info!(
-                    "Received current time from server: {:?}",
-                    &time_response.current_time
-                );
-                let server_time = ServerTime {
-                    time_at_fetch: time_response.current_time,
-                    fetched_at: Instant::now(),
-                };
-                let res = Ok(server_time.clone());
-                self.set_server_time(server_time);
-
-                res
-            }
-            _ => {
-                let payload: ClientError = res.json().await?;
-                Err(anyhow!(payload).context("fetching time from server failed"))
-            }
-        }
+        let server_time = ServerTime {
+            time_at_fetch: chrono::Utc::now().into(),
+            fetched_at: Instant::now(),
+        };
+        self.set_server_time(server_time.clone());
+        Ok(server_time)
     }
 
     /// Fetches updated Warp Channel Versions from Warp Server. If it is the first such request of
@@ -1238,45 +769,15 @@ impl ServerApiProvider {
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         let (event_sender, event_receiver) = async_channel::bounded(10);
-        let mut server_api = ServerApi::new(auth_state.clone(), event_sender, agent_source);
+        let server_api = ServerApi::new(auth_state.clone(), event_sender, agent_source);
 
-        if ContextFlag::NetworkLogConsole.is_enabled() {
-            super::network_logging::init(
-                [
-                    Arc::get_mut(&mut server_api.client)
-                        .expect("guaranteed there is only one copy of client"),
-                    &mut server_api.telemetry_api.client,
-                ],
-                ctx,
-            );
-        }
-
+        // OpenWarp Wave 6-1:原 `NeedsReauth` 分支调 `AuthManager::set_needs_reauth(true)`,
+        // Wave 6-1 删 `ServerApiEvent::NeedsReauth` variant 后,剩余 variant 全部走
+        // re-emit 路径,match 简化为直传。`AuthManager::set_needs_reauth` 函数本体保留
+        // (`root_view.rs` web handoff 路径仍调,但已是 no-op)。
         ctx.spawn_stream_local(
             event_receiver,
-            move |_, event, ctx| {
-                match event {
-                    ServerApiEvent::UserAccountDisabled => {
-                        // We dispatch a global action here because the log out code requires
-                        // `server_api`, causing a circular model reference panic when it calls
-                        // `ServerApiProvider` to get access.
-                        // TODO: We should remove this pattern where `ServerApiProvider` responds
-                        // to events; it's prone to these sorts of circular reference issues.
-                        ctx.dispatch_global_action("app:log_out", ());
-                    }
-                    ServerApiEvent::NeedsReauth => {
-                        // AuthManager depends on a reference to ServerApi, so ServerApi can't easily
-                        // hold a ref to AuthManager. To get around this, we emit an event on ServerApi
-                        // and handle calling the AuthManager here instead.
-                        AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                            auth_manager.set_needs_reauth(true, ctx);
-                        });
-                    }
-                    // Re-emit the event for subscribers.
-                    // TODO: we probably want a different type for the event emitted to subscribers
-                    // from the one that's used for the async channel.
-                    _ => ctx.emit(event),
-                }
-            },
+            move |_, event, ctx| ctx.emit(event),
             |_, _| {},
         );
         Self {
@@ -1311,23 +812,14 @@ impl ServerApiProvider {
         self.server_api.clone()
     }
 
-    pub fn get_auth_client(&self) -> Arc<dyn AuthClient> {
-        self.server_api.clone()
-    }
+    // OpenWarp Wave 3-1:`get_auth_client()` 随 `AuthClient` trait 一同物理删,
+    // 所有外部原调用方改为本地 stub (返回 `AuthToken::NoAuth` / `Ok(())`)。
 
     pub fn get_referrals_client(&self) -> Arc<dyn ReferralsClient> {
         self.server_api.clone()
     }
 
     pub fn get_block_client(&self) -> Arc<dyn BlockClient> {
-        self.server_api.clone()
-    }
-
-    pub fn get_workspace_client(&self) -> Arc<dyn WorkspaceClient> {
-        self.server_api.clone()
-    }
-
-    pub fn get_team_client(&self) -> Arc<dyn TeamClient> {
         self.server_api.clone()
     }
 

@@ -43,7 +43,6 @@ use crate::ai::{
         StaticQueryType, UserQueryMode,
     },
     llms::LLMPreferences,
-    AIRequestUsageModel,
 };
 use crate::features::FeatureFlag;
 use crate::global_resource_handles::GlobalResourceHandlesProvider;
@@ -63,7 +62,6 @@ use crate::terminal::{
     ShellLaunchData,
 };
 use crate::workspaces::update_manager::TeamUpdateManager;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{send_telemetry_from_ctx, server::telemetry::TelemetryEvent};
 use anyhow::anyhow;
 use chrono::{DateTime, Local};
@@ -73,13 +71,12 @@ use pending_response_streams::PendingResponseStreams;
 use session_sharing_protocol::common::ParticipantId;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
 use warp_core::assertions::safe_assert;
 use warp_multi_agent_api::{
     client_action::{Action, UpdateTaskDescription},
     message, ClientAction, Task, ToolType,
 };
-use warpui::r#async::{SpawnedFutureHandle, Timer};
+use warpui::r#async::SpawnedFutureHandle;
 
 use super::orchestration_events::{OrchestrationEventService, OrchestrationEventServiceEvent};
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
@@ -2526,9 +2523,9 @@ impl BlocklistAIController {
                                     );
                                 },
                             );
-                            AIRequestUsageModel::handle(ctx).update(ctx, |model, ctx| {
-                                model.enable_buy_credits_banner(ctx);
-                            });
+                            // OpenWarp(Phase 3c A1):删除
+                            // `AIRequestUsageModel::enable_buy_credits_banner` 调用。
+                            // 本地化后 BYOP 场景下不存在"购买额外 credits"业务。
                         }
 
                         let mut renderable_error: RenderableAIError = e.as_ref().into();
@@ -2803,11 +2800,10 @@ impl BlocklistAIController {
                     stream_id,
                     conversation_id,
                 });
-                AIRequestUsageModel::handle(ctx).update(ctx, |request_usage_model, ctx| {
-                    request_usage_model.refresh_request_usage_async(ctx);
-                });
-
-                self.maybe_refresh_ai_overages(ctx);
+                // OpenWarp(Phase 3c A1):删除
+                // `AIRequestUsageModel::refresh_request_usage_async` 与
+                // `maybe_refresh_ai_overages` 调用。两者本质都是服务端计量同步 RPC，
+                // 本地化后无作用。
             }
         }
     }
@@ -2830,37 +2826,9 @@ impl BlocklistAIController {
         });
     }
 
-    /// Checks if we should refresh AI overage information after an AI request completes.
-    /// This is used to ensure the UI matches the state of the workspace,
-    /// especially because overages are not real-time communicated to clients.
-    fn maybe_refresh_ai_overages(&mut self, ctx: &mut ModelContext<Self>) {
-        let workspace = UserWorkspaces::as_ref(ctx).current_workspace();
-        let Some(workspace) = workspace else {
-            return;
-        };
-
-        // We want to minimize the number of times we ping our backend for updated usage information;
-        // doing it after every AI query finishes would be very expensive.
-
-        // If a user is below their personal limits, then we know that they won't eat into overages,
-        // so we don't need to refresh.
-        let has_no_requests_remaining = !AIRequestUsageModel::as_ref(ctx).has_requests_remaining();
-        // If overages aren't enabled, we're not going to reap the benefit of refreshing at all anyway.
-        let are_overages_enabled = workspace.are_overages_enabled();
-
-        if are_overages_enabled && has_no_requests_remaining {
-            // Give a one second delay to ensure that Stripe has been charged and the database is completely updated,
-            // before syncing new AI overages data.
-            ctx.spawn(
-                async move { Timer::after(Duration::from_secs(1)).await },
-                |_, _, ctx| {
-                    UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
-                        user_workspaces.refresh_ai_overages(ctx);
-                    });
-                },
-            );
-        }
-    }
+    // OpenWarp(Phase 3c A1):删除 `maybe_refresh_ai_overages` 函数。
+    // 原实现是“本地 limit 耗尽时从服务端拉取最新 overage 状态”的调优路径，
+    // BYOP 本地化后既无 limit 也无 overage，函数本体与唯一调用点都需要一起删除。
 
     pub(super) fn handle_response_stream_finished(
         &mut self,

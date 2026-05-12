@@ -13,7 +13,7 @@ use crate::{
             persistence::CloudModel,
         },
         GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
-        JsonObjectType, Owner, Revision, ServerCloudObject,
+        JsonObjectType, Owner, ServerCloudObject,
     },
     drive::CloudObjectTypeAndId,
     server::{
@@ -22,7 +22,6 @@ use crate::{
         },
         ids::{ClientId, SyncId},
         server_api::ServerApiProvider,
-        sync_queue::QueueItem,
     },
 };
 use futures::channel::oneshot;
@@ -105,18 +104,6 @@ impl StringModel for ScheduledAmbientAgent {
 
     fn display_name(&self) -> String {
         self.name.clone()
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        object: &CloudScheduledAmbientAgent,
-    ) -> Option<QueueItem> {
-        Some(QueueItem::UpdateScheduledAmbientAgent {
-            model: object.model().clone().into(),
-            id: object.id,
-            revision: revision_ts.or_else(|| object.metadata.revision.clone()),
-        })
     }
 
     fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {

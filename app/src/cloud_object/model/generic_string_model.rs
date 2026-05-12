@@ -1,12 +1,11 @@
 use std::{fmt::Debug, sync::Arc};
 
-use crate::server::cloud_objects::update_manager::InitiatedBy;
 use crate::{
     appearance::Appearance,
     cloud_object::{
-        CloudModelType, CloudObject, CloudObjectEventEntrypoint, CreateCloudObjectResult,
-        CreateObjectRequest, GenericCloudObject, GenericServerObject, GenericStringObjectFormat,
-        GenericStringObjectUniqueKey, ObjectType, Revision, ServerCloudObject,
+        CloudModelType, CloudObject, CreateCloudObjectResult, CreateObjectRequest,
+        GenericCloudObject, GenericServerObject, GenericStringObjectFormat,
+        GenericStringObjectUniqueKey, ObjectType, Revision, SerializedModel, ServerCloudObject,
         UpdateCloudObjectResult,
     },
     drive::{items::WarpDriveItem, CloudObjectTypeAndId},
@@ -14,7 +13,6 @@ use crate::{
     server::{
         ids::{ObjectUid, ServerId, SyncId},
         server_api::object::ObjectClient,
-        sync_queue::{QueueItem, SerializedModel},
     },
 };
 use anyhow::Result;
@@ -98,15 +96,6 @@ pub trait StringModel: Clone + Debug + PartialEq + Send + Sync + 'static {
     ) -> Option<Box<dyn WarpDriveItem>> {
         None
     }
-
-    /// Returns a sync queue item of this object that would allow it to be updated
-    /// properly on the server.  Takes an optional revision_ts to set as the revision
-    /// in the sync queue item.
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        object: &Self::CloudObjectType,
-    ) -> Option<QueueItem>;
 
     /// Returns a new instance from a server update, or None if the update should be ignored.
     fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self>;
@@ -236,36 +225,6 @@ where
         ModelEvent::UpsertGenericStringObjects(
             objects.iter().map(CloudStringObject::clone_box).collect(),
         )
-    }
-
-    fn create_object_queue_item(
-        &self,
-        object: &GenericCloudObject<GenericStringObjectId, Self>,
-        entrypoint: CloudObjectEventEntrypoint,
-        initiated_by: InitiatedBy,
-    ) -> Option<QueueItem> {
-        if let SyncId::ClientId(client_id) = object.id {
-            return Some(QueueItem::CreateObject {
-                object_type: self.object_type(),
-                owner: object.permissions.owner,
-                id: client_id,
-                title: None,
-                serialized_model: Some(object.model.serialized().into()),
-                initial_folder_id: object.metadata.folder_id,
-                entrypoint,
-                initiated_by,
-            });
-        }
-        None
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        object: &GenericCloudObject<GenericStringObjectId, Self>,
-    ) -> Option<QueueItem> {
-        self.string_model
-            .update_object_queue_item(revision_ts, object)
     }
 
     fn should_clear_on_unique_key_conflict(&self) -> bool {

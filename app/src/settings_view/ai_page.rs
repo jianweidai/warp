@@ -12,9 +12,9 @@ use crate::ai::execution_profiles::{AIExecutionProfile, ActionPermission, WriteT
 use crate::ai::llms::{LLMContextWindow, LLMId, LLMPreferences, LLMPreferencesEvent};
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::ai::paths::host_native_absolute_path;
-use crate::auth::auth_manager::{AuthManager, LoginGatedFeature};
-use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::AuthStateProvider;
+use crate::auth::AuthViewVariant;
+use crate::auth::{AuthManager, LoginGatedFeature};
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::GenericStringObjectFormat::Json;
 use crate::cloud_object::JsonObjectType;

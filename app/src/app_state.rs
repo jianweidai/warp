@@ -130,9 +130,6 @@ pub enum LeafContents {
     ExecutionProfileEditor,
     CodeReview(CodeReviewPaneSnapshot),
     AmbientAgent(AmbientAgentPaneSnapshot),
-    /// The in-app network log pane. Not persisted across restarts because the
-    /// backing log is an in-memory ring buffer that starts empty on launch.
-    NetworkLog,
     /// An entrypoint pane type to launch other pane types from a search palette. The default view
     /// when creating a tab.
     Welcome {
@@ -160,13 +157,9 @@ impl LeafContents {
     /// restoration to fail and the whole tab to disappear on restart.
     pub(crate) fn is_persisted(&self) -> bool {
         match self {
-            // Network log: the backing log is an in-memory ring buffer that
-            // starts empty on launch; persisting would also regress back to
-            // an on-disk log via the app-state database.
-            LeafContents::NetworkLog
             // Environment management panes are opened on-demand via workspace
             // actions and have no persistable state.
-            | LeafContents::EnvironmentManagement(_)
+            LeafContents::EnvironmentManagement(_)
             // SSH server editor:数据(host/user/...)持久化在 ssh_servers 表里,
             // pane 本身只是 view,关掉再打开没差别。
             | LeafContents::SshServer { .. } => false,

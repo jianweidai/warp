@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+﻿use std::collections::HashSet;
 
 use super::*;
 use crate::ai::agent_conversations_model::AgentConversationsModel;
@@ -7,11 +7,10 @@ use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::llms::LLMPreferences;
 use crate::ai::mcp::gallery::MCPGalleryManager;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManager;
-use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
 use crate::ai::AIRequestUsageModel;
-use crate::auth::auth_manager::AuthManager;
+use crate::auth::AuthManager;
 use crate::auth::AuthStateProvider;
 use crate::changelog_model::ChangelogModel;
 use crate::cloud_object::model::persistence::CloudModel;
@@ -29,9 +28,8 @@ use watcher::HomeDirectoryWatcher;
 use crate::editor::{EditorAction, TextStyleOperation};
 use crate::input_suggestions::{HistoryOrder, Item};
 use crate::network::NetworkStatus;
-use crate::server::cloud_objects::{listener::Listener, update_manager::UpdateManager};
+use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::server_api::ServerApiProvider;
-use crate::server::sync_queue::SyncQueue;
 
 use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings::import::model::ImportedConfigModel;
@@ -111,7 +109,6 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(ImportedConfigModel::new);
     app.add_singleton_model(UserWorkspaces::default_mock);
@@ -119,7 +116,6 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(TeamUpdateManager::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(MCPGalleryManager::new);
-    app.add_singleton_model(Listener::mock);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_ctx| SyncedInputState::mock());
@@ -191,7 +187,6 @@ pub fn initialize_app(app: &mut App) {
         crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier::new()
     });
     app.add_singleton_model(AgentConversationsModel::new);
-    app.add_singleton_model(PersistedWorkspace::new_for_test);
     // `LocalShellState` captures the user's interactive login-shell PATH (used
     // for MCP/sbx executable resolution). Tests don't exercise that capture, so
     // register the singleton in its `NotLoaded` state to satisfy callers that

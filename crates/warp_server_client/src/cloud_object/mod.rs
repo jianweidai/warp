@@ -162,7 +162,6 @@ pub enum JsonObjectType {
     TemplatableMCPServer,
     CloudEnvironment,
     ScheduledAmbientAgent,
-    CloudAgentConfig,
 }
 
 impl JsonObjectType {
@@ -177,7 +176,6 @@ impl JsonObjectType {
             JsonObjectType::TemplatableMCPServer => "TEMPLATABLEMCPSERVER",
             JsonObjectType::CloudEnvironment => "CLOUDENVIRONMENT",
             JsonObjectType::ScheduledAmbientAgent => "SCHEDULEDAMBIENTAGENT",
-            JsonObjectType::CloudAgentConfig => "CLOUDAGENTCONFIG",
         }
     }
 }
@@ -196,7 +194,6 @@ impl TryFrom<&str> for JsonObjectType {
             "TEMPLATABLEMCPSERVER" => Ok(JsonObjectType::TemplatableMCPServer),
             "CLOUDENVIRONMENT" => Ok(JsonObjectType::CloudEnvironment),
             "SCHEDULEDAMBIENTAGENT" => Ok(JsonObjectType::ScheduledAmbientAgent),
-            "CLOUDAGENTCONFIG" => Ok(JsonObjectType::CloudAgentConfig),
             _ => Err(anyhow!("could not convert unknown json object type")),
         }
     }
@@ -800,9 +797,6 @@ impl From<GenericStringObjectFormat>
             }
             GenericStringObjectFormat::Json(JsonObjectType::ScheduledAmbientAgent) => {
                 GraphQLFormat::JsonScheduledAmbientAgent
-            }
-            GenericStringObjectFormat::Json(JsonObjectType::CloudAgentConfig) => {
-                unreachable!("JsonCloudAgentConfig is no longer present in GraphQL schema")
             }
         }
     }

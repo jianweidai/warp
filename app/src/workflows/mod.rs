@@ -22,12 +22,11 @@ pub mod workflow_view;
 use crate::appearance::Appearance;
 use crate::cloud_object::model::view::CloudViewModel;
 use crate::cloud_object::{
-    CloudModelType, CloudObjectEventEntrypoint, CreateCloudObjectResult, CreateObjectRequest,
-    GenericCloudObject, GenericServerObject, ObjectType, Revision, ServerCloudObject,
-    UpdateCloudObjectResult,
+    CloudModelType, CreateCloudObjectResult, CreateObjectRequest, GenericCloudObject,
+    GenericServerObject, ObjectType, Revision, ServerCloudObject, UpdateCloudObjectResult,
 };
-use crate::server::cloud_objects::update_manager::InitiatedBy;
 
+use crate::cloud_object::SerializedModel;
 use crate::drive::items::workflow::WarpDriveWorkflow;
 use crate::drive::items::WarpDriveItem;
 use crate::drive::CloudObjectTypeAndId;
@@ -35,7 +34,6 @@ use crate::notebooks::{NotebookId, NotebookLocation};
 use crate::persistence::ModelEvent;
 use crate::server::ids::{ServerId, SyncId};
 use crate::server::server_api::object::ObjectClient;
-use crate::server::sync_queue::{QueueItem, SerializedModel};
 use async_trait::async_trait;
 pub use categories::{CategoriesView, CategoriesViewEvent, WorkflowsViewAction};
 
@@ -267,40 +265,6 @@ impl CloudModelType for CloudWorkflowModel {
 
     fn bulk_upsert_event(objects: &[CloudWorkflow]) -> ModelEvent {
         ModelEvent::UpsertWorkflows(objects.to_vec())
-    }
-
-    fn create_object_queue_item(
-        &self,
-        workflow: &CloudWorkflow,
-        entrypoint: CloudObjectEventEntrypoint,
-        initiated_by: InitiatedBy,
-    ) -> Option<QueueItem> {
-        if let SyncId::ClientId(client_id) = workflow.id {
-            return Some(QueueItem::CreateWorkflow {
-                object_type: self.object_type(),
-                owner: workflow.permissions.owner,
-                model: Arc::new(workflow.model().clone()),
-                initial_folder_id: workflow.metadata.folder_id,
-                entrypoint,
-                id: client_id,
-                initiated_by,
-            });
-        }
-        None
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        workflow: &CloudWorkflow,
-    ) -> Option<QueueItem> {
-        Some(QueueItem::UpdateWorkflow {
-            // Note that this is intentionally a deep clone of the model because we are grabbing
-            // a snapshot to update at a moment in time.
-            model: workflow.model().clone().into(),
-            id: workflow.id,
-            revision: revision_ts.or_else(|| workflow.metadata.revision.clone()),
-        })
     }
 
     fn should_update_after_server_conflict(&self) -> bool {

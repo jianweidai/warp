@@ -2,7 +2,6 @@ use super::{
     editor_text_colors,
     settings_page::{render_input_list, InputListItem},
 };
-use crate::server::server_api::ServerApiProvider;
 use crate::{
     ai::ambient_agents::telemetry::CloudAgentTelemetryEvent,
     ai::{
@@ -32,7 +31,6 @@ use std::collections::HashMap;
 use url::Url;
 use warp_core::send_telemetry_from_ctx;
 use warp_editor::editor::NavigationKey;
-use warp_graphql::queries::user_github_info::UserGithubInfoResult;
 use warpui::{
     elements::{
         Border, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable,
@@ -1199,84 +1197,23 @@ impl UpdateEnvironmentForm {
         ctx: &mut ViewContext<Self>,
         open_auth_after_fetch: bool,
     ) {
-        self.github_dropdown_state.is_loading = true;
-        self.github_dropdown_state.load_error_message = None;
+        // OpenWarp:云端 GitHub repo 拉取已下线。原 实现靠
+        // `IntegrationsClient::get_user_github_info` GraphQL 拉取已连接的 GitHub repos
+        // + 返回 auth_url 引导 OAuth。本地版本直接将下拉标注为不可用，不再
+        // 发送任何请求。
+        let _ = open_auth_after_fetch;
+        self.github_dropdown_state.is_loading = false;
+        self.github_dropdown_state.available_repos = Vec::new();
+        self.github_dropdown_state.repo_row_mouse_states = Vec::new();
+        self.github_dropdown_state.scroll_state = ClippedScrollStateHandle::default();
+        self.github_dropdown_state.selected_index = None;
+        self.github_dropdown_state.app_install_link = None;
         self.github_dropdown_state.auth_url = None;
         self.github_dropdown_state.auth_fetched_at = None;
+        self.github_dropdown_state.load_error_message =
+            Some("GitHub integration is disabled in OpenWarp.".to_string());
+        self.update_repos_input_placeholder(ctx);
         ctx.notify();
-
-        let integrations_client = ServerApiProvider::handle(ctx)
-            .as_ref(ctx)
-            .get_integrations_client();
-
-        ctx.spawn(
-            async move { integrations_client.get_user_github_info().await },
-            move |me, result, ctx| {
-                me.github_dropdown_state.is_loading = false;
-                let mut should_open_auth = open_auth_after_fetch;
-
-                match result {
-                    Ok(UserGithubInfoResult::GithubConnectedOutput(info)) => {
-                        me.github_dropdown_state.available_repos = info
-                            .installed_repos
-                            .into_iter()
-                            .map(|r| GithubRepo::new(r.owner, r.repo))
-                            .collect();
-                        me.github_dropdown_state.repo_row_mouse_states = me
-                            .github_dropdown_state
-                            .available_repos
-                            .iter()
-                            .map(|_| MouseStateHandle::default())
-                            .collect();
-                        me.github_dropdown_state.scroll_state = ClippedScrollStateHandle::default();
-                        me.github_dropdown_state.selected_index = None;
-                        me.ensure_repo_dropdown_selection();
-                        me.scroll_repo_dropdown_selection_into_view();
-                        // Store appInstallLink even when authenticated - it's used for "Configure access" link
-                        me.github_dropdown_state.app_install_link = Some(info.app_install_link);
-                        me.github_dropdown_state.auth_url = None;
-                        me.github_dropdown_state.auth_fetched_at = None;
-                        should_open_auth = false;
-                        me.update_repos_input_placeholder(ctx);
-                    }
-                    Ok(UserGithubInfoResult::GithubAuthRequiredOutput(auth_info)) => {
-                        me.github_dropdown_state.auth_url = Some(auth_info.auth_url);
-                        me.github_dropdown_state.auth_fetched_at = Some(Instant::now());
-                        me.github_dropdown_state.app_install_link =
-                            Some(auth_info.app_install_link);
-                        if open_auth_after_fetch {
-                            if let Some(auth_url) = me.github_dropdown_state.auth_url.as_deref() {
-                                if let Some(tx_id) = Self::extract_tx_id(auth_url) {
-                                    debug!("Refetched GitHub auth URL with tx_id={tx_id}");
-                                } else {
-                                    debug!("Refetched GitHub auth URL (tx_id missing)");
-                                }
-                            }
-                        }
-                        me.update_repos_input_placeholder(ctx);
-                    }
-                    Ok(UserGithubInfoResult::Unknown) => {
-                        me.github_dropdown_state.load_error_message =
-                            Some("Failed to load GitHub repos".to_string());
-                    }
-                    Err(e) => {
-                        me.github_dropdown_state.load_error_message =
-                            Some(format!("Failed to load GitHub repos: {}", e));
-                    }
-                }
-
-                if should_open_auth {
-                    if let Some(auth_url) = me.github_dropdown_state.auth_url.as_deref() {
-                        let auth_url = me.auth_url_with_next(auth_url);
-                        ctx.open_url(&auth_url);
-                    } else if me.github_dropdown_state.available_repos.is_empty() {
-                        let fallback_url = me.github_connect_fallback_url();
-                        ctx.open_url(&fallback_url);
-                    }
-                }
-                ctx.notify();
-            },
-        );
     }
 
     /// Generate a cache key from selected repos for suggest image.
@@ -1400,99 +1337,22 @@ impl UpdateEnvironmentForm {
             return;
         }
 
-        self.suggest_image_request_seq = self.suggest_image_request_seq.saturating_add(1);
-        let request_seq = self.suggest_image_request_seq;
-        self.suggest_image_state = SuggestImageState::Loading { key: key.clone() };
-        ctx.notify();
-
-        let repos = self
-            .form_state
-            .selected_repos
-            .iter()
-            .map(|r| (r.owner.clone(), r.repo.clone()))
-            .collect::<Vec<_>>();
-
-        let integrations_client = ServerApiProvider::handle(ctx)
-            .as_ref(ctx)
-            .get_integrations_client();
-
-        ctx.spawn(
-            async move { integrations_client.suggest_cloud_environment_image(repos).await },
-            move |me, result, ctx| {
-                if me.suggest_image_request_seq != request_seq {
-                    return;
-                }
-
-                match result {
-                    Ok(result) => match result {
-                        warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::SuggestCloudEnvironmentImageOutput(output) => {
-                            let image = output.image;
-                            let needs_custom_image = output.needs_custom_image;
-                            let reason = output.reason;
-                            me.apply_suggest_image_success(
-                                key.clone(),
-                                image,
-                                needs_custom_image,
-                                reason,
-                                ctx,
-                            );
-                        }
-                        warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::SuggestCloudEnvironmentImageAuthRequiredOutput(output) => {
-                            me.suggest_image_cache.insert(
-                                key.clone(),
-                                CachedSuggestImageResult::AuthRequired {
-                                    auth_url: output.auth_url.clone(),
-                                },
-                            );
-                            me.suggest_image_state = SuggestImageState::AuthRequired {
-                                key: key.clone(),
-                                auth_url: output.auth_url,
-                            };
-                        }
-                        warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::UserFacingError(_) => {
-                            let error_message = "Failed to suggest a Docker image".to_string();
-                            send_telemetry_from_ctx!(
-                                CloudAgentTelemetryEvent::ImageSuggestionFailed {
-                                    error: error_message.clone(),
-                                },
-                                ctx
-                            );
-                            me.suggest_image_state = SuggestImageState::Error {
-                                key: key.clone(),
-                                message: error_message,
-                            };
-                        }
-                        warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::Unknown => {
-                            let error_message = "Unknown response from suggestCloudEnvironmentImage".to_string();
-                            send_telemetry_from_ctx!(
-                                CloudAgentTelemetryEvent::ImageSuggestionFailed {
-                                    error: error_message.clone(),
-                                },
-                                ctx
-                            );
-                            me.suggest_image_state = SuggestImageState::Error {
-                                key: key.clone(),
-                                message: error_message,
-                            };
-                        }
-                    },
-                    Err(e) => {
-                        let error_message = format!("Failed to suggest a Docker image: {}", e);
-                        send_telemetry_from_ctx!(
-                            CloudAgentTelemetryEvent::ImageSuggestionFailed {
-                                error: error_message.clone(),
-                            },
-                            ctx
-                        );
-                        me.suggest_image_state = SuggestImageState::Error {
-                            key: key.clone(),
-                            message: error_message,
-                        };
-                    }
-                }
-                ctx.notify();
+        // OpenWarp:云端 `suggest_cloud_environment_image` GraphQL 已下线。
+        // 本地版本直接进入 Error 状态，提示用户手动填写镜像。
+        let error_message =
+            "Docker image suggestion is disabled in OpenWarp; please specify an image manually."
+                .to_string();
+        send_telemetry_from_ctx!(
+            CloudAgentTelemetryEvent::ImageSuggestionFailed {
+                error: error_message.clone(),
             },
+            ctx
         );
+        self.suggest_image_state = SuggestImageState::Error {
+            key,
+            message: error_message,
+        };
+        ctx.notify();
     }
 
     #[cfg(target_family = "wasm")]

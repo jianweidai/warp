@@ -9,7 +9,6 @@ use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::mcp::{
     gallery::MCPGalleryManager, templatable_manager::TemplatableMCPServerManager,
 };
-use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::skills::SkillManager;
 use crate::code_review::git_status_update::GitStatusUpdateModel;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
@@ -24,7 +23,7 @@ use crate::ai::blocklist::SerializedBlockListItem;
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::llms::LLMPreferences;
 use crate::ai::restored_conversations::RestoredAgentConversations;
-use crate::auth::auth_manager::AuthManager;
+use crate::auth::AuthManager;
 use crate::auth::AuthStateProvider;
 use crate::changelog_model::ChangelogModel;
 use crate::pricing::PricingInfoModel;
@@ -41,11 +40,7 @@ use crate::{
     experiments,
     network::NetworkStatus,
     search::files::model::FileSearchModel,
-    server::{
-        cloud_objects::{listener::Listener, update_manager::UpdateManager},
-        server_api::ServerApiProvider,
-        sync_queue::SyncQueue,
-    },
+    server::{cloud_objects::update_manager::UpdateManager, server_api::ServerApiProvider},
     settings::PrivacySettings,
     settings_view::keybindings::KeybindingChangedNotifier,
     system::SystemInfo,
@@ -72,14 +67,12 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(TeamUpdateManager::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(MCPGalleryManager::new);
-    app.add_singleton_model(Listener::mock);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_ctx| SyncedInputState::mock());
@@ -132,7 +125,6 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(ByoLlmAuthBannerSessionState::new);
     app.add_singleton_model(|_| GitHubAuthNotifier::new());
     app.add_singleton_model(AgentConversationsModel::new);
-    app.add_singleton_model(PersistedWorkspace::new_for_test);
 
     app.update(experiments::init);
     AltScreenReporting::register(app);

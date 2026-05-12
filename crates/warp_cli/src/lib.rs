@@ -501,8 +501,6 @@ pub enum CliCommand {
 
     /// Log in to Warp.
     Login,
-    /// Log out of Warp.
-    Logout,
     /// Print information about the logged-in user.
     Whoami,
 

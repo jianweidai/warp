@@ -1,29 +1,25 @@
-use super::auth::AuthClient;
+// OpenWarp:BlockClient impl 已本地化为 stub。
+// 历史职责:通过 GraphQL `share_block` / `unshare_block` / `get_blocks_for_user`
+// 与 warp.dev 后端往返,实现"分享 block 到云端"+"在设置→Shared blocks 页面列出/取消分享我已分享的 block"。
+// OpenWarp 不需要这条云端腿:
+//   - `save_block` 直接返回错误(UI 入口 share_block_modal 已在更早 Phase 删除,但 trait
+//     仍被 settings_view/show_blocks_view.rs 引用,故 stub 保留接口)
+//   - `unshare_block` no-op 返回 Ok(())
+//   - `blocks_owned_by_user` 返回空 Vec,Shared blocks 设置页会渲染"空列表"
+//   - `generate_shared_block_title` 0 外部消费点,stub 化直接报错
+// `crate::server::block::DisplaySetting` 与 `Block` 数据类型保留(本地遥测枚举 + terminal model
+// + 设置页 UI 仍消费 DisplaySetting,Block 仅作为本地传输结构)。
+// 相关 GraphQL operation 已在同一 PR 物理删除:
+//   crates/graphql/src/api/mutations/{share_block,unshare_block}.rs
+//   crates/graphql/src/api/queries/get_blocks_for_user.rs
+
 use super::ServerApi;
 use crate::ai::generate_block_title::api::{GenerateBlockTitleRequest, GenerateBlockTitleResponse};
-use crate::server::{
-    block::{Block, DisplaySetting},
-    graphql::{get_request_context, get_user_facing_error_message},
-};
+use crate::server::block::{Block, DisplaySetting};
 use anyhow::anyhow;
 use async_trait::async_trait;
-use chrono::Utc;
-use cynic::{MutationBuilder, QueryBuilder};
 #[cfg(test)]
 use mockall::automock;
-use std::convert::TryFrom;
-use warp_core::channel::{Channel, ChannelState};
-use warp_graphql::{
-    mutations::{
-        share_block::{BlockInput, ShareBlock, ShareBlockResult, ShareBlockVariables},
-        unshare_block::{
-            UnshareBlock, UnshareBlockInput, UnshareBlockResult, UnshareBlockVariables,
-        },
-    },
-    queries::get_blocks_for_user::{
-        Block as GqlBlock, GetBlocksForUser, GetBlocksForUserVariables,
-    },
-};
 
 #[cfg_attr(test, automock)]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
@@ -52,141 +48,35 @@ pub trait BlockClient: 'static + Send + Sync {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl BlockClient for ServerApi {
-    async fn unshare_block(&self, block_uid: String) -> Result<(), anyhow::Error> {
-        let variables = UnshareBlockVariables {
-            input: UnshareBlockInput { block_uid },
-            request_context: get_request_context(),
-        };
-
-        let operation = UnshareBlock::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-        match response.unshare_block {
-            UnshareBlockResult::UnshareBlockOutput(output) => {
-                if output.success {
-                    Ok(())
-                } else {
-                    Err(anyhow!("Failed to unshare block"))
-                }
-            }
-            UnshareBlockResult::UserFacingError(error) => {
-                Err(anyhow!(get_user_facing_error_message(error)))
-            }
-            UnshareBlockResult::Unknown => Err(anyhow!("Failed to unshare block")),
-        }
+    async fn unshare_block(&self, _block_uid: String) -> Result<(), anyhow::Error> {
+        // OpenWarp:云端 unshare 已下线,本地 stub 直接返回 Ok。
+        Ok(())
     }
 
     async fn save_block(
         &self,
-        block: &Block,
-        title: Option<String>,
-        show_prompt: bool,
-        display_setting: DisplaySetting,
+        _block: &Block,
+        _title: Option<String>,
+        _show_prompt: bool,
+        _display_setting: DisplaySetting,
     ) -> Result<String, anyhow::Error> {
-        let variables = ShareBlockVariables {
-            block: BlockInput {
-                command: block.command.as_deref(),
-                embed_display_setting: display_setting.into(),
-                output: block.output.as_deref(),
-                show_prompt,
-                stylized_command: block.stylized_command.as_deref(),
-                stylized_output: block.stylized_output.as_deref(),
-                stylized_prompt: block.stylized_prompt.as_deref(),
-                stylized_prompt_and_command: block.stylized_prompt_and_command.as_deref(),
-                time_started_term: Some(block.time_started_term.with_timezone(&Utc).into()),
-                title: title.as_deref(),
-            },
-            request_context: get_request_context(),
-        };
-
-        let operation = ShareBlock::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-        match response.share_block {
-            ShareBlockResult::ShareBlockOutput(output) => {
-                let mut created_url =
-                    format!("{}{}", ChannelState::server_root_url(), output.url_ending);
-
-                // If this is a preview build, ensure the link routes to a preview build.
-                if matches!(ChannelState::channel(), Channel::Preview) {
-                    created_url.push_str("?preview=true");
-                }
-
-                Ok(created_url)
-            }
-            ShareBlockResult::UserFacingError(error) => {
-                Err(anyhow!(get_user_facing_error_message(error)))
-            }
-            ShareBlockResult::Unknown => Err(anyhow!("Failed to share block")),
-        }
+        // OpenWarp:云端 share block 已下线,本地 stub 直接报错,UI 入口已删,理论上不可达。
+        Err(anyhow!("Block sharing is disabled in OpenWarp"))
     }
 
     async fn blocks_owned_by_user(&self) -> Result<Vec<Block>, anyhow::Error> {
-        let variables = GetBlocksForUserVariables {
-            request_context: get_request_context(),
-        };
-        let operation = GetBlocksForUser::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.user {
-            warp_graphql::queries::get_blocks_for_user::UserResult::UserOutput(user_output) => {
-                Ok(user_output
-                    .user
-                    .blocks
-                    .into_iter()
-                    .filter_map(|block| block.try_into().ok())
-                    .collect())
-            }
-            warp_graphql::queries::get_blocks_for_user::UserResult::Unknown => {
-                Err(anyhow!("Unable to fetch blocks"))
-            }
-        }
+        // OpenWarp:云端 list shared blocks 已下线,Shared blocks 设置页面将渲染空列表。
+        Ok(Vec::new())
     }
 
     async fn generate_shared_block_title(
         &self,
-        request: GenerateBlockTitleRequest,
+        _request: GenerateBlockTitleRequest,
     ) -> Result<GenerateBlockTitleResponse, anyhow::Error> {
-        let auth_token = self.get_or_refresh_access_token().await?;
-        let request_builder = self.client.post(format!(
-            "{}/ai/generate_block_title",
-            ChannelState::server_root_url()
-        ));
-        let response = if let Some(token) = auth_token.as_bearer_token() {
-            request_builder.bearer_auth(token)
-        } else {
-            request_builder
-        }
-        .json(&request)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-        Ok(response)
-    }
-}
-
-impl TryFrom<GqlBlock> for Block {
-    type Error = anyhow::Error;
-
-    fn try_from(value: GqlBlock) -> Result<Self, Self::Error> {
-        match (value.uid, value.time_started_term) {
-            (uid, Some(time_started_term)) => {
-                Ok(Block {
-                    id: Some(uid.into_inner()),
-                    command: value.command,
-                    output: None,
-                    stylized_command: None,
-                    stylized_output: None,
-                    pwd: None,
-                    time_started_term: time_started_term.utc().into(),
-                    // This is a dummy value - we are no longer using time_completed_term,
-                    // and GqlBlock does not have a time_completed_term field.
-                    time_completed_term: time_started_term.utc().into(),
-                    stylized_prompt: None,
-                    stylized_prompt_and_command: None,
-                })
-            }
-            _ => Err(anyhow!("missing id or time_started_term")),
-        }
+        // OpenWarp:云端 /ai/generate_block_title 端点已下线,本地 stub 直接报错。
+        // 该方法当前无外部消费点。
+        Err(anyhow!(
+            "Shared block title generation is disabled in OpenWarp"
+        ))
     }
 }

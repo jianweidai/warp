@@ -11,9 +11,9 @@ use crate::{
             persistence::CloudModel,
         },
         GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
-        JsonObjectType, Revision, ServerCloudObject,
+        JsonObjectType, ServerCloudObject,
     },
-    server::{ids::SyncId, sync_queue::QueueItem},
+    server::ids::SyncId,
     workspaces::user_workspaces::UserWorkspaces,
 };
 use warpui::{AppContext, SingletonEntity as _};
@@ -163,18 +163,6 @@ impl StringModel for AmbientAgentEnvironment {
 
     fn display_name(&self) -> String {
         self.name.clone()
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        object: &CloudAmbientAgentEnvironment,
-    ) -> Option<QueueItem> {
-        Some(QueueItem::UpdateCloudEnvironment {
-            model: object.model().clone().into(),
-            id: object.id,
-            revision: revision_ts.or_else(|| object.metadata.revision.clone()),
-        })
     }
 
     fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {

@@ -174,43 +174,6 @@ impl BlocklistAIHistoryModel {
         }
     }
 
-    /// Loads a conversation by its server token, with a server fallback.
-    ///
-    /// First attempts to find the conversation in local metadata and load it
-    /// via `load_conversation_data`. If the token is not present locally
-    /// (e.g. cloud metadata hasn't been merged yet), falls back to loading
-    /// the conversation directly from the server.
-    ///
-    /// Note: This does NOT insert the conversation into memory. Callers are responsible
-    /// for inserting the loaded conversation if needed.
-    pub fn load_conversation_by_server_token(
-        &self,
-        server_token: &ServerConversationToken,
-        ctx: &AppContext,
-    ) -> warpui::r#async::BoxFuture<'static, Option<CloudConversationData>> {
-        // Fast path: token is known locally.
-        if let Some(conversation_id) = self.find_conversation_id_by_server_token(server_token) {
-            return self.load_conversation_data(conversation_id, ctx);
-        }
-
-        // Fallback: load directly from the server. This handles cases where
-        // cloud metadata hasn't been merged into the local history model yet
-        // (e.g. timing on startup, or conversations only surfaced via
-        // AgentConversationsModel).
-        log::warn!(
-            "No local metadata for server token {}, falling back to server fetch",
-            server_token.as_str()
-        );
-        let server_api = ServerApiProvider::as_ref(ctx).get_ai_client();
-        // Ephemeral ID — this conversation is not inserted into the history model.
-        let fallback_id = AIConversationId::new();
-        box_future(load_conversation_from_server(
-            fallback_id,
-            server_token.clone(),
-            server_api,
-        ))
-    }
-
     /// Loads a conversation from local DB and returns it.
     /// This is a private helper method. Use `get_load_conversation_data_future` instead.
     ///

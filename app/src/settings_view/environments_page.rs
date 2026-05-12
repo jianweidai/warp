@@ -74,13 +74,6 @@ use warpui::{
 mod new_environment_button;
 use new_environment_button::NewEnvironmentButtonView;
 
-#[cfg(not(target_family = "wasm"))]
-#[allow(unused_imports)] // IntegrationsClient trait is used in fetch_github_repos
-use {
-    crate::server::server_api::{integrations::IntegrationsClient, ServerApiProvider},
-    warp_graphql::queries::user_github_info::UserGithubInfoResult,
-};
-
 const CARD_BORDER_WIDTH: f32 = 1.;
 const CARD_PADDING: f32 = 16.;
 const CARD_SPACING: f32 = 12.;

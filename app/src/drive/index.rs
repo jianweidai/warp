@@ -7,19 +7,15 @@ use crate::{
     },
     appearance::Appearance,
     auth::{
-        auth_manager::{AuthManager, LoginGatedFeature},
-        auth_state::AuthState,
-        auth_view_modal::AuthViewVariant,
-        AuthStateProvider,
+        AuthState, AuthStateProvider, AuthViewVariant, {AuthManager, LoginGatedFeature},
     },
     cloud_object::{
         model::{
             persistence::{CloudModel, CloudModelEvent},
             view::{CloudViewModel, CloudViewModelEvent, UpdateTimestamp},
         },
-        CloudObject, CloudObjectEventEntrypoint, CloudObjectLocation, CloudObjectSyncStatus,
-        GenericCloudObject, GenericStringObjectFormat, JsonObjectType, NumInFlightRequests,
-        ObjectType, Space,
+        CloudObject, CloudObjectLocation, GenericCloudObject, GenericStringObjectFormat,
+        JsonObjectType, ObjectType, Space,
     },
     editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions},
     env_vars::CloudEnvVarCollection,
@@ -31,7 +27,6 @@ use crate::{
     server::{
         cloud_objects::update_manager::{FetchSingleObjectOption, UpdateManager},
         ids::{ClientId, ObjectUid, ServerId, SyncId},
-        sync_queue::SyncQueue,
         telemetry::TelemetryEvent,
     },
     settings::app_installation_detection::{UserAppInstallDetectionSettings, UserAppInstallStatus},
@@ -71,7 +66,6 @@ use super::{
     CloudObjectTypeAndId, DriveObjectType, DriveSortOrder,
 };
 use crate::drive::panel::DrivePanelAction;
-use crate::server::cloud_objects::update_manager::InitiatedBy;
 use futures::Future;
 use itertools::Itertools;
 use pathfinder_color::ColorU;
@@ -2636,7 +2630,7 @@ impl DriveIndex {
             share_dialog_open,
             is_selected,
             is_focused,
-            SyncQueue::as_ref(app).is_dequeueing(),
+            false, /* OpenWarp(Wave 4):SyncQueue 整删,is_dequeueing 永远 false */
             tools_panel_menu_direction(app),
             appearance,
         )?;
@@ -3746,30 +3740,9 @@ impl DriveIndex {
     }
 
     fn retry_all_failed(&mut self, ctx: &mut ViewContext<Self>) {
-        CloudModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-            for object in cloud_model.cloud_objects_mut() {
-                if object.metadata().is_errored() {
-                    let Some(queue_item) = object
-                        .create_object_queue_item(
-                            CloudObjectEventEntrypoint::default(),
-                            // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.
-                            // It can be changed to InitiatedBy::System if this action was automatically kicked off and does not require toasts to notify the user of completion.
-                            InitiatedBy::User,
-                        )
-                        .or_else(|| object.update_object_queue_item(None))
-                    else {
-                        continue;
-                    };
-                    object.set_pending_content_changes_status(CloudObjectSyncStatus::InFlight(
-                        NumInFlightRequests(1),
-                    ));
-                    SyncQueue::handle(ctx).update(ctx, |sync_queue, ctx| {
-                        sync_queue.enqueue(queue_item, ctx);
-                    });
-                    self.num_errored_objects -= 1;
-                }
-            }
-        });
+        // OpenWarp(Wave 4):SyncQueue 整删后,“重试”原语义(重新上报服务端)
+        // 不再适用;本地化后对象不会进入 errored 态,这个路径是 dead code。
+        let _ = ctx;
     }
 
     fn revert_failed_object(&mut self, server_id: &ServerId, ctx: &mut ViewContext<Self>) {

@@ -7,9 +7,9 @@ use crate::ai::cloud_environments::GithubRepo;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::network::NetworkStatus;
+use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ClientId, SyncId};
 use crate::server::server_api::ServerApiProvider;
-use crate::server::{cloud_objects::update_manager::UpdateManager, sync_queue::SyncQueue};
 use crate::settings::PrivacySettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::test_util::settings::initialize_settings_for_tests;
@@ -166,7 +166,6 @@ fn init_update_environment_form_test_models(app: &mut App) {
     // These are required by some settings/UI code paths and by UserWorkspaces::update_workspaces.
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
 

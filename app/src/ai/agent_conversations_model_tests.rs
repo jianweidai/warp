@@ -402,8 +402,6 @@ fn create_test_model() -> AgentConversationsModel {
     AgentConversationsModel {
         tasks: HashMap::new(),
         conversations: HashMap::new(),
-        in_flight_poll_abort_handle: None,
-        next_poll_abort_handle: None,
         active_data_consumers_per_window: HashMap::new(),
         has_finished_initial_load: false,
         manually_opened_task_ids: Default::default(),

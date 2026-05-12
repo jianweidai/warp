@@ -3,19 +3,17 @@ use std::sync::Arc;
 use super::items::folder::WarpDriveFolder;
 use super::items::WarpDriveItem;
 use super::CloudObjectTypeAndId;
-use crate::server::cloud_objects::update_manager::InitiatedBy;
 use crate::{
     appearance::Appearance,
     cloud_object::{
-        CloudModelType, CloudObjectEventEntrypoint, CreateCloudObjectResult, CreateObjectRequest,
-        GenericCloudObject, GenericServerObject, ObjectType, Revision, ServerCloudObject, Space,
+        CloudModelType, CreateCloudObjectResult, CreateObjectRequest, GenericCloudObject,
+        GenericServerObject, ObjectType, Revision, SerializedModel, ServerCloudObject, Space,
         UpdateCloudObjectResult,
     },
     persistence::ModelEvent,
     server::{
         ids::{ServerId, SyncId},
         server_api::object::ObjectClient,
-        sync_queue::{QueueItem, SerializedModel},
     },
 };
 use anyhow::Result;
@@ -78,36 +76,6 @@ impl CloudModelType for CloudFolderModel {
 
     fn bulk_upsert_event(objects: &[CloudFolder]) -> ModelEvent {
         ModelEvent::UpsertFolders(objects.to_vec())
-    }
-
-    fn create_object_queue_item(
-        &self,
-        folder: &CloudFolder,
-        entrypoint: CloudObjectEventEntrypoint,
-        initiated_by: InitiatedBy,
-    ) -> Option<QueueItem> {
-        if let SyncId::ClientId(client_id) = folder.id {
-            return Some(QueueItem::CreateObject {
-                object_type: self.object_type(),
-                serialized_model: Some(Arc::new(folder.model().name.clone().into())),
-                title: None,
-                owner: folder.permissions.owner,
-                id: client_id,
-                initial_folder_id: folder.metadata.folder_id,
-                entrypoint,
-                initiated_by,
-            });
-        }
-        None
-    }
-
-    fn update_object_queue_item(
-        &self,
-        _revision_ts: Option<Revision>,
-        _folder: &CloudFolder,
-    ) -> Option<QueueItem> {
-        // OpenWarp: folders are local-only, never enqueued to the cloud sync queue.
-        None
     }
 
     fn should_update_after_server_conflict(&self) -> bool {

@@ -1,4 +1,4 @@
-//! Agent SDK entry points for invoking Agent-related functionality from the app.
+﻿//! Agent SDK entry points for invoking Agent-related functionality from the app.
 //! For now this provides a simple runner that echoes the received command.
 
 use std::fmt::Write;
@@ -14,7 +14,7 @@ use crate::ai::agent_sdk::mcp_config::build_mcp_servers_from_specs;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::aws_credentials::refresh_aws_credentials;
 use crate::ai::llms::LLMId;
-use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
+use crate::auth::{AuthManager, AuthManagerEvent};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::server::server_api::ai::AIClient;
 use crate::workflows::workflow::Workflow;
@@ -81,10 +81,6 @@ pub(crate) mod driver;
 mod environment;
 mod federate;
 mod harness_support;
-#[cfg(not(target_family = "wasm"))]
-mod integration;
-#[cfg(not(target_family = "wasm"))]
-mod integration_output;
 mod mcp;
 mod mcp_config;
 mod model;
@@ -144,7 +140,6 @@ fn dispatch_command(
         CliCommand::Run(task_cmd) => run_task(ctx, global_options, task_cmd),
         CliCommand::Model(model_cmd) => model::run(ctx, global_options, model_cmd),
         CliCommand::Login => admin::login(ctx),
-        CliCommand::Logout => admin::logout(ctx),
         CliCommand::Whoami => admin::whoami(ctx, global_options.output_format),
         CliCommand::Provider(provider_cmd) => {
             if !FeatureFlag::ProviderCommand.is_enabled() {
@@ -153,11 +148,9 @@ fn dispatch_command(
             provider::run(ctx, global_options, provider_cmd)
         }
         #[cfg(not(target_family = "wasm"))]
-        CliCommand::Integration(integration_cmd) => {
-            if !FeatureFlag::IntegrationCommand.is_enabled() {
-                return Err(anyhow::anyhow!("invalid value 'integration'"));
-            }
-            integration::run(ctx, global_options, integration_cmd)
+        CliCommand::Integration(_integration_cmd) => {
+            // OpenWarp:云端 Simple Integration CRUD 已下线,CLI 子命令直接报错。
+            return Err(anyhow::anyhow!("Cloud integrations disabled in OpenWarp"));
         }
         #[cfg(target_family = "wasm")]
         CliCommand::Integration(_) => {
@@ -852,49 +845,31 @@ impl AgentDriverRunner {
     /// Creates a new task on the server for this agent run, sets the task ID on the driver
     /// options, and updates the Server API provider so that all subsequent requests to warp-server
     /// contain this new task ID.
+    ///
+    /// OpenWarp(本地化,Phase 3b-2):原实现调 `server_api.create_agent_task` 在云端创建
+    /// ambient agent task,获取服务端 task_id 后在后续请求中携带。本地化后:
+    ///   - 不发 GraphQL `create_agent_task` mutation
+    ///   - `driver_options.task_id` 保持 `None`
+    ///   - `ServerApiProvider::set_ambient_agent_task_id(None)` 以清除可能的遗留
+    /// 下游所有 `if let Some(task_id) = driver_options.task_id` 分支自动跳过。
+    /// BYOP 本地 harness 运行不依赖该 task_id,根据 `harness/` 代码路径仅在服务端
+    /// 汇报状态时使用。
     async fn initialize_new_task(
         foreground: &ModelSpawner<Self>,
-        server_api: &Arc<dyn AIClient>,
-        prompt: String,
-        merged_config: AgentConfigSnapshot,
+        _server_api: &Arc<dyn AIClient>,
+        _prompt: String,
+        _merged_config: AgentConfigSnapshot,
         driver_options: &mut AgentDriverOptions,
     ) -> Result<(), AgentDriverError> {
-        let environment = merged_config.environment_id.clone();
-        let task_config = if merged_config.is_empty() {
-            None
-        } else {
-            let mut config = merged_config;
-            // We don't set a worker, since this is a local run.
-            config.worker_host = None;
-            Some(config)
-        };
-
-        let task_id = match server_api
-            .create_agent_task(prompt, environment, None, task_config)
-            .await
-        {
-            Ok(id) => {
-                log::info!("Created task: {id}");
-                Some(id)
-            }
-            Err(e) => {
-                log::error!("Failed to create task: {e}");
-                // Continue without a task_id rather than failing entirely
-                None
-            }
-        };
-
+        driver_options.task_id = None;
         foreground
             .spawn(move |_, ctx| {
-                // Set the task ID on the ServerApi so it's sent with all subsequent requests.
                 ServerApiProvider::handle(ctx)
                     .as_ref(ctx)
                     .get()
-                    .set_ambient_agent_task_id(task_id);
+                    .set_ambient_agent_task_id(None);
             })
             .await?;
-        driver_options.task_id = task_id;
-
         Ok(())
     }
 
@@ -1241,7 +1216,6 @@ fn command_requires_auth(command: &CliCommand) -> bool {
             ModelCommand::List => true,
         },
         CliCommand::Login => false,
-        CliCommand::Logout => false,
         CliCommand::Whoami => true,
         CliCommand::Provider(_) => true,
         CliCommand::Integration(_) => true,
@@ -1421,7 +1395,6 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
         },
         CliCommand::Model(ModelCommand::List) => CliTelemetryEvent::ModelList,
         CliCommand::Login => CliTelemetryEvent::Login,
-        CliCommand::Logout => CliTelemetryEvent::Logout,
         CliCommand::Whoami => CliTelemetryEvent::Whoami,
         CliCommand::Provider(ProviderCommand::Setup(_)) => CliTelemetryEvent::ProviderSetup,
         CliCommand::Provider(ProviderCommand::List) => CliTelemetryEvent::ProviderList,

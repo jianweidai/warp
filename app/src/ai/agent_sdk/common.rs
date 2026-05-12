@@ -1,4 +1,4 @@
-//! Common utilities for agent SDK commands.
+﻿//! Common utilities for agent SDK commands.
 
 use std::fmt;
 use std::future::Future;
@@ -17,7 +17,7 @@ use crate::ai::agent_sdk::driver::{AgentDriverError, WARP_DRIVE_SYNC_TIMEOUT};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::llms::{LLMId, LLMPreferences};
-use crate::auth::auth_state::AuthStateProvider;
+use crate::auth::AuthStateProvider;
 use crate::cloud_object::{CloudObject, Owner};
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ServerId, SyncId};

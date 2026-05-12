@@ -1,7 +1,5 @@
-use std::collections::HashSet;
-
 use comfy_table::Cell;
-use inquire::{error::InquireError, Confirm, Select};
+use inquire::{error::InquireError, Select};
 use serde::Serialize;
 use warp_cli::{
     agent::OutputFormat,
@@ -15,7 +13,6 @@ use warpui::{AppContext, ModelContext, SingletonEntity};
 use crate::ai::agent_sdk::output::{self, TableFormat};
 
 use crate::ai::agent_sdk::driver::WARP_DRIVE_SYNC_TIMEOUT;
-use crate::ai::agent_sdk::oauth_flow::poll_oauth_until_terminal;
 use crate::ai::cloud_environments::{
     AmbientAgentEnvironment, BaseImage, CloudAmbientAgentEnvironment,
     CloudAmbientAgentEnvironmentModel, GithubRepo,
@@ -32,11 +29,9 @@ use crate::util::time_format::format_approx_duration_from_now_utc;
 use crate::workspaces::user_profiles::UserProfiles;
 use crate::CloudObjectTypeAndId;
 use cynic::QueryBuilder;
-use warp_graphql::queries::get_oauth_connect_tx_status::OauthConnectTxStatus;
 use warp_graphql::queries::list_warp_dev_images::{
     ListWarpDevImages, ListWarpDevImagesResult, ListWarpDevImagesVariables,
 };
-use warp_graphql::queries::user_repo_auth_status::UserRepoAuthStatusEnum;
 
 const WARP_DEV_ENVIRONMENTS_REPO: &str = "https://github.com/warpdotdev/warp-dev-environments";
 
@@ -503,221 +498,21 @@ impl EnvironmentCommandRunner {
 
     /// Generic auth flow that checks repo authorization and handles OAuth.
     /// Takes a closure that will be called after successful auth.
+    ///
+    /// OpenWarp:云端 GitHub OAuth + repo 授权检查已下线，
+    /// 本地版本直接调用 `on_success` 跳过授权阶段。
+    /// 原有调用点仍在原位，仅是未再访问 `check_user_repo_auth_status` 和
+    /// `poll_oauth_connect_status` GraphQL。
     fn auth_repos_then_execute<F>(
-        repos: Vec<GithubRepo>,
-        attempt: u32,
-        operation_name: &'static str,
+        _repos: Vec<GithubRepo>,
+        _attempt: u32,
+        _operation_name: &'static str,
         on_success: F,
         ctx: &mut ModelContext<Self>,
     ) where
         F: FnOnce(&mut ModelContext<Self>) + Send + 'static,
     {
-        const MAX_AUTH_ATTEMPTS: u32 = 8;
-
-        if repos.is_empty() {
-            on_success(ctx);
-            return;
-        }
-
-        if attempt > MAX_AUTH_ATTEMPTS {
-            ctx.terminate_app(
-                warpui::platform::TerminationMode::ForceTerminate,
-                Some(Err(anyhow::anyhow!(
-                    "Exceeded maximum number of authorization attempts ({}). Please try again later.",
-                    MAX_AUTH_ATTEMPTS
-                ))),
-            );
-            return;
-        }
-
-        // Get IntegrationsClient for auth checks and polling
-        let integrations_client = ServerApiProvider::as_ref(ctx).get_integrations_client();
-
-        let repo_tuples: Vec<(String, String)> = repos
-            .iter()
-            .map(|repo| (repo.owner.clone(), repo.repo.clone()))
-            .collect();
-
-        let auth_check_future = async move {
-            integrations_client
-                .check_user_repo_auth_status(repo_tuples)
-                .await
-        };
-
-        ctx.spawn(auth_check_future, move |_, auth_result, ctx| {
-            match auth_result {
-                Ok(response) => {
-                    let mut has_blocking_private_issues = false;
-                    let mut has_public_auth_gaps = false;
-                    let mut private_repo_owners = HashSet::new();
-
-                    for status in &response.statuses {
-                        match status.status {
-                            UserRepoAuthStatusEnum::Success => {
-                                if !status.is_public {
-                                    private_repo_owners.insert(status.owner.clone());
-                                }
-                            }
-                            UserRepoAuthStatusEnum::NoInstallationOrAccessForRepo => {
-                                if !status.is_public {
-                                    eprintln!(
-                                        "Cannot access private repo {}/{}",
-                                        status.owner, status.repo,
-                                    );
-                                    has_blocking_private_issues = true;
-                                    private_repo_owners.insert(status.owner.clone());
-                                } else {
-                                    has_public_auth_gaps = true;
-                                }
-                            }
-                            UserRepoAuthStatusEnum::UserNotConnectedToGithub => {
-                                eprintln!("User not connected to GitHub");
-                                has_blocking_private_issues = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Check that all private repos have the same owner
-                    if private_repo_owners.len() > 1 {
-                        let owners_str = private_repo_owners.into_iter().collect::<Vec<_>>().join(", ");
-                        ctx.terminate_app(
-                            warpui::platform::TerminationMode::ForceTerminate,
-                            Some(Err(anyhow::anyhow!(
-                                "All private repositories in an environment must belong to the same owner. Found multiple owners: {}.\nIf you need support for private repos from multiple owners, please submit a GitHub issue.",
-                                owners_str
-                            ))),
-                        );
-                        return;
-                    }
-
-                    if !has_blocking_private_issues {
-                        // No blocking issues with private repos.
-                        // Public repos without auth can proceed with warnings.
-                        if has_public_auth_gaps {
-                            for status in &response.statuses {
-                                if status.is_public
-                                    && matches!(
-                                        status.status,
-                                        UserRepoAuthStatusEnum::NoInstallationOrAccessForRepo
-                                    )
-                                {
-                                    eprintln!(
-                                        "Warning: using public repo {}/{} without authorization. Read-only access is available, but you need to authorize if you want full access.",
-                                         status.owner, status.repo
-                                    );
-                                }
-                            }
-                            if let Some(auth_url) = response.auth_url {
-                                println!("\nAuthorize access here: {auth_url}\n");
-                            }
-                        }
-
-                        // Proceed with the operation after successful auth
-                        on_success(ctx);
-                        return;
-                    }
-
-                    // We have blocking issues with private repos.
-                    // Handle OAuth flow if server provides auth_url + tx_id.
-                    match (response.auth_url, response.tx_id) {
-                        (Some(auth_url), Some(tx_id)) => {
-                            // Open URL and poll for OAuth completion.
-                            println!("\nAuthorization required for private repository access.");
-                            println!("Opening browser for GitHub authorization: {auth_url}\n");
-                            ctx.open_url(&auth_url);
-
-                            let integrations_client = ServerApiProvider::as_ref(ctx)
-                                .get_integrations_client();
-                            let tx_id = tx_id.into_inner();
-                            let poll_future = poll_oauth_until_terminal(integrations_client, tx_id);
-
-                            let next_attempt = attempt + 1;
-
-                            ctx.spawn(
-                                poll_future,
-                                move |_, poll_result, ctx| {
-                                    match poll_result {
-                                        Ok(OauthConnectTxStatus::Completed) => {
-                                            // OAuth completed, retry auth check and operation.
-                                            Self::auth_repos_then_execute(repos, next_attempt, operation_name, on_success, ctx);
-                                        }
-                                        Ok(OauthConnectTxStatus::Failed) => {
-                                            ctx.terminate_app(
-                                                warpui::platform::TerminationMode::ForceTerminate,
-                                                Some(Err(anyhow::anyhow!(
-                                                    "GitHub authorization failed. Please try again."
-                                                ))),
-                                            );
-                                        }
-                                        Ok(OauthConnectTxStatus::Expired) => {
-                                            ctx.terminate_app(
-                                                warpui::platform::TerminationMode::ForceTerminate,
-                                                Some(Err(anyhow::anyhow!(
-                                                    "GitHub authorization expired. Please try again."
-                                                ))),
-                                            );
-                                        }
-                                        Ok(OauthConnectTxStatus::Pending)
-                                        | Ok(OauthConnectTxStatus::InProgress) => {
-                                            // Should not be returned by poll_oauth_until_terminal.
-                                            ctx.terminate_app(
-                                                warpui::platform::TerminationMode::ForceTerminate,
-                                                Some(Err(anyhow::anyhow!(
-                                                    "Unexpected non-terminal OAuth status returned"
-                                                ))),
-                                            );
-                                        }
-                                        Err(err) => {
-                                            ctx.terminate_app(
-                                                warpui::platform::TerminationMode::ForceTerminate,
-                                                Some(Err(anyhow::anyhow!(
-                                                    "Error polling OAuth status: {err}"
-                                                ))),
-                                            );
-                                        }
-                                    }
-                                },
-                            );
-                        }
-                        (Some(auth_url), None) => {
-                            // Legacy flow: no txId, print URL and exit.
-                            println!("\nAuthorize access here: {auth_url}\n");
-                            println!("After authorizing, please re-run this command.");
-                            ctx.terminate_app(
-                                warpui::platform::TerminationMode::ForceTerminate,
-                                None,
-                            );
-                        }
-                        (None, Some(_)) => {
-                            // Server returned txId without authUrl - unexpected.
-                            ctx.terminate_app(
-                                warpui::platform::TerminationMode::ForceTerminate,
-                                Some(Err(anyhow::anyhow!(
-                                    "Server error: did not receive auth URL for OAuth flow"
-                                ))),
-                            );
-                        }
-                        (None, None) => {
-                            // No auth URL or txId provided, but we have auth issues.
-                            ctx.terminate_app(
-                                warpui::platform::TerminationMode::ForceTerminate,
-                                Some(Err(anyhow::anyhow!(
-                                    "Cannot {} environment: authorization required but no auth flow provided by server",
-                                    operation_name
-                                ))),
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    ctx.terminate_app(
-                        warpui::platform::TerminationMode::ForceTerminate,
-                        Some(Err(e.context("Failed to check GitHub auth status"))),
-                    );
-                }
-            }
-        });
+        on_success(ctx);
     }
 
     // Helper function to create environment after successful auth check
@@ -773,65 +568,18 @@ impl EnvironmentCommandRunner {
     // Before doing an action like `update` or `delete`, use this function to check whether
     // they are currently being used in any integrations -- if they are, ask the user to confirm
     // before running the supplied `on_confirm` function
+    //
+    // OpenWarp:云端 Simple Integration 已下线，不再存在 environment 被
+    // integration 引用的场景，直接调用 `on_confirm` 跳过询问。
     fn confirm_if_integrations_using_environment<F>(
-        id: String,
-        action: &'static str,
+        _id: String,
+        _action: &'static str,
         on_confirm: F,
         ctx: &mut ModelContext<Self>,
     ) where
         F: FnOnce(&mut ModelContext<Self>) + Send + 'static,
     {
-        let integrations_client = ServerApiProvider::as_ref(ctx).get_integrations_client();
-
-        let check_integrations_future = async move {
-            integrations_client
-                .get_integrations_using_environment(id)
-                .await
-        };
-
-        ctx.spawn(check_integrations_future, move |_, result, ctx| {
-            match result {
-                Ok(output) => {
-                    if !output.provider_names.is_empty() {
-                        let integration_list = output.provider_names.join(", ");
-                        let prompt_message = format!(
-                            "This environment is used in the following integration(s): {integration_list}. Are you sure you want to {action} it?"
-                        );
-
-                        let confirmation = Confirm::new(&prompt_message)
-                            .with_default(false)
-                            .prompt();
-
-                        match confirmation {
-                            Ok(true) => on_confirm(ctx),
-                            Ok(false) | Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
-                                println!("Environment {action} canceled.");
-                                ctx.terminate_app(
-                                    warpui::platform::TerminationMode::ForceTerminate,
-                                    None,
-                                );
-                            }
-                            Err(err) => {
-                                ctx.terminate_app(
-                                    warpui::platform::TerminationMode::ForceTerminate,
-                                    Some(Err(anyhow::anyhow!("Error prompting for confirmation: {err}"))),
-                                );
-                            }
-                      }
-                    } else {
-                        on_confirm(ctx);
-                    }
-                }
-                Err(_) => {
-                    ctx.terminate_app(
-                        warpui::platform::TerminationMode::ForceTerminate,
-                        Some(Err(anyhow::anyhow!(
-                            "Aborting environment {action} because integration usage could not be determined. Re-run with --force to override."
-                        ))),
-                    );
-                }
-            }
-        });
+        on_confirm(ctx);
     }
 
     #[allow(clippy::too_many_arguments)]

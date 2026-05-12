@@ -377,13 +377,12 @@ impl UriHost {
                                 ctx,
                             );
                         }
+                        // OpenWarp Wave 3-1:"platform" URI 路由原指向
+                        // `SettingsSection::OzCloudAPIKeys`(云端 API key 管理页),
+                        // 随 UI 一同物理删。保留 arm 以记录原意图,物理处理为 no-op。
                         "platform" => {
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_settings_page_in_existing_window",
-                                "root_view:open_settings_page_in_new_window",
-                                &SettingsSection::OzCloudAPIKeys,
-                                ctx,
+                            log::warn!(
+                                "warp://settings/platform 路由在 OpenWarp 中已下线,忽略该请求"
                             );
                         }
                         "appearance" => {

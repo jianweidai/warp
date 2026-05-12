@@ -58,8 +58,6 @@ pub(super) enum CliTelemetryEvent {
     RunMessageMarkDelivered { harness: &'static str },
     /// Executing `warp login`
     Login,
-    /// Executing `warp logout`
-    Logout,
     /// Executing `warp whoami`
     Whoami,
     /// Executing `warp provider setup`
@@ -157,7 +155,6 @@ impl TelemetryEvent for CliTelemetryEvent {
                 Some(json!({ "harness": harness }))
             }
             CliTelemetryEvent::Login => None,
-            CliTelemetryEvent::Logout => None,
             CliTelemetryEvent::Whoami => None,
             CliTelemetryEvent::ProviderSetup => None,
             CliTelemetryEvent::ProviderList => None,
@@ -239,7 +236,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
                 "CLI.Execute.Run.Message.MarkDelivered"
             }
             CliTelemetryEventDiscriminants::Login => "CLI.Execute.Login",
-            CliTelemetryEventDiscriminants::Logout => "CLI.Execute.Logout",
             CliTelemetryEventDiscriminants::Whoami => "CLI.Execute.Whoami",
             CliTelemetryEventDiscriminants::ProviderSetup => "CLI.Execute.Provider.Setup",
             CliTelemetryEventDiscriminants::ProviderList => "CLI.Execute.Provider.List",
@@ -331,7 +327,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
                 "Marked a run message as delivered from the Warp CLI"
             }
             CliTelemetryEventDiscriminants::Login => "Logged in via the Warp CLI",
-            CliTelemetryEventDiscriminants::Logout => "Logged out via the Warp CLI",
             CliTelemetryEventDiscriminants::Whoami => "Printed current user info from the Warp CLI",
             CliTelemetryEventDiscriminants::ProviderSetup => "Set up a provider via the Warp CLI",
             CliTelemetryEventDiscriminants::ProviderList => "Listed providers from the Warp CLI",

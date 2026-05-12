@@ -254,11 +254,8 @@ use warp_completer::{
     parsers::{simple::command_at_cursor_position, LiteCommand},
     signatures::CommandRegistry,
 };
+use warp_core::ui::theme::{color::internal_colors, AnsiColorIdentifier};
 use warp_core::user_preferences::GetUserPreferences as _;
-use warp_core::{
-    context_flag::ContextFlag,
-    ui::theme::{color::internal_colors, AnsiColorIdentifier},
-};
 use warp_editor::editor::NavigationKey;
 use warp_util::path::ShellFamily;
 use warpui::{
@@ -1763,13 +1760,6 @@ pub fn init(app: &mut AppContext) {
                 & !id!("AIContextMenuOpen"),
         ),
     ]);
-
-    app.register_editable_bindings([EditableBinding::new(
-        "input:insert_network_logging_workflow",
-        crate::t!("keybinding-desc-input-show-network-log"),
-        WorkspaceAction::OpenNetworkLogPane,
-    )
-    .with_enabled(|| ContextFlag::NetworkLogConsole.is_enabled())]);
 
     app.register_editable_bindings([EditableBinding::new(
         "input:clear_screen",
