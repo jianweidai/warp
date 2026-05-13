@@ -601,6 +601,14 @@ impl BlocklistAIContextModel {
         !self.pending_context_block_ids.is_empty() || !self.pending_attachments.is_empty()
     }
 
+    pub fn has_explicit_user_context(&self) -> bool {
+        !self.pending_context_block_ids.is_empty()
+            || self.pending_context_selected_text.is_some()
+            || !self.pending_attachments.is_empty()
+            || !self.pending_inline_diff_hunk_attachments.is_empty()
+            || self.pending_document_id.is_some()
+    }
+
     /// Returns the set `BlockId`s corresponding to blocks to be included as context with the next
     /// query.
     pub fn pending_context_block_ids(&self) -> &HashSet<BlockId> {

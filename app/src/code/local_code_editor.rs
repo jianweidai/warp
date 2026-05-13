@@ -39,7 +39,11 @@ use warpui::{
 };
 
 use crate::{
-    code::{editor::EditorReviewComment, global_buffer_model::GlobalBufferModelEvent},
+    code::{
+        auto_selection_context::{AutoCodeSelectionContextModel, CodeSelectionContext},
+        editor::EditorReviewComment,
+        global_buffer_model::GlobalBufferModelEvent,
+    },
     code_review::comments::CommentId,
 };
 use crate::{
@@ -199,6 +203,7 @@ impl LocalCodeEditorView {
             }
             CodeEditorEvent::ContentChanged { origin, .. } => {
                 me.update_diff_hunk_gutter_buttons(ctx);
+                me.sync_auto_selection_context(ctx);
 
                 if origin.from_user() {
                     me.was_edited = true;
@@ -213,6 +218,7 @@ impl LocalCodeEditorView {
                 ctx.emit(LocalCodeEditorEvent::DiffStatusUpdated);
             }
             CodeEditorEvent::SelectionEnd => {
+                me.sync_auto_selection_context(ctx);
                 ctx.notify();
             }
             CodeEditorEvent::MouseHovered { .. } => {
@@ -239,12 +245,14 @@ impl LocalCodeEditorView {
                 ctx.emit(LocalCodeEditorEvent::DelayedRenderingFlushed);
             }
             CodeEditorEvent::Focused
-            | CodeEditorEvent::SelectionChanged
             | CodeEditorEvent::SelectionStart
             | CodeEditorEvent::CopiedEmptyText
             | CodeEditorEvent::DiffHunkContextAdded { .. }
             | CodeEditorEvent::DiffReverted
             | CodeEditorEvent::HiddenSectionExpanded => {}
+            CodeEditorEvent::SelectionChanged => {
+                me.sync_auto_selection_context(ctx);
+            }
             #[cfg(windows)]
             CodeEditorEvent::WindowsCtrlC { .. } => {}
         });
@@ -734,6 +742,29 @@ impl LocalCodeEditorView {
         }
     }
 
+    fn current_selection_context(&self, app: &AppContext) -> Option<CodeSelectionContext> {
+        let relative_file_path = self.file_path_relative_to_terminal_view(app)?;
+        let (start, end) = self.editor.as_ref(app).selected_lines(app)?;
+        let selected_text = self.editor.as_ref(app).selected_text(app)?;
+        if selected_text.is_empty() {
+            return None;
+        }
+
+        Some(CodeSelectionContext {
+            relative_file_path,
+            line_range: start as usize..end as usize,
+            selected_text,
+        })
+    }
+
+    fn sync_auto_selection_context(&self, ctx: &mut ViewContext<Self>) {
+        let selection = self.current_selection_context(ctx);
+        let window_id = ctx.window_id();
+        AutoCodeSelectionContextModel::handle(ctx).update(ctx, |model, ctx| {
+            model.set_selection(window_id, self.editor.id(), selection, ctx);
+        });
+    }
+
     fn render_selection_tooltip(&self, app: &AppContext) -> Option<Box<dyn Element>> {
         // If there's a single selection and an active terminal view, we want to give the user an option to add the selection as context.
         self.selection_as_context_tooltip
@@ -819,12 +850,6 @@ impl LocalCodeEditorView {
     }
 
     fn insert_selected_text_to_input(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(relative_file_path) = self.file_path_relative_to_terminal_view(ctx) else {
-            return;
-        };
-
-        let mut line_range: Option<Range<LineCount>> = None;
-        let mut selected_text: Option<String> = None;
         self.editor.update(ctx, |editor, ctx| {
             // If we have a vim visual selection, update the editor model to use that as a selection range
             let has_vim_visual = matches!(editor.vim_mode(ctx), Some(VimMode::Visual(_)));
@@ -834,26 +859,21 @@ impl LocalCodeEditorView {
                 });
             }
 
-            if let Some((start, end)) = editor.selected_lines(ctx) {
-                // selected_lines() returns 1-indexed row numbers.
-                line_range = Some(LineCount::from(start as usize)..LineCount::from(end as usize));
-                selected_text = Some(editor.selected_text(ctx).unwrap_or_default());
-            }
-
             // Enter normal mode
             if has_vim_visual {
                 editor.enter_vim_normal_mode(ctx);
             }
         });
 
-        let (Some(line_range), Some(selected_text)) = (line_range, selected_text) else {
+        let Some(selection) = self.current_selection_context(ctx) else {
             return;
         };
 
         ctx.emit(LocalCodeEditorEvent::SelectionAddedAsContext {
-            relative_file_path,
-            line_range,
-            selected_text,
+            relative_file_path: selection.relative_file_path,
+            line_range: LineCount::from(selection.line_range.start)
+                ..LineCount::from(selection.line_range.end),
+            selected_text: selection.selected_text,
         });
         self.editor.update(ctx, |editor, ctx| {
             editor.clear_selection(ctx);

@@ -952,8 +952,16 @@ impl LeftPanelView {
             ..Default::default()
         })
         .build()
-        .on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(action.clone());
+        .on_click(move |ctx, _, _| match &action {
+            LeftPanelAction::ProjectExplorer => {
+                ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectExplorer);
+            }
+            LeftPanelAction::GlobalSearch { .. }
+            | LeftPanelAction::WarpDrive
+            | LeftPanelAction::ConversationListView
+            | LeftPanelAction::SshManager => {
+                ctx.dispatch_typed_action(action.clone());
+            }
         })
         .with_cursor(Cursor::PointingHand)
         .finish()

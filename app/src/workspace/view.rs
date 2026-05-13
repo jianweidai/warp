@@ -982,6 +982,7 @@ pub struct Workspace {
     file_upload_sessions: FileUploadSessions,
     ai_fact_view: ViewHandle<AIFactView>,
     left_panel_open: bool,
+    project_explorer_visibility_is_tab_scoped: bool,
     vertical_tabs_panel_open: bool,
     vertical_tabs_panel: VerticalTabsPanelState,
     left_panel_view: ViewHandle<LeftPanelView>,
@@ -2996,6 +2997,7 @@ impl Workspace {
             file_upload_sessions: Default::default(),
             ai_fact_view,
             left_panel_open: false,
+            project_explorer_visibility_is_tab_scoped: false,
             vertical_tabs_panel_open: false,
             vertical_tabs_panel: Default::default(),
             left_panel_view,
@@ -4675,6 +4677,12 @@ impl Workspace {
     /// Reconciles the active tab's tools panel open/closed state to match the window-scoped desired state
     /// (syncing left panel open/closed state across tabs).
     fn reconcile_left_panel_open_for_active_tab(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.project_explorer_visibility_is_tab_scoped
+            && self.left_panel_view.as_ref(ctx).is_file_tree_active()
+        {
+            return;
+        }
+
         let pane_group = self.active_tab_pane_group().clone();
         let pane_group_supports_tools_panel = pane_group.read(ctx, |pane_group, _| {
             Self::should_enable_file_tree_and_global_search_for_pane_group(pane_group)
@@ -7507,6 +7515,7 @@ impl Workspace {
     }
 
     fn open_left_panel(&mut self, ctx: &mut ViewContext<Self>) {
+        self.project_explorer_visibility_is_tab_scoped = false;
         self.left_panel_open = true;
 
         let active_pane_group = self.active_tab_pane_group().clone();
@@ -7558,6 +7567,7 @@ impl Workspace {
     }
 
     fn close_left_panel(&mut self, ctx: &mut ViewContext<Self>) {
+        self.project_explorer_visibility_is_tab_scoped = false;
         self.left_panel_open = false;
 
         let active_pane_group = self.active_tab_pane_group().clone();
@@ -13253,6 +13263,18 @@ impl Workspace {
                 target_view,
                 force_open,
             } => {
+                if matches!(target_view, LeftPanelTargetView::FileTree) {
+                    let is_file_tree_active =
+                        self.left_panel_view.as_ref(ctx).is_file_tree_active();
+                    let is_left_panel_open =
+                        self.active_tab_pane_group().as_ref(ctx).left_panel_open;
+
+                    if !(is_left_panel_open && is_file_tree_active && *force_open) {
+                        self.toggle_project_explorer_for_active_tab(ctx);
+                    }
+                    return;
+                }
+
                 let is_target_active =
                     self.left_panel_view
                         .read(ctx, |left_panel, _| match target_view {
@@ -18730,6 +18752,10 @@ impl Workspace {
     }
 
     fn open_left_panel_view(&mut self, action: &LeftPanelAction, ctx: &mut ViewContext<Self>) {
+        if !matches!(action, LeftPanelAction::ProjectExplorer) {
+            self.project_explorer_visibility_is_tab_scoped = false;
+        }
+
         if !self.active_tab_pane_group().as_ref(ctx).left_panel_open {
             self.toggle_left_panel(ctx);
         }
@@ -18740,6 +18766,46 @@ impl Workspace {
                 left_panel.focus_active_view_on_entry(ctx);
             });
         }
+    }
+
+    fn set_project_explorer_open_for_active_tab(
+        &mut self,
+        is_open: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.project_explorer_visibility_is_tab_scoped = true;
+
+        let active_pane_group = self.active_tab_pane_group().clone();
+        active_pane_group.update(ctx, |pane_group, ctx| {
+            pane_group.set_left_panel_open_without_event(is_open, ctx);
+        });
+
+        self.left_panel_view.update(ctx, |left_panel, ctx| {
+            left_panel.on_left_panel_visibility_changed(is_open, ctx);
+        });
+
+        if !is_open {
+            self.focus_active_tab(ctx);
+        }
+
+        ctx.notify();
+    }
+
+    fn toggle_project_explorer_for_active_tab(&mut self, ctx: &mut ViewContext<Self>) {
+        let is_left_panel_open = self.active_tab_pane_group().as_ref(ctx).left_panel_open;
+        let is_file_tree_active = self.left_panel_view.as_ref(ctx).is_file_tree_active();
+
+        if is_left_panel_open && is_file_tree_active {
+            self.set_project_explorer_open_for_active_tab(false, ctx);
+            return;
+        }
+
+        self.set_project_explorer_open_for_active_tab(true, ctx);
+        self.left_panel_view.update(ctx, |left_panel, ctx| {
+            left_panel.handle_action_with_force_open(&LeftPanelAction::ProjectExplorer, false, ctx);
+            left_panel.focus_active_view_on_entry(ctx);
+            left_panel.auto_expand_active_file_tree_to_most_recent_directory(ctx);
+        });
     }
 
     fn toggle_left_panel_view(
@@ -19387,15 +19453,20 @@ impl TypedActionView for Workspace {
             ToggleLeftPanel => {
                 let active_pane_group = self.active_tab_pane_group().clone();
                 let was_open = active_pane_group.read(ctx, |pg, _| pg.left_panel_open);
+                let file_tree_active = self
+                    .left_panel_view
+                    .read(ctx, |lp, _| lp.is_file_tree_active());
 
                 // Don't open the panel if no views are available.
                 if !was_open && self.left_panel_views.is_empty() {
                     return;
                 }
 
-                let file_tree_active = self
-                    .left_panel_view
-                    .read(ctx, |lp, _| lp.is_file_tree_active());
+                if file_tree_active {
+                    self.toggle_project_explorer_for_active_tab(ctx);
+                    return;
+                }
+
                 let warp_drive_active = self
                     .left_panel_view
                     .read(ctx, |lp, _| lp.is_warp_drive_active());
@@ -20561,9 +20632,7 @@ impl TypedActionView for Workspace {
             }
             ToggleProjectExplorer => {
                 if *CodeSettings::as_ref(ctx).show_project_explorer {
-                    let is_showing = self.left_panel_view.as_ref(ctx).active_view()
-                        == ToolPanelView::ProjectExplorer;
-                    self.toggle_left_panel_view(&LeftPanelAction::ProjectExplorer, is_showing, ctx);
+                    self.toggle_project_explorer_for_active_tab(ctx);
                 }
             }
             ToggleWarpDrive => {

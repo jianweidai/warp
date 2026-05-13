@@ -893,11 +893,7 @@ impl View for AIBlock {
             });
         let query_and_index_is_some =
             query_and_index.is_some() && !should_hide_first_block_query_and_header;
-        let attachment_name_list = if FeatureFlag::ImageAsContext.is_enabled() {
-            attachment_names(self.model.inputs_to_render(app))
-        } else {
-            vec![]
-        };
+        let attachment_name_list = attachment_names(self.model.inputs_to_render(app));
 
         if !should_hide_first_block_query_and_header {
             if let Some((

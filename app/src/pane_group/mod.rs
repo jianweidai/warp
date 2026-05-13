@@ -3947,6 +3947,17 @@ impl PaneGroup {
         ctx.notify();
     }
 
+    pub fn set_left_panel_open_without_event(
+        &mut self,
+        is_open: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.left_panel_open != is_open {
+            self.left_panel_open = is_open;
+        }
+        ctx.notify();
+    }
+
     pub fn focus_first_pane(&mut self, ctx: &mut ViewContext<Self>) -> bool {
         if let Some(first) = self.panes.visible_pane_ids().first().copied() {
             return self.focus_pane_and_record_in_history(first, ctx);

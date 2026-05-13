@@ -9,8 +9,8 @@ use warpui::{AppContext, SingletonEntity};
 use crate::{
     ai::{
         agent::{
-            conversation::AIConversationId, AIAgentAttachment, AIAgentContext,
-            DocumentContentAttachmentSource, DriveObjectPayload,
+            conversation::AIConversationId, AIAgentAttachment, AIAgentContext, AnyFileContent,
+            DocumentContentAttachmentSource, DriveObjectPayload, FileContext,
         },
         block_context::BlockContext,
         blocklist::BlocklistAIContextModel,
@@ -25,6 +25,7 @@ use crate::{
         },
         GenericCloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType,
     },
+    code::auto_selection_context::AutoCodeSelectionContextModel,
     terminal::{
         model::{block::BlockId, session::active_session::ActiveSession},
         TerminalView,
@@ -59,6 +60,24 @@ pub(super) fn input_context_for_request(
 ) -> Arc<[AIAgentContext]> {
     let mut context = context_model.pending_context(app, is_user_query);
 
+    if is_user_query
+        && !context_model.has_explicit_user_context()
+        && !has_user_supplied_context(&additional_context)
+    {
+        if let Some(window_id) = app.windows().active_window() {
+            if let Some(selection) =
+                AutoCodeSelectionContextModel::as_ref(app).unique_selection_for_window(window_id)
+            {
+                context.push(AIAgentContext::File(FileContext::new(
+                    selection.relative_file_path,
+                    AnyFileContent::StringContent(selection.selected_text),
+                    Some(selection.line_range),
+                    None,
+                )));
+            }
+        }
+    }
+
     context.push(AIAgentContext::CurrentTime {
         current_time: Local::now(),
     });
@@ -83,6 +102,18 @@ pub(super) fn input_context_for_request(
     context.extend(additional_context);
 
     context.into()
+}
+
+fn has_user_supplied_context(context: &[AIAgentContext]) -> bool {
+    context.iter().any(|context| {
+        matches!(
+            context,
+            AIAgentContext::SelectedText(_)
+                | AIAgentContext::Image(_)
+                | AIAgentContext::File(_)
+                | AIAgentContext::Block(_)
+        )
+    })
 }
 
 /// Parses context reference strings like <block:123> from the user query and returns

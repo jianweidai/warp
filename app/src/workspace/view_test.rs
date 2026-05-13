@@ -77,6 +77,11 @@ use warpui::{platform::WindowStyle, App, ViewHandle};
 
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
+    crate::settings::AutoupdateSettings::register(app);
+    crate::settings::language::LanguageSettings::register(app);
+    crate::settings::app_installation_detection::UserAppInstallDetectionSettings::register(app);
+    crate::settings::WarpDrivePrivacySettings::register(app);
+    warp_ssh_manager::set_database_path(std::path::PathBuf::from(":memory:"));
 
     // Add the necessary singleton models to the App
     app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
@@ -120,6 +125,7 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(AgentConversationsModel::new);
     app.add_singleton_model(SessionPermissionsManager::new);
+    app.add_singleton_model(crate::ai::agent_providers::AgentProviderSecrets::new);
     app.add_singleton_model(LLMPreferences::new);
     app.add_singleton_model(|_| SettingsPaneManager::new());
     app.add_singleton_model(|_| AIFactManager::new());
@@ -143,6 +149,7 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| GPUState::new());
     app.add_singleton_model(|_| RestoredAgentConversations::default());
     app.add_singleton_model(OneTimeModalModel::new);
+    app.add_singleton_model(|_| crate::ssh_manager::SshTreeChangedNotifier::new());
     // Register GlobalResourceHandlesProvider before ServerExperiments which depends on it
     let global_resource_handles = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
@@ -2080,6 +2087,131 @@ fn test_left_panel_window_scoped_disabled_keeps_per_tab_state() {
             workspace.open_left_panel(ctx);
             assert!(
                 workspace
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .left_panel_open
+            );
+
+            workspace.activate_tab(0, ctx);
+            assert!(
+                workspace
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .left_panel_open
+            );
+        });
+    });
+}
+
+#[test]
+fn test_project_explorer_toggle_is_per_tab_even_when_left_panel_window_scoped() {
+    let _conversation_list_guard =
+        FeatureFlag::AgentViewConversationListView.override_enabled(false);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            set_left_panel_visibility_across_tabs(true, ctx);
+            workspace.add_terminal_tab(false, ctx);
+
+            workspace.activate_tab(0, ctx);
+            workspace.toggle_project_explorer_for_active_tab(ctx);
+            assert!(
+                workspace
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .left_panel_open
+            );
+
+            workspace.activate_tab(1, ctx);
+            assert!(
+                !workspace
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .left_panel_open
+            );
+
+            workspace.toggle_project_explorer_for_active_tab(ctx);
+            assert!(
+                workspace
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .left_panel_open
+            );
+
+            workspace.activate_tab(0, ctx);
+            assert!(
+                workspace
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .left_panel_open
+            );
+
+            workspace.activate_tab(1, ctx);
+            workspace.toggle_project_explorer_for_active_tab(ctx);
+            assert!(
+                !workspace
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .left_panel_open
+            );
+
+            workspace.activate_tab(0, ctx);
+            assert!(
+                workspace
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .left_panel_open
+            );
+        });
+    });
+}
+
+#[test]
+fn test_left_panel_toggle_uses_per_tab_state_when_project_explorer_is_active() {
+    let _conversation_list_guard =
+        FeatureFlag::AgentViewConversationListView.override_enabled(false);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            set_left_panel_visibility_across_tabs(true, ctx);
+            workspace.add_terminal_tab(false, ctx);
+
+            workspace.activate_tab(0, ctx);
+            workspace.handle_action(&WorkspaceAction::ToggleLeftPanel, ctx);
+            assert!(
+                workspace
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .left_panel_open
+            );
+
+            workspace.activate_tab(1, ctx);
+            assert!(
+                !workspace
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .left_panel_open
+            );
+
+            workspace.handle_action(&WorkspaceAction::ToggleLeftPanel, ctx);
+            assert!(
+                workspace
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .left_panel_open
+            );
+
+            workspace.handle_action(&WorkspaceAction::ToggleLeftPanel, ctx);
+            assert!(
+                !workspace
                     .active_tab_pane_group()
                     .as_ref(ctx)
                     .left_panel_open

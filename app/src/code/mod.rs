@@ -6,6 +6,7 @@ use warp_util::file::FileSaveError;
 use warpui::elements::DropTargetData;
 use warpui::AppContext;
 
+pub mod auto_selection_context;
 pub mod diff_viewer;
 pub mod editor;
 pub mod editor_management;
@@ -76,6 +77,7 @@ pub use icon::icon_from_file_path;
 pub mod view;
 
 pub fn init(app: &mut AppContext) {
+    app.add_singleton_model(|_| auto_selection_context::AutoCodeSelectionContextModel::default());
     self::view::init(app);
     self::file_tree::init(app);
 }

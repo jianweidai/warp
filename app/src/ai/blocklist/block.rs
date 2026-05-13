@@ -5049,6 +5049,14 @@ pub(super) fn attachment_names(inputs: &[AIAgentInput]) -> Vec<(AttachmentType, 
                     AIAgentContext::Image(image) => {
                         Some((AttachmentType::Image, image.file_name.clone()))
                     }
+                    AIAgentContext::File(file) => {
+                        let name = if let Some(range) = &file.line_range {
+                            format!("{}:{}-{}", file.file_name, range.start, range.end)
+                        } else {
+                            file.file_name.clone()
+                        };
+                        Some((AttachmentType::File, name))
+                    }
                     _ => None,
                 })
             })

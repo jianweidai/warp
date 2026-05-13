@@ -387,6 +387,7 @@ enum FollowUpTrigger {
 struct InputQuery {
     which_task: WhichTask,
     input_query: InputQueryType,
+    additional_context: Vec<AIAgentContext>,
     /// Additional referenced attachments to include in the query
     /// (e.g. file path references from shared session file uploads).
     additional_attachments: HashMap<String, AIAgentAttachment>,
@@ -707,6 +708,7 @@ impl BlocklistAIController {
         }
 
         let additional_attachments = input_query.additional_attachments;
+        let additional_context = input_query.additional_context;
         let ai_input = match input_query.input_query {
             InputQueryType::UserSubmittedQueryFromInput {
                 static_query_type,
@@ -720,6 +722,7 @@ impl BlocklistAIController {
                 user_query_mode,
                 running_command,
                 additional_attachments,
+                additional_context,
                 self.context_model.as_ref(ctx),
                 self.active_session.as_ref(ctx),
                 ctx,
@@ -831,6 +834,27 @@ impl BlocklistAIController {
             static_query_type,
             entrypoint_type,
             participant_id,
+            vec![],
+            /*is_queued_prompt*/ false,
+            ctx,
+        );
+    }
+
+    pub fn send_user_query_in_new_conversation_with_context(
+        &mut self,
+        query: String,
+        static_query_type: Option<StaticQueryType>,
+        entrypoint_type: EntrypointType,
+        participant_id: Option<ParticipantId>,
+        additional_context: Vec<AIAgentContext>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.send_user_query_in_new_conversation_internal(
+            query,
+            static_query_type,
+            entrypoint_type,
+            participant_id,
+            additional_context,
             /*is_queued_prompt*/ false,
             ctx,
         );
@@ -853,6 +877,7 @@ impl BlocklistAIController {
             static_query_type,
             entrypoint_type,
             participant_id,
+            vec![],
             /*is_queued_prompt*/ true,
             ctx,
         );
@@ -864,6 +889,7 @@ impl BlocklistAIController {
         static_query_type: Option<StaticQueryType>,
         entrypoint_type: EntrypointType,
         participant_id: Option<ParticipantId>,
+        additional_context: Vec<AIAgentContext>,
         is_queued_prompt: bool,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -900,6 +926,7 @@ impl BlocklistAIController {
                         static_query_type,
                         running_command: Some(running_command),
                     },
+                    additional_context,
                     additional_attachments: HashMap::new(),
                 },
                 entrypoint_type,
@@ -916,6 +943,7 @@ impl BlocklistAIController {
                         static_query_type,
                         running_command: None,
                     },
+                    additional_context,
                     additional_attachments: HashMap::new(),
                 },
                 entrypoint_type,
@@ -940,6 +968,7 @@ impl BlocklistAIController {
             None,
             false,
             HashMap::new(),
+            vec![],
             EntrypointType::AgentInitiated,
             /*is_queued_prompt*/ false,
             ctx,
@@ -960,6 +989,28 @@ impl BlocklistAIController {
             participant_id,
             false, // skip_running_command_detection
             HashMap::new(),
+            vec![],
+            EntrypointType::UserInitiated,
+            /*is_queued_prompt*/ false,
+            ctx,
+        );
+    }
+
+    pub fn send_user_query_in_conversation_with_context(
+        &mut self,
+        query: String,
+        conversation_id: AIConversationId,
+        participant_id: Option<ParticipantId>,
+        additional_context: Vec<AIAgentContext>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.send_user_query_in_conversation_internal(
+            query,
+            conversation_id,
+            participant_id,
+            false, // skip_running_command_detection
+            HashMap::new(),
+            additional_context,
             EntrypointType::UserInitiated,
             /*is_queued_prompt*/ false,
             ctx,
@@ -983,6 +1034,7 @@ impl BlocklistAIController {
             participant_id,
             false, // skip_running_command_detection
             HashMap::new(),
+            vec![],
             EntrypointType::UserInitiated,
             /*is_queued_prompt*/ true,
             ctx,
@@ -1004,6 +1056,7 @@ impl BlocklistAIController {
             participant_id,
             false, // skip_running_command_detection
             additional_attachments,
+            vec![],
             EntrypointType::UserInitiated,
             /*is_queued_prompt*/ false,
             ctx,
@@ -1027,6 +1080,7 @@ impl BlocklistAIController {
             participant_id,
             true, // skip_running_command_detection
             HashMap::new(),
+            vec![],
             EntrypointType::UserInitiated,
             /*is_queued_prompt*/ false,
             ctx,
@@ -1041,6 +1095,7 @@ impl BlocklistAIController {
         participant_id: Option<ParticipantId>,
         skip_running_command_detection: bool,
         additional_attachments: HashMap<String, AIAgentAttachment>,
+        additional_context: Vec<AIAgentContext>,
         entrypoint_type: EntrypointType,
         is_queued_prompt: bool,
         ctx: &mut ModelContext<Self>,
@@ -1149,6 +1204,7 @@ impl BlocklistAIController {
                     static_query_type: None,
                     running_command,
                 },
+                additional_context,
                 additional_attachments,
             },
             entrypoint_type,
@@ -1173,6 +1229,7 @@ impl BlocklistAIController {
                     static_query_type: query_type.static_query_type(),
                     running_command: None,
                 },
+                additional_context: vec![],
                 additional_attachments: HashMap::new(),
             },
             EntrypointType::ZeroStateAgentModePromptSuggestion,
@@ -1209,6 +1266,7 @@ impl BlocklistAIController {
             InputQuery {
                 which_task,
                 input_query: InputQueryType::AIInputType { ai_input },
+                additional_context: vec![],
                 additional_attachments: HashMap::new(),
             },
             EntrypointType::UserInitiated,
@@ -1374,6 +1432,7 @@ impl BlocklistAIController {
                         context,
                     },
                 },
+                additional_context: vec![],
                 additional_attachments: HashMap::new(),
             },
             EntrypointType::TriggerPassiveSuggestion {
@@ -3074,6 +3133,7 @@ fn input_for_query(
     user_query_mode: UserQueryMode,
     running_command: Option<RunningCommand>,
     additional_attachments: HashMap<String, AIAgentAttachment>,
+    additional_context: Vec<AIAgentContext>,
     context_model: &BlocklistAIContextModel,
     active_session: &ActiveSession,
     app: &AppContext,
@@ -3083,7 +3143,7 @@ fn input_for_query(
         context_model,
         active_session,
         Some(conversation_id),
-        vec![],
+        additional_context,
         app,
     );
     let intended_agent = BlocklistAIHistoryModel::as_ref(app)

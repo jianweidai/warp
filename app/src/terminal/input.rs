@@ -289,7 +289,6 @@ use warpui::{
 pub use warpui::{
     elements::{ParentElement as _, Stack},
     geometry::vector::{vec2f, Vector2F},
-    WindowId,
 };
 
 use self::decorations::InputBackgroundJobOptions;
@@ -12469,15 +12468,22 @@ impl Input {
             .selected_conversation_id(ctx)
         {
             self.ai_controller.update(ctx, move |controller, ctx| {
-                controller.send_user_query_in_conversation(ai_query, conversation_id, None, ctx)
+                controller.send_user_query_in_conversation_with_context(
+                    ai_query,
+                    conversation_id,
+                    None,
+                    vec![],
+                    ctx,
+                )
             });
         } else {
             self.ai_controller.update(ctx, move |controller, ctx| {
-                controller.send_user_query_in_new_conversation(
+                controller.send_user_query_in_new_conversation_with_context(
                     ai_query,
                     None,
                     EntrypointType::UserInitiated,
                     None,
+                    vec![],
                     ctx,
                 );
             });
