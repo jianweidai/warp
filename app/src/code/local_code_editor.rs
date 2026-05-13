@@ -34,8 +34,8 @@ use warpui::{
         button::ButtonVariant,
         components::{Coords, UiComponent, UiComponentStyles},
     },
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
-    WindowId,
+    AppContext, Element, Entity, EntityId, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle, WindowId,
 };
 
 use crate::{
@@ -716,7 +716,7 @@ impl LocalCodeEditorView {
     }
 
     /// If a single terminal view exists in the active window, returns the active file path's relative to to the terminal's session.
-    fn file_path_relative_to_terminal_view(&self, app: &AppContext) -> Option<String> {
+    fn file_path_relative_to_terminal_view(&self, app: &AppContext) -> Option<(EntityId, String)> {
         if let Some(terminal_target_fn) = self
             .selection_as_context_tooltip
             .as_ref()
@@ -724,6 +724,7 @@ impl LocalCodeEditorView {
         {
             app.windows().active_window().and_then(|window_id| {
                 terminal_target_fn(window_id, app).and_then(|terminal_view| {
+                    let terminal_view_id = terminal_view.id();
                     terminal_view
                         .as_ref(app)
                         .active_session_path_if_local(app)
@@ -735,6 +736,7 @@ impl LocalCodeEditorView {
                             self.file_path()
                                 .and_then(|file_path| to_relative_path(is_wsl, file_path, &cwd))
                         })
+                        .map(|relative_file_path| (terminal_view_id, relative_file_path))
                 })
             })
         } else {
@@ -743,7 +745,8 @@ impl LocalCodeEditorView {
     }
 
     fn current_selection_context(&self, app: &AppContext) -> Option<CodeSelectionContext> {
-        let relative_file_path = self.file_path_relative_to_terminal_view(app)?;
+        let (terminal_view_id, relative_file_path) =
+            self.file_path_relative_to_terminal_view(app)?;
         let (start, end) = self.editor.as_ref(app).selected_lines(app)?;
         let selected_text = self.editor.as_ref(app).selected_text(app)?;
         if selected_text.is_empty() {
@@ -751,6 +754,7 @@ impl LocalCodeEditorView {
         }
 
         Some(CodeSelectionContext {
+            terminal_view_id,
             relative_file_path,
             line_range: start as usize..end as usize,
             selected_text,

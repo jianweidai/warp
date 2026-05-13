@@ -29,7 +29,7 @@ use crate::ai::agent::{
     AIAgentActionResult, CancellationReason, PassiveSuggestionResultType, PassiveSuggestionTrigger,
     PassiveSuggestionTriggerType, RunningCommand,
 };
-use crate::ai::agent::{DocumentContentAttachmentSource, FileContext};
+use crate::ai::agent::{AnyFileContent, DocumentContentAttachmentSource, FileContext};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::document::ai_document_model::{
     AIDocumentId, AIDocumentModel, AIDocumentUserEditStatus,
@@ -44,6 +44,7 @@ use crate::ai::{
     },
     llms::LLMPreferences,
 };
+use crate::code::auto_selection_context::AutoCodeSelectionContextModel;
 use crate::features::FeatureFlag;
 use crate::global_resource_handles::GlobalResourceHandlesProvider;
 use crate::network::NetworkStatus;
@@ -588,6 +589,37 @@ impl BlocklistAIController {
         }
     }
 
+    fn take_auto_code_selection_context(
+        &mut self,
+        additional_context: &[AIAgentContext],
+        ctx: &mut ModelContext<Self>,
+    ) -> Vec<AIAgentContext> {
+        let Some(window_id) = ctx.windows().active_window() else {
+            return vec![];
+        };
+
+        let selection = AutoCodeSelectionContextModel::handle(ctx).update(ctx, |model, _ctx| {
+            model.take_unique_selection_for_terminal_view(window_id, self.terminal_view_id)
+        });
+
+        if self.context_model.as_ref(ctx).has_explicit_user_context()
+            || has_user_supplied_context(additional_context)
+        {
+            return vec![];
+        }
+
+        selection
+            .map(|selection| {
+                vec![AIAgentContext::File(FileContext::new(
+                    selection.relative_file_path,
+                    AnyFileContent::StringContent(selection.selected_text),
+                    Some(selection.line_range),
+                    None,
+                ))]
+            })
+            .unwrap_or_default()
+    }
+
     /// Internal method to send a query to the AI model. External callers should use either
     /// `send_user_query_in_conversation`, `send_user_in_conversation`, or
     /// `send_custom_ai_input_query` instead.
@@ -708,25 +740,30 @@ impl BlocklistAIController {
         }
 
         let additional_attachments = input_query.additional_attachments;
-        let additional_context = input_query.additional_context;
+        let mut additional_context = input_query.additional_context;
         let ai_input = match input_query.input_query {
             InputQueryType::UserSubmittedQueryFromInput {
                 static_query_type,
                 running_command,
                 ..
-            } => input_for_query(
-                query,
-                &task_id,
-                conversation_id,
-                static_query_type,
-                user_query_mode,
-                running_command,
-                additional_attachments,
-                additional_context,
-                self.context_model.as_ref(ctx),
-                self.active_session.as_ref(ctx),
-                ctx,
-            ),
+            } => {
+                let auto_code_selection_context =
+                    self.take_auto_code_selection_context(&additional_context, ctx);
+                additional_context.extend(auto_code_selection_context);
+                input_for_query(
+                    query,
+                    &task_id,
+                    conversation_id,
+                    static_query_type,
+                    user_query_mode,
+                    running_command,
+                    additional_attachments,
+                    additional_context,
+                    self.context_model.as_ref(ctx),
+                    self.active_session.as_ref(ctx),
+                    ctx,
+                )
+            }
             InputQueryType::AIInputType { ai_input } => ai_input,
         };
         inputs.push(ai_input);
@@ -3169,6 +3206,18 @@ fn input_for_query(
         running_command,
         intended_agent,
     }
+}
+
+fn has_user_supplied_context(context: &[AIAgentContext]) -> bool {
+    context.iter().any(|context| {
+        matches!(
+            context,
+            AIAgentContext::SelectedText(_)
+                | AIAgentContext::Image(_)
+                | AIAgentContext::File(_)
+                | AIAgentContext::Block(_)
+        )
+    })
 }
 
 /// Validates that tool call results have corresponding tool calls in the task context, otherwise
