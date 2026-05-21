@@ -9,7 +9,6 @@ use std::path::PathBuf;
 use indexmap::IndexMap;
 
 use crate::ai::request_usage_model::RequestLimitInfo;
-use crate::auth::AuthStateProvider;
 use crate::report_if_error;
 use crate::terminal::CLIAgent;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -298,7 +297,7 @@ pub enum DefaultSessionMode {
     /// New sessions start in agent view.
     Agent,
     /// New sessions start in cloud (ambient) agent mode.
-    CloudAgent,
+    AmbientAgent,
     /// New sessions open a user-defined tab config.
     /// The specific config is identified by the companion `default_tab_config_path` setting.
     TabConfig,
@@ -323,7 +322,7 @@ impl DefaultSessionMode {
         match self {
             DefaultSessionMode::Terminal => "Terminal",
             DefaultSessionMode::Agent => "Agent",
-            DefaultSessionMode::CloudAgent => "Cloud Oz",
+            DefaultSessionMode::AmbientAgent => "Ambient Agent",
             DefaultSessionMode::TabConfig => "Tab Config",
             DefaultSessionMode::DockerSandbox => "Local Docker Sandbox",
         }
@@ -628,7 +627,6 @@ cfg_if! {
     }
 }
 
-/// Maps custom toolbar command regex patterns to CLI agent names.
 // ---------------------------------------------------------------------------
 // 自定义 Agent 提供商配置(进程内 Provider)
 // ---------------------------------------------------------------------------
@@ -640,15 +638,11 @@ cfg_if! {
 /// 任何 OpenAI 兼容的本地服务等)。后续可在此扩展 Anthropic、Google、Bedrock。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum AgentProviderKind {
     /// OpenAI 兼容的 Chat Completions / `/v1/models` 协议。
+    #[default]
     OpenAiCompatible,
-}
-
-impl Default for AgentProviderKind {
-    fn default() -> Self {
-        Self::OpenAiCompatible
-    }
 }
 
 /// BYOP provider 实际使用的 API 协议类型 — 显式指定,
@@ -662,10 +656,12 @@ impl Default for AgentProviderKind {
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, schemars::JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum AgentProviderApiType {
     /// OpenAI Chat Completions(`POST /v1/chat/completions`)。
     /// 适用于:OpenAI 官方、DeepSeek、SiliconFlow、OpenRouter、智谱 GLM、
     /// Moonshot、DashScope-OpenAI 兼容、本地 vLLM/llama.cpp 等。
+    #[default]
     OpenAi,
     /// OpenAI Responses API(`POST /v1/responses`)。
     /// 适用于:GPT-5 / Codex / Pro 等较新模型。
@@ -682,12 +678,6 @@ pub enum AgentProviderApiType {
     /// thinking-mode 模型必须选这个类型,普通 chat 模型(`deepseek-chat`)
     /// 选 OpenAI 也可以工作。
     DeepSeek,
-}
-
-impl Default for AgentProviderApiType {
-    fn default() -> Self {
-        Self::OpenAi
-    }
 }
 
 /// Provider 级别的 reasoning effort(思考深度)偏好。
@@ -1139,7 +1129,7 @@ impl settings_value::SettingsValue for BYOPLastUsedReasoningMap {
 }
 
 define_settings_group!(AISettings, settings: [
-    // If `false`, all AI features are disabled.
+    // 历史遗留设置。OpenWarp 的 Warp 智能体现在固定开启,不要用这个字段判断启用状态。
     is_any_ai_enabled: IsAnyAIEnabled {
         type: bool,
         default: true,
@@ -1247,18 +1237,6 @@ define_settings_group!(AISettings, settings: [
         toml_path: "agents.warp_agent.active_ai.natural_language_autosuggestions_enabled",
         description: "Controls whether ghosted text autosuggestions are shown for AI input queries.",
         feature_flag: FeatureFlag::PredictAMQueries,
-    }
-    // This field should not be referenced directly to lookup shared block title generations
-    // enablement -- use the `is_shared_block_title_generation_enabled()` getter.
-    // This feature refers to the auto title generation when the user opens the shared block dialog.
-    shared_block_title_generation_enabled_internal: SharedBlockTitleGenerationEnabled {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: false,
-        toml_path: "agents.warp_agent.active_ai.shared_block_title_generation_enabled",
-        description: "Controls whether titles are auto-generated when sharing blocks.",
     }
     // This field should not be referenced directly to lookup git operations AI autogen
     // enablement -- use the `is_git_operations_autogen_enabled()` getter.
@@ -1570,41 +1548,6 @@ define_settings_group!(AISettings, settings: [
         private: true,
     }
 
-    // This is not a user-visible setting - it's merely a one-time flag to track if the Oz launch modal
-    // has been shown to the user.
-    //
-    // We model it as a setting so it's only shown once to a given user regardless of the number of
-    // devices they use.
-    did_check_to_trigger_oz_launch_modal: DidShowOzLaunchModal {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        private: true,
-    }
-
-    // Used to determine whether the "What's new in Oz" section of the agent view
-    // zero state is expanded or collapsed by default.
-    should_expand_oz_updates: ShouldExpandOzUpdates {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: true,
-    }
-
-    // Used to determine whether the "What's new in Oz" section of the agent view
-    // zero state is shown or hidden.
-    should_show_oz_updates_in_zero_state: ShouldShowOzUpdatesInZeroState {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: false,
-        toml_path: "agents.warp_agent.other.should_show_oz_updates_in_zero_state",
-        description: "Whether the \"What's new\" section is shown in the agent view.",
-    }
-
     // Whether or not the user has enabled the ability to use Warp credits even when providing
     // their own LLM provider API key.
     can_use_warp_credits_with_byok: CanUseWarpCreditsWithByok {
@@ -1756,33 +1699,6 @@ define_settings_group!(AISettings, settings: [
         sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "general.default_tab_config_path",
-    }
-
-    // Whether computer use is enabled for cloud agent conversations started from the Warp app.
-    // This setting is only used when the AI autonomy setting is AlwaysAsk or not set.
-    cloud_agent_computer_use_enabled: CloudAgentComputerUseEnabled {
-        type: bool,
-        default: warp_core::channel::ChannelState::channel().is_dogfood(),
-        supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: false,
-        toml_path: "agents.warp_agent.other.cloud_agent_computer_use_enabled",
-        description: "Whether computer use is enabled for cloud agent conversations.",
-    }
-
-    // Whether multi-agent orchestration is enabled. When enabled, the agent can
-    // spawn and coordinate parallel sub-agents via StartAgent / SendMessageToAgent
-    // tools. This setting is only effective when FeatureFlag::Orchestration is also
-    // enabled.
-    orchestration_enabled: OrchestrationEnabled {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: false,
-        toml_path: "agents.warp_agent.other.orchestration_enabled",
-        description: "Whether multi-agent orchestration is enabled.",
-        feature_flag: FeatureFlag::Orchestration,
     }
 
     // Whether file-based MCP servers from third-party AI tools (e.g. Claude, Codex) should
@@ -2014,31 +1930,10 @@ impl AISettings {
         });
     }
 
-    pub fn is_ai_disabled_due_to_remote_session_org_policy(&self, app: &AppContext) -> bool {
-        let contains_remote_blocks = FocusedTerminalInfo::as_ref(app).contains_any_remote_blocks();
-
-        let contains_restored_remote_blocks =
-            FocusedTerminalInfo::as_ref(app).contains_any_restored_remote_blocks();
-
-        let is_ai_allowed_in_remote_sessions =
-            UserWorkspaces::as_ref(app).is_ai_allowed_in_remote_sessions();
-
-        if is_ai_allowed_in_remote_sessions {
-            return false;
-        }
-
-        contains_remote_blocks || contains_restored_remote_blocks
-    }
-
-    pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {
-        // Disable AI for anonymous and logged-out users.
-        let is_anonymous_or_logged_out = AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out();
-
-        *self.is_any_ai_enabled
-            && !is_anonymous_or_logged_out
-            && !self.is_ai_disabled_due_to_remote_session_org_policy(app)
+    pub fn is_any_ai_enabled(&self, _app: &AppContext) -> bool {
+        // OpenWarp 不再允许通过设置关闭 Warp 智能体。旧配置文件里持久化的
+        // `agents.warp_agent.is_any_ai_enabled = false` 会被忽略。
+        true
     }
 
     pub fn default_session_mode(&self, app: &AppContext) -> DefaultSessionMode {
@@ -2046,8 +1941,8 @@ impl AISettings {
         match mode {
             // Terminal and TabConfig don't require AI.
             DefaultSessionMode::Terminal | DefaultSessionMode::TabConfig => mode,
-            // Agent and CloudAgent require AI to be enabled.
-            DefaultSessionMode::Agent | DefaultSessionMode::CloudAgent => {
+            // Agent and AmbientAgent require AI to be enabled.
+            DefaultSessionMode::Agent | DefaultSessionMode::AmbientAgent => {
                 if self.is_any_ai_enabled(app) {
                     mode
                 } else {
@@ -2111,10 +2006,6 @@ impl AISettings {
         self.is_active_ai_enabled(app) && *self.natural_language_autosuggestions_enabled_internal
     }
 
-    pub fn is_shared_block_title_generation_enabled(&self, app: &warpui::AppContext) -> bool {
-        self.is_active_ai_enabled(app) && *self.shared_block_title_generation_enabled_internal
-    }
-
     pub fn is_git_operations_autogen_enabled(&self, app: &warpui::AppContext) -> bool {
         self.is_active_ai_enabled(app) && *self.git_operations_autogen_enabled_internal
     }
@@ -2159,21 +2050,15 @@ impl AISettings {
         if !FeatureFlag::FileBasedMcp.is_enabled() || !self.is_any_ai_enabled(app) {
             return false;
         }
-        // NOTE: we intentionally do not force-enable this in Cloud Mode. Previously
+        // NOTE: we intentionally do not force-enable this in autonomous agent runs. Previously
         // we auto-spawned file-based MCPs in autonomous execution, but that bypassed
         // the user's explicit opt-in and let any MCP config checked into a repo run
-        // arbitrary commands as part of a cloud agent run. Respecting the toggle
-        // closes that attack surface; cloud agents that need project-scoped MCP
+        // arbitrary commands as part of an agent run. Respecting the toggle
+        // closes that attack surface; agents that need project-scoped MCP
         // servers should surface an explicit, auditable opt-in. A more robust
         // solution (e.g. per-environment allowlisting, signed configs) should be
         // explored in the future.
         *self.file_based_mcp_enabled
-    }
-
-    pub fn is_orchestration_enabled(&self, app: &warpui::AppContext) -> bool {
-        FeatureFlag::Orchestration.is_enabled()
-            && self.is_any_ai_enabled(app)
-            && *self.orchestration_enabled
     }
 
     /// Determines whether a quota reset banner should be displayed to the user.

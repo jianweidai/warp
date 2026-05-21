@@ -10,9 +10,11 @@
 //!   - 当前 locale 没有 → fluent 内部 fallback 到 fallback_language (en)
 //!   - 连英文都没有 → 返回 key 本身字符串(并 log::warn,便于 CI 抓未翻译条目)
 
+#[cfg(not(target_os = "macos"))]
+use i18n_embed::DesktopLanguageRequester;
 use i18n_embed::{
     fluent::{fluent_language_loader, FluentLanguageLoader},
-    DesktopLanguageRequester, LanguageLoader,
+    LanguageLoader,
 };
 use rust_embed::RustEmbed;
 use std::sync::OnceLock;
@@ -47,10 +49,10 @@ pub fn init(override_locale: Option<&str>) {
             Ok(li) => vec![li],
             Err(e) => {
                 log::warn!("[i18n] invalid override_locale {s:?}: {e} — falling back to system");
-                DesktopLanguageRequester::requested_languages()
+                system_requested_languages()
             }
         },
-        None => DesktopLanguageRequester::requested_languages(),
+        None => system_requested_languages(),
     };
 
     if let Err(e) = i18n_embed::select(&loader, &Localizations, &requested) {
@@ -78,6 +80,71 @@ fn propagate_ui_locale(loader: &FluentLanguageLoader) {
     if let Some(li) = langs.first() {
         warpui::set_ui_locale(li.to_string());
     }
+}
+
+fn system_requested_languages() -> Vec<LanguageIdentifier> {
+    #[cfg(target_os = "macos")]
+    {
+        macos_requested_languages()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        DesktopLanguageRequester::requested_languages()
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_requested_languages() -> Vec<LanguageIdentifier> {
+    use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+    use warpui::platform::mac::utils::nsstring_as_str;
+
+    unsafe {
+        let locale_class = class!(NSLocale);
+        let preferred_languages: *const Object = msg_send![locale_class, preferredLanguages];
+        let count: usize = msg_send![preferred_languages, count];
+
+        let mut requested = Vec::with_capacity(count);
+        for index in 0..count {
+            let language: *const Object = msg_send![preferred_languages, objectAtIndex: index];
+            match nsstring_as_str(language) {
+                Ok(language) => {
+                    if let Some(language) = parse_language_identifier(language) {
+                        requested.push(language);
+                    }
+                }
+                Err(err) => {
+                    log::warn!(
+                        "[i18n] failed to read macOS preferred language at index {index}: {err}"
+                    );
+                }
+            }
+        }
+
+        languages_or_fallback(requested)
+    }
+}
+
+fn parse_language_identifier(language: &str) -> Option<LanguageIdentifier> {
+    match language.parse::<LanguageIdentifier>() {
+        Ok(language) => Some(language),
+        Err(err) => {
+            log::warn!("[i18n] invalid language identifier {language:?}: {err}");
+            None
+        }
+    }
+}
+
+fn languages_or_fallback(languages: Vec<LanguageIdentifier>) -> Vec<LanguageIdentifier> {
+    if languages.is_empty() {
+        vec![fallback_language()]
+    } else {
+        languages
+    }
+}
+
+fn fallback_language() -> LanguageIdentifier {
+    "en".parse().expect("en is a valid language identifier")
 }
 
 /// 取全局 loader。`init()` 没调过时返回 `None`(早期/测试代码可用 [`t_or`] 兜底)。
@@ -121,7 +188,7 @@ pub fn reset_to_system_locale() {
     let Some(loader) = LANGUAGE_LOADER.get() else {
         return;
     };
-    let requested = DesktopLanguageRequester::requested_languages();
+    let requested = system_requested_languages();
     if let Err(e) = i18n_embed::select(loader, &Localizations, &requested) {
         log::warn!("[i18n] reset_to_system_locale failed: {e}");
     }
@@ -210,5 +277,26 @@ mod tests {
         // 不存在的 key — fluent 会返回 key 本身或带 marker 的字符串
         let missing = loader.get("definitely-does-not-exist");
         assert!(missing.contains("definitely-does-not-exist"));
+    }
+
+    #[test]
+    fn requested_languages_keep_preferred_order() {
+        let languages = ["ja", "zh-CN"]
+            .into_iter()
+            .filter_map(parse_language_identifier)
+            .collect();
+
+        let languages = languages_or_fallback(languages);
+
+        assert_eq!(languages[0].to_string(), "ja");
+        assert_eq!(languages[1].to_string(), "zh-CN");
+    }
+
+    #[test]
+    fn requested_languages_fall_back_to_english_when_empty() {
+        let languages = languages_or_fallback(Vec::new());
+
+        assert_eq!(languages.len(), 1);
+        assert_eq!(languages[0].to_string(), "en");
     }
 }

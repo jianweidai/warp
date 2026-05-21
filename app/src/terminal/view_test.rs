@@ -386,13 +386,12 @@ fn escape_does_not_exit_local_agent_view_with_long_running_command() {
 }
 
 #[test]
-fn root_cloud_mode_pane_sets_root_cloud_mode_context_key() {
+fn root_ambient_agent_pane_sets_root_ambient_agent_context_key() {
     use crate::settings::import::model::ImportedConfigModel;
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         app.add_singleton_model(ImportedConfigModel::new);
         FeatureFlag::AgentView.set_enabled(true);
-        FeatureFlag::CloudMode.set_enabled(true);
 
         let terminal = add_window_with_terminal(&mut app, None);
 
@@ -400,7 +399,7 @@ fn root_cloud_mode_pane_sets_root_cloud_mode_context_key() {
             assert!(!view
                 .keymap_context(ctx)
                 .set
-                .contains(init::ROOT_CLOUD_MODE_PANE_KEY));
+                .contains(init::ROOT_AMBIENT_AGENT_PANE_KEY));
         });
 
         terminal.update(&mut app, |view, ctx| {
@@ -413,7 +412,7 @@ fn root_cloud_mode_pane_sets_root_cloud_mode_context_key() {
             assert!(view
                 .keymap_context(ctx)
                 .set
-                .contains(init::ROOT_CLOUD_MODE_PANE_KEY));
+                .contains(init::ROOT_AMBIENT_AGENT_PANE_KEY));
         });
 
         terminal.update(&mut app, |view, ctx| {
@@ -426,19 +425,18 @@ fn root_cloud_mode_pane_sets_root_cloud_mode_context_key() {
             assert!(!view
                 .keymap_context(ctx)
                 .set
-                .contains(init::ROOT_CLOUD_MODE_PANE_KEY));
+                .contains(init::ROOT_AMBIENT_AGENT_PANE_KEY));
         });
     });
 }
 
 #[test]
-fn set_input_mode_agent_does_not_enter_local_agent_from_root_cloud_mode_pane() {
+fn set_input_mode_agent_does_not_enter_local_agent_from_root_ambient_agent_pane() {
     use crate::terminal::shared_session::SharedSessionStatus;
 
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         FeatureFlag::AgentView.set_enabled(true);
-        FeatureFlag::CloudMode.set_enabled(true);
 
         let terminal = add_window_with_terminal(&mut app, None);
 
@@ -3654,6 +3652,57 @@ fn cli_agent_rich_input_hint_text_mentions_active_cli_agent() {
 }
 
 #[test]
+fn cli_agent_rich_input_open_sets_terminal_keymap_context() {
+    use crate::settings::import::model::ImportedConfigModel;
+
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        let terminal = open_cli_agent_rich_input_for_agent(&mut app, CLIAgent::Claude);
+        terminal.read(&app, |view, ctx| {
+            let keymap_context = <TerminalView as warpui::View>::keymap_context(view, ctx);
+            assert!(
+                keymap_context
+                    .set
+                    .contains(crate::settings_view::flags::CLI_AGENT_RICH_INPUT_OPEN),
+                "terminal keymap context should expose open CLI agent rich input"
+            );
+        });
+    })
+}
+
+// 行为测试：当 rich input 已打开时，再次触发 OpenCLIAgentRichInput action
+// （即 Ctrl-G 实际命中绑定后被 dispatch 的 handler）应当关闭 rich input。
+// 这覆盖了本次修复的核心 toggle 路径。
+#[test]
+fn ctrl_g_action_closes_open_cli_agent_rich_input() {
+    use crate::settings::import::model::ImportedConfigModel;
+
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        let terminal = open_cli_agent_rich_input_for_agent(&mut app, CLIAgent::Claude);
+        terminal.update(&mut app, |view, ctx| {
+            assert!(
+                view.is_cli_agent_rich_input_open(ctx),
+                "rich input should be open before toggling"
+            );
+            view.handle_action(&TerminalAction::OpenCLIAgentRichInput, ctx);
+            assert!(
+                !view.is_cli_agent_rich_input_open(ctx),
+                "OpenCLIAgentRichInput should close rich input when already open"
+            );
+        });
+    })
+}
+
+#[test]
 fn cli_agent_rich_input_shell_mode_uses_run_commands_hint_text() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
@@ -4662,4 +4711,114 @@ fn linear_deeplink_via_default_entrypoint_does_not_auto_submit_in_fullscreen() {
             );
         });
     })
+}
+
+// ---- OneKey 搜索过滤 pure 函数测试 ----
+//
+// 这些测试只针对 `filter_and_sort_onekey_candidates` 这条 pure 路径,
+// 不需要构造 TerminalView / ctx。skim 算法的 Unicode 处理由 fuzzy_match
+// crate 负责,这里只验证我们在 view.rs 中对它的使用是否符合预期。
+
+use super::filter_and_sort_onekey_candidates;
+use super::OnekeyMenuRows;
+
+fn rows_indices(rows: OnekeyMenuRows) -> Vec<usize> {
+    match rows {
+        OnekeyMenuRows::Ordered(v) => v,
+        OnekeyMenuRows::NoMatches => panic!("expected Ordered, got NoMatches"),
+    }
+}
+
+#[test]
+fn onekey_empty_query_returns_full_set_in_original_order() {
+    let candidates = vec![
+        ("prod-db", "deploy@10.0.0.5:22"),
+        ("staging-web", "ubuntu@stage.foo.com:22"),
+        ("生产数据库", "ops@db.example.com:22"),
+    ];
+    let result = filter_and_sort_onekey_candidates(candidates.iter().copied(), "");
+    assert_eq!(rows_indices(result), vec![0, 1, 2]);
+}
+
+#[test]
+fn onekey_empty_query_after_trim_returns_full_set() {
+    let candidates = vec![("a", "1"), ("b", "2")];
+    let result = filter_and_sort_onekey_candidates(candidates.iter().copied(), "   ");
+    assert_eq!(rows_indices(result), vec![0, 1]);
+}
+
+#[test]
+fn onekey_query_filters_out_non_matches() {
+    let candidates = vec![("apple", "x"), ("banana", "x"), ("apricot", "x")];
+    // "ap" 应该命中 apple / apricot,banana 不命中。
+    // 这里不断言 apple / apricot 之间的相对顺序——具体打分由 skim 决定,
+    // 我们只保证 banana 被过滤掉。
+    let result = filter_and_sort_onekey_candidates(candidates.iter().copied(), "ap");
+    let indices = rows_indices(result);
+    assert!(indices.contains(&0)); // apple
+    assert!(indices.contains(&2)); // apricot
+    assert!(!indices.contains(&1)); // banana
+}
+
+#[test]
+fn onekey_query_matches_subtitle() {
+    let candidates = vec![
+        ("server-1", "alice@prod.example.com:22"),
+        ("server-2", "bob@stage.example.com:22"),
+    ];
+    let result = filter_and_sort_onekey_candidates(candidates.iter().copied(), "prod");
+    let indices = rows_indices(result);
+    // 只有 server-1 的 subtitle 含 prod。
+    assert_eq!(indices, vec![0]);
+}
+
+#[test]
+fn onekey_query_no_match_returns_no_matches() {
+    let candidates = vec![("a", "1"), ("b", "2")];
+    let result = filter_and_sort_onekey_candidates(candidates.iter().copied(), "zzz-not-present");
+    assert_eq!(result, OnekeyMenuRows::NoMatches);
+}
+
+#[test]
+fn onekey_query_matches_chinese_characters() {
+    // 中文字符序列匹配:skim 算法按 Unicode char 处理。
+    let candidates = vec![
+        ("生产数据库", "ops@db.example.com:22"),
+        ("测试服务器", "qa@test.example.com:22"),
+    ];
+    let result = filter_and_sort_onekey_candidates(candidates.iter().copied(), "生产");
+    let indices = rows_indices(result);
+    assert_eq!(indices, vec![0]);
+}
+
+#[test]
+fn onekey_query_matches_japanese_characters() {
+    let candidates = vec![
+        ("本番データベース", "ops@db.example.com:22"),
+        ("ステージング", "stage@example.com:22"),
+    ];
+    let result = filter_and_sort_onekey_candidates(candidates.iter().copied(), "データ");
+    let indices = rows_indices(result);
+    assert_eq!(indices, vec![0]);
+}
+
+#[test]
+fn onekey_query_case_insensitive() {
+    let candidates = vec![("ProductionDB", "ops@example.com:22")];
+    let result = filter_and_sort_onekey_candidates(candidates.iter().copied(), "production");
+    assert_eq!(rows_indices(result), vec![0]);
+}
+
+#[test]
+fn onekey_empty_candidates_with_query_returns_no_matches() {
+    let candidates: Vec<(&str, &str)> = vec![];
+    let result = filter_and_sort_onekey_candidates(candidates.iter().copied(), "anything");
+    assert_eq!(result, OnekeyMenuRows::NoMatches);
+}
+
+#[test]
+fn onekey_empty_candidates_with_empty_query_returns_empty_ordered() {
+    let candidates: Vec<(&str, &str)> = vec![];
+    let result = filter_and_sort_onekey_candidates(candidates.iter().copied(), "");
+    assert_eq!(rows_indices(result), Vec::<usize>::new());
 }

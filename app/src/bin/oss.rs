@@ -4,8 +4,8 @@
 
 use anyhow::Result;
 use warp_core::{
-    channel::{Channel, ChannelConfig, ChannelState, OzConfig, WarpServerConfig},
-    features::{FeatureFlag, DEBUG_FLAGS},
+    channel::{Channel, ChannelConfig, ChannelState},
+    features::DEBUG_FLAGS,
     AppId,
 };
 
@@ -16,10 +16,6 @@ fn main() -> Result<()> {
         ChannelConfig {
             app_id: AppId::new("dev", "openwarp", "OpenWarp"),
             logfile_name: "openwarp.log".into(),
-            server_config: WarpServerConfig::disabled(),
-            oz_config: OzConfig::disabled(),
-            telemetry_config: None,
-            crash_reporting_config: None,
             autoupdate_config: None,
             mcp_static_config: None,
         },
@@ -32,6 +28,7 @@ fn main() -> Result<()> {
     // 可见 —— 在 Windows 上对日文 / 中文 / 韩文输入都属于实质性损坏。
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
+        use warp_core::features::FeatureFlag;
         state = state.with_additional_features(&[FeatureFlag::ImeMarkedText]);
     }
     ChannelState::set(state);

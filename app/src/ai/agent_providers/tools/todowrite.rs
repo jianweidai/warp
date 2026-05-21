@@ -106,6 +106,30 @@ pub static TODOWRITE: OpenAiTool = OpenAiTool {
     result_to_json,
 };
 
+/// 合成给上游模型看的 todowrite tool_result。
+///
+/// `todowrite` 是本地拦截工具,不会产生 `AIAgentAction`,所以必须带
+/// `_byop_intercepted` sentinel。controller 会用这个标记触发 auto-resume,
+/// 让模型在下一轮收到 tool_result 后继续 loop。
+pub fn success_result_to_json(message: &'static str) -> Value {
+    json!({
+        "_byop_intercepted": true,
+        "status": "ok",
+        "message": message,
+    })
+}
+
+pub fn invalid_arguments_result_to_json(detail: String, received_args: &str) -> Value {
+    json!({
+        "_byop_intercepted": true,
+        "error": "invalid_arguments",
+        "detail": detail,
+        "tool": TOOL_NAME,
+        "received_args": received_args,
+        "hint": "Expected { todos: [{ content: string, status: string }] }.",
+    })
+}
+
 /// 根据 content 计算稳定 id。模型用同样 content 第二次发 todo 时拿到同一个 id,
 /// 这样 `mark_todos_complete(todo_ids)` 才能在 pending 里命中 → 把它移到 completed。
 fn stable_id(content: &str) -> String {
@@ -188,5 +212,26 @@ fn make_update_todos_message(
         )),
         request_id: request_id.to_owned(),
         timestamp: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn intercepted_result_payloads_include_auto_resume_sentinel() {
+        let ok = success_result_to_json("todo list updated");
+        assert_eq!(ok["_byop_intercepted"], true);
+        assert_eq!(ok["status"], "ok");
+        let ok_string = serde_json::to_string(&ok).unwrap();
+        assert!(ok_string.contains(r#""_byop_intercepted":true"#));
+
+        let err = invalid_arguments_result_to_json("bad args".to_owned(), "{}");
+        assert_eq!(err["_byop_intercepted"], true);
+        assert_eq!(err["error"], "invalid_arguments");
+        assert_eq!(err["tool"], TOOL_NAME);
+        let err_string = serde_json::to_string(&err).unwrap();
+        assert!(err_string.contains(r#""_byop_intercepted":true"#));
     }
 }

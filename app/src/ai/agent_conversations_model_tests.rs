@@ -1,5 +1,4 @@
-use chrono::{DateTime, Duration, Utc};
-use instant::Instant;
+use chrono::{DateTime, Utc};
 use persistence::model::AgentConversationData;
 use std::{
     collections::HashMap,
@@ -25,8 +24,7 @@ use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
 use super::{
     AgentConversationsModel, AgentConversationsModelEvent, AgentManagementFilters,
     AgentRunDisplayStatus, ArtifactFilter, ConversationMetadata, ConversationOrTask,
-    EnvironmentFilter, HarnessFilter, OwnerFilter, StatusFilter, TaskFetchState,
-    MAX_PERSONAL_TASKS, MAX_TEAM_TASKS,
+    EnvironmentFilter, HarnessFilter, OwnerFilter, StatusFilter,
 };
 use crate::ai::ambient_agents::task::HarnessConfig;
 use warp_cli::agent::Harness;
@@ -132,7 +130,6 @@ fn test_display_status_uses_setup_task_states() {
 #[test]
 fn test_display_status_uses_matching_conversation_for_in_progress_task() {
     App::test((), |mut app| async move {
-        let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
         let now = Utc::now();
@@ -156,6 +153,7 @@ fn test_display_status_uses_matching_conversation_for_in_progress_task() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 compaction_state_json: None,
+                byop_repair_state_json: None,
             },
         );
 
@@ -185,7 +183,6 @@ fn test_display_status_uses_matching_conversation_for_in_progress_task() {
 #[test]
 fn test_display_status_updates_when_blocked_conversation_resumes() {
     App::test((), |mut app| async move {
-        let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
         let now = Utc::now();
@@ -209,6 +206,7 @@ fn test_display_status_updates_when_blocked_conversation_resumes() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 compaction_state_json: None,
+                byop_repair_state_json: None,
             },
         );
 
@@ -262,7 +260,6 @@ fn test_display_status_updates_when_blocked_conversation_resumes() {
 #[test]
 fn test_display_status_terminal_task_state_overrides_matching_conversation() {
     App::test((), |mut app| async move {
-        let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
         let now = Utc::now();
@@ -286,6 +283,7 @@ fn test_display_status_terminal_task_state_overrides_matching_conversation() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 compaction_state_json: None,
+                byop_repair_state_json: None,
             },
         );
 
@@ -314,7 +312,6 @@ fn test_display_status_terminal_task_state_overrides_matching_conversation() {
 #[test]
 fn test_status_filter_uses_display_status_for_task_backed_conversations() {
     App::test((), |mut app| async move {
-        let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
         app.add_singleton_model(|_| AuthStateProvider::new_for_test());
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
@@ -339,6 +336,7 @@ fn test_status_filter_uses_display_status_for_task_backed_conversations() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 compaction_state_json: None,
+                byop_repair_state_json: None,
             },
         );
 
@@ -405,7 +403,6 @@ fn create_test_model() -> AgentConversationsModel {
         active_data_consumers_per_window: HashMap::new(),
         has_finished_initial_load: false,
         manually_opened_task_ids: Default::default(),
-        task_fetch_state: Default::default(),
     }
 }
 
@@ -454,156 +451,6 @@ fn all_owner_filters() -> AgentManagementFilters {
         owners: OwnerFilter::All,
         ..Default::default()
     }
-}
-
-#[test]
-fn test_eviction_protects_personal_from_team_overflow() {
-    // Add 50 old personal tasks + 600 new team tasks
-    // After eviction: all 50 personal remain, only 300 team remain
-    let current_user = "user-personal";
-    let team_user = "user-team";
-    let now = Utc::now();
-
-    let mut model = create_test_model();
-
-    // Add 50 old personal tasks
-    for i in 0..50 {
-        let task = create_test_task(&make_uuid(i), current_user, now - Duration::days(30));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    // Add 600 new team tasks
-    for i in 50..650 {
-        let task = create_test_task(&make_uuid(i), team_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    model.enforce_task_cap(current_user);
-
-    // Count personal vs team
-    let personal_count = model
-        .tasks
-        .values()
-        .filter(|t| t.creator.as_ref().is_some_and(|c| c.uid == current_user))
-        .count();
-    let team_count = model.tasks.len() - personal_count;
-
-    // All 50 personal tasks should remain
-    assert_eq!(personal_count, 50, "all personal tasks should remain");
-    // Team tasks should be capped at MAX_TEAM_TASKS
-    assert_eq!(team_count, MAX_TEAM_TASKS, "team tasks should be capped");
-}
-
-#[test]
-fn test_eviction_caps_each_group_independently() {
-    // Add 250 personal + 350 team
-    // After eviction: 200 personal + 300 team
-    let current_user = "user-personal";
-    let team_user = "user-team";
-    let now = Utc::now();
-
-    let mut model = create_test_model();
-
-    // Add 250 personal tasks
-    for i in 0..250 {
-        let task = create_test_task(&make_uuid(i), current_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    // Add 350 team tasks
-    for i in 250..600 {
-        let task = create_test_task(&make_uuid(i), team_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    model.enforce_task_cap(current_user);
-
-    // Count personal vs team
-    let personal_count = model
-        .tasks
-        .values()
-        .filter(|t| t.creator.as_ref().is_some_and(|c| c.uid == current_user))
-        .count();
-    let team_count = model.tasks.len() - personal_count;
-
-    // Personal capped at MAX_PERSONAL_TASKS
-    assert_eq!(
-        personal_count, MAX_PERSONAL_TASKS,
-        "personal tasks should be capped"
-    );
-    // Team capped at MAX_TEAM_TASKS
-    assert_eq!(team_count, MAX_TEAM_TASKS, "team tasks should be capped");
-}
-
-#[test]
-fn test_eviction_removes_oldest_within_group() {
-    let current_user = "user-personal";
-    let now = Utc::now();
-
-    let mut model = create_test_model();
-
-    // Add 250 personal tasks with different timestamps
-    // Newer tasks have lower index (i.e., index 0 is newest)
-    for i in 0..250 {
-        let task = create_test_task(&make_uuid(i), current_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    // Add 350 team tasks (to trigger eviction)
-    let team_user = "user-team";
-    for i in 250..600 {
-        let task = create_test_task(&make_uuid(i), team_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    model.enforce_task_cap(current_user);
-
-    // The 200 newest personal tasks should remain (indices 0-199)
-    for i in 0..MAX_PERSONAL_TASKS {
-        let task_id: AmbientAgentTaskId = make_uuid(i).parse().unwrap();
-        assert!(
-            model.tasks.contains_key(&task_id),
-            "newest personal task {i} should remain"
-        );
-    }
-
-    // The oldest personal tasks should be evicted (indices 200-249)
-    for i in MAX_PERSONAL_TASKS..250 {
-        let task_id: AmbientAgentTaskId = make_uuid(i).parse().unwrap();
-        assert!(
-            !model.tasks.contains_key(&task_id),
-            "oldest personal task {i} should be evicted"
-        );
-    }
-}
-
-#[test]
-fn test_eviction_noop_when_under_cap() {
-    let current_user = "user-personal";
-    let team_user = "user-team";
-    let now = Utc::now();
-
-    let mut model = create_test_model();
-
-    // Add 100 personal + 100 team (well under cap)
-    for i in 0..100 {
-        let task = create_test_task(&make_uuid(i), current_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-    for i in 100..200 {
-        let task = create_test_task(&make_uuid(i), team_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    let original_count = model.tasks.len();
-    model.enforce_task_cap(current_user);
-
-    // No tasks should be evicted
-    assert_eq!(
-        model.tasks.len(),
-        original_count,
-        "no tasks should be evicted when under cap"
-    );
 }
 
 #[test]
@@ -749,7 +596,6 @@ fn test_task_status_maps_blocked_state_to_blocked() {
 #[test]
 fn test_get_tasks_and_conversations_prefers_task_when_task_id_matches_conversation_run_id() {
     App::test((), |mut app| async move {
-        let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
         app.add_singleton_model(|_| AuthStateProvider::new_for_test());
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
@@ -773,6 +619,7 @@ fn test_get_tasks_and_conversations_prefers_task_when_task_id_matches_conversati
                 autoexecute_override: None,
                 last_event_sequence: None,
                 compaction_state_json: None,
+                byop_repair_state_json: None,
             },
         );
 
@@ -831,6 +678,7 @@ fn test_get_tasks_and_conversations_prefers_task_when_server_token_matches() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 compaction_state_json: None,
+                byop_repair_state_json: None,
             },
         );
 
@@ -888,6 +736,7 @@ fn test_get_tasks_and_conversations_keeps_unrelated_tasks_and_conversations() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 compaction_state_json: None,
+                byop_repair_state_json: None,
             },
         );
 
@@ -1051,10 +900,7 @@ fn test_harness_filter_is_filtering_and_reset() {
 }
 
 #[test]
-fn test_get_or_async_fetch_task_data_returns_cached_task_without_fetching() {
-    // If the task is already in `tasks`, return it directly and don't touch the fetch-state
-    // map — even if a stale `PermanentlyFailedAt` entry exists (which shouldn't normally happen,
-    // but proves the success path takes precedence).
+fn test_get_or_async_fetch_task_data_returns_cached_task() {
     App::test((), |mut app| async move {
         let now = Utc::now();
         let task = create_test_task(&make_uuid(7000), "user-a", now);
@@ -1063,115 +909,28 @@ fn test_get_or_async_fetch_task_data_returns_cached_task_without_fetching() {
         let model_handle = app.add_singleton_model(|_| {
             let mut model = create_test_model();
             model.tasks.insert(task_id, task.clone());
-            // Sentinel: even if a permanent-failure entry is present, the cached task wins.
-            model
-                .task_fetch_state
-                .insert(task_id, TaskFetchState::PermanentlyFailedAt(Instant::now()));
             model
         });
 
-        let result = model_handle.update(&mut app, |model, ctx| {
-            model.get_or_async_fetch_task_data(&task_id, ctx)
+        let result = model_handle.update(&mut app, |model, _| {
+            model.get_or_async_fetch_task_data(&task_id)
         });
 
         assert!(result.is_some(), "cached task should be returned");
-        model_handle.update(&mut app, |model, _| {
-            // The cached-hit fast path doesn't touch `task_fetch_state`, so the sentinel
-            // entry is left as-is and (importantly) no `InFlight` entry was added.
-            assert!(matches!(
-                model.task_fetch_state.get(&task_id),
-                Some(TaskFetchState::PermanentlyFailedAt(_))
-            ));
-        });
     });
 }
 
 #[test]
-fn test_get_or_async_fetch_task_data_skips_when_permanently_failed() {
-    // A task id marked as `PermanentlyFailedAt` within its cooldown (e.g. very recent 403) must
-    // not spawn a new fetch.
+fn test_get_or_async_fetch_task_data_does_not_fetch_missing_task() {
     App::test((), |mut app| async move {
         let task_id: AmbientAgentTaskId = make_uuid(7001).parse().unwrap();
+        let model_handle = app.add_singleton_model(|_| create_test_model());
 
-        let model_handle = app.add_singleton_model(|_| {
-            let mut model = create_test_model();
-            model
-                .task_fetch_state
-                .insert(task_id, TaskFetchState::PermanentlyFailedAt(Instant::now()));
-            model
-        });
-
-        let result = model_handle.update(&mut app, |model, ctx| {
-            model.get_or_async_fetch_task_data(&task_id, ctx)
+        let result = model_handle.update(&mut app, |model, _| {
+            model.get_or_async_fetch_task_data(&task_id)
         });
 
         assert!(result.is_none());
-        model_handle.update(&mut app, |model, _| {
-            // The state is unchanged — still permanently failed, no in-flight upgrade.
-            assert!(matches!(
-                model.task_fetch_state.get(&task_id),
-                Some(TaskFetchState::PermanentlyFailedAt(_))
-            ));
-        });
-    });
-}
-
-#[test]
-fn test_get_or_async_fetch_task_data_skips_when_in_flight() {
-    // A task id already marked as `InFlight` must not spawn a duplicate fetch.
-    App::test((), |mut app| async move {
-        let task_id: AmbientAgentTaskId = make_uuid(7002).parse().unwrap();
-
-        let model_handle = app.add_singleton_model(|_| {
-            let mut model = create_test_model();
-            model
-                .task_fetch_state
-                .insert(task_id, TaskFetchState::InFlight);
-            model
-        });
-
-        let result = model_handle.update(&mut app, |model, ctx| {
-            model.get_or_async_fetch_task_data(&task_id, ctx)
-        });
-
-        assert!(result.is_none());
-        model_handle.update(&mut app, |model, _| {
-            // Still exactly the one in-flight entry we pre-seeded.
-            assert_eq!(model.task_fetch_state.len(), 1);
-            assert!(matches!(
-                model.task_fetch_state.get(&task_id),
-                Some(TaskFetchState::InFlight)
-            ));
-        });
-    });
-}
-
-#[test]
-fn test_get_or_async_fetch_task_data_skips_within_transient_cooldown() {
-    // A recent transient failure (timestamp younger than the cooldown) must short-circuit.
-    App::test((), |mut app| async move {
-        let task_id: AmbientAgentTaskId = make_uuid(7003).parse().unwrap();
-
-        let model_handle = app.add_singleton_model(|_| {
-            let mut model = create_test_model();
-            model
-                .task_fetch_state
-                .insert(task_id, TaskFetchState::TransientlyFailedAt(Instant::now()));
-            model
-        });
-
-        let result = model_handle.update(&mut app, |model, ctx| {
-            model.get_or_async_fetch_task_data(&task_id, ctx)
-        });
-
-        assert!(result.is_none());
-        model_handle.update(&mut app, |model, _| {
-            // The transient entry is preserved (no upgrade to in-flight).
-            assert!(matches!(
-                model.task_fetch_state.get(&task_id),
-                Some(TaskFetchState::TransientlyFailedAt(_))
-            ));
-        });
     });
 }
 

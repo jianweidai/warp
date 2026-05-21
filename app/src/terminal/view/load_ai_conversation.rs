@@ -10,7 +10,7 @@ use crate::ai::blocklist::agent_view::{
     AgentViewEntryBlockParams, AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage,
 };
 use crate::ai::blocklist::block::cli_controller::CLISubagentController;
-use crate::ai::blocklist::history_model::{CLIAgentConversation, CloudConversationData};
+use crate::ai::blocklist::history_model::{CLIAgentConversation, LoadedConversationData};
 use crate::ai::blocklist::BlocklistAIContextModel;
 use crate::terminal::input::message_bar::Message as InputMessage;
 use crate::terminal::input::message_bar::MessageItem;
@@ -90,7 +90,7 @@ pub enum ConversationRestorationInNewPaneType {
         active_conversation_id: Option<AIConversationId>,
     },
 
-    /// Load a conversation for the cloud conversation viewer or CLI.
+    /// Load a conversation for the read-only conversation viewer or CLI.
     /// The conversation has already been converted from ConversationData.
     Historical {
         conversation: AIConversation,
@@ -180,7 +180,7 @@ pub struct AIBlockCreationParams {
     /// The exchange data used to process outputs for restoring code diffs, and dummy requested command blocks if command_block_index is None.
     pub exchange: AIAgentExchange,
     /// When true, uses the live (non-restored) appearance even though the block is restored.
-    /// Used for forked conversations and cloud conversation viewer.
+    /// Used for forked conversations and the read-only conversation viewer.
     pub use_live_appearance: bool,
 
     /// Whether this block is being restored as part of conversation restoration on app startup.
@@ -206,17 +206,11 @@ impl TerminalView {
     /// already in the right directory, or we need to cd.
     fn resolve_dir_restoration_state(
         &self,
-        cloud_conversation: &CloudConversationData,
+        cloud_conversation: &LoadedConversationData,
     ) -> RestorationDirState {
         let target_dir = match cloud_conversation {
-            CloudConversationData::Oz(conversation) => {
-                conversation.initial_working_directory().or_else(|| {
-                    conversation
-                        .server_metadata()
-                        .and_then(|metadata| metadata.working_directory.clone())
-                })
-            }
-            CloudConversationData::CLIAgent(cli_conversation) => {
+            LoadedConversationData::Oz(conversation) => conversation.initial_working_directory(),
+            LoadedConversationData::CLIAgent(cli_conversation) => {
                 cli_conversation.metadata.working_directory.clone()
             }
         };
@@ -239,7 +233,7 @@ impl TerminalView {
 
     pub(crate) fn restore_conversation_and_directory_context<F>(
         &mut self,
-        cloud_conversation: CloudConversationData,
+        cloud_conversation: LoadedConversationData,
         use_live_appearance: bool,
         on_restored: F,
         ctx: &mut ViewContext<Self>,
@@ -255,14 +249,14 @@ impl TerminalView {
                 me.maybe_show_restore_context_hint(restore_dir_state, ctx);
 
                 match cloud_conversation {
-                    CloudConversationData::Oz(conversation) => {
+                    LoadedConversationData::Oz(conversation) => {
                         me.restore_conversation_after_view_creation(
                             RestoredAIConversation::new(*conversation),
                             use_live_appearance,
                             ctx,
                         );
                     }
-                    CloudConversationData::CLIAgent(cli_conversation) => {
+                    LoadedConversationData::CLIAgent(cli_conversation) => {
                         if FeatureFlag::AgentHarness.is_enabled() {
                             me.restore_cli_agent_block_snapshot(cli_conversation.block);
                         } else {
@@ -610,7 +604,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         // We don't want blocks to appear as restored for forked conversations
-        // and conversations in the cloud conversation viewer.
+        // and conversations in the read-only conversation viewer.
         let use_live_appearance = conversation_restoration.should_use_live_appearance();
         let is_fork_conversation_in_new_pane = conversation_restoration.is_forked();
         let is_startup = conversation_restoration.is_startup();
@@ -986,11 +980,12 @@ impl TerminalView {
             autoexecute_override: None,
             last_event_sequence: None,
             compaction_state_json: None,
+            byop_repair_state_json: None,
         };
 
         match AIConversation::new_restored(conversation_id, tasks, Some(conversation_data)) {
             Ok(conversation) => {
-                // Use live appearance for cloud conversation viewer
+                // Use live appearance for the read-only conversation viewer.
                 self.restore_conversation_after_view_creation(
                     RestoredAIConversation::new(conversation),
                     true,

@@ -1,26 +1,20 @@
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 
 use crate::{
     appearance::Appearance,
     cloud_object::{
-        CloudModelType, CloudObject, CreateCloudObjectResult, CreateObjectRequest,
-        GenericCloudObject, GenericServerObject, GenericStringObjectFormat,
-        GenericStringObjectUniqueKey, ObjectType, Revision, SerializedModel, ServerCloudObject,
-        UpdateCloudObjectResult,
+        GenericStoredObject, GenericStringObjectFormat, GenericStringObjectUniqueKey, ObjectType,
+        SerializedModel, StoredObject, StoredObjectModel,
     },
-    drive::{items::WarpDriveItem, CloudObjectTypeAndId},
+    drive::{items::WarpDriveItem, ObjectTypeAndId},
     persistence::ModelEvent,
-    server::{
-        ids::{ObjectUid, ServerId, SyncId},
-        server_api::object::ObjectClient,
-    },
+    server::ids::{ObjectUid, ServerId, SyncId},
 };
 use anyhow::Result;
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// A trait that generic string-based objects should implement.
-pub trait CloudStringObject: CloudObject + Send + Sync {
+pub trait StoredStringObject: StoredObject + Send + Sync {
     /// Returns the object format for this object.
     fn generic_string_object_format(&self) -> GenericStringObjectFormat;
 
@@ -30,21 +24,19 @@ pub trait CloudStringObject: CloudObject + Send + Sync {
     /// Returns a serialized model from this string object.
     fn serialized(&self) -> SerializedModel;
 
-    /// Returns a cloned boxed version of this cloud object.
-    /// Note that we can't force this trait to derive from Cloned
-    /// directly because that would make the trait not object safe.  This
-    /// is a workaround.
-    fn clone_box(&self) -> Box<dyn CloudStringObject>;
+    /// 返回这个 stored object 的 boxed clone。
+    /// 不能直接要求该 trait derive Clone,否则 trait 不再 object safe。
+    fn clone_box(&self) -> Box<dyn StoredStringObject>;
 }
 
 /// A `StringModel` is a model that can be serialized and deserialized as a simple string.
 ///
 /// Any model that has a simple string representation (e.g. JSON, markdown, yaml) that can be atomically updated
-/// can implement this trait and get most cloud object functionality for free.
+/// 实现这个 trait 后即可复用大多数本地 object-store 行为。
 ///
-/// Objects that implement this type all share common storage and server apis.
+/// 实现这个类型的对象共享同一套本地存储行为。
 pub trait StringModel: Clone + Debug + PartialEq + Send + Sync + 'static {
-    type CloudObjectType: CloudObject + 'static;
+    type StoredObjectType: StoredObject + 'static;
 
     /// Returns the name of this model type (e.g. Workflow, Folder, Notebook)
     fn model_type_name(&self) -> &'static str;
@@ -92,13 +84,10 @@ pub trait StringModel: Clone + Debug + PartialEq + Send + Sync + 'static {
         &self,
         _id: SyncId,
         _appearance: &Appearance,
-        _object: &Self::CloudObjectType,
+        _object: &Self::StoredObjectType,
     ) -> Option<Box<dyn WarpDriveItem>> {
         None
     }
-
-    /// Returns a new instance from a server update, or None if the update should be ignored.
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self>;
 
     /// Returns whether this model type should clear on a unique key conflict.
     fn should_clear_on_unique_key_conflict(&self) -> bool {
@@ -125,17 +114,18 @@ pub trait Serializer<M>: Debug + Clone + 'static {
 pub struct GenericStringModel<M, S>
 where
     M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
+        StoredObjectType = GenericStoredObject<GenericStringObjectId, GenericStringModel<M, S>>,
     >,
     S: Serializer<M>,
 {
     pub string_model: M,
 }
 
-impl<M, S> CloudStringObject for GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>
+impl<M, S> StoredStringObject
+    for GenericStoredObject<GenericStringObjectId, GenericStringModel<M, S>>
 where
     M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
+        StoredObjectType = GenericStoredObject<GenericStringObjectId, GenericStringModel<M, S>>,
     >,
     S: Serializer<M>,
 {
@@ -151,26 +141,24 @@ where
         self.model.serialized()
     }
 
-    fn clone_box(&self) -> Box<dyn CloudStringObject> {
+    fn clone_box(&self) -> Box<dyn StoredStringObject> {
         Box::new(self.clone())
     }
 }
 
-/// Implements the CloudModelType trait for all generic string models.
+/// Implements the StoredObjectModel trait for all generic string models.
 ///
-/// This has common logic for storing string models to SQLite, sending them to the server
-/// updating from the server -- basically for anything not specific to the contents
+/// This has common logic for storing string models to SQLite and updating from the
+/// server -- basically for anything not specific to the contents
 /// of the string model.
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-impl<M, S> CloudModelType for GenericStringModel<M, S>
+impl<M, S> StoredObjectModel for GenericStringModel<M, S>
 where
     M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
+        StoredObjectType = GenericStoredObject<GenericStringObjectId, GenericStringModel<M, S>>,
     >,
     S: Serializer<M>,
 {
-    type CloudObjectType = GenericCloudObject<GenericStringObjectId, Self>;
+    type StoredObjectType = GenericStoredObject<GenericStringObjectId, Self>;
     type IdType = GenericStringObjectId;
 
     fn model_type_name(&self) -> &'static str {
@@ -181,8 +169,8 @@ where
         ObjectType::GenericStringObject(M::model_format())
     }
 
-    fn cloud_object_type_and_id(&self, id: SyncId) -> CloudObjectTypeAndId {
-        CloudObjectTypeAndId::GenericStringObject {
+    fn object_type_and_id(&self, id: SyncId) -> ObjectTypeAndId {
+        ObjectTypeAndId::GenericStringObject {
             object_type: M::model_format(),
             id,
         }
@@ -196,10 +184,13 @@ where
         self.string_model.set_display_name(name);
     }
 
-    fn upsert_event(&self, object: &GenericCloudObject<GenericStringObjectId, Self>) -> ModelEvent {
-        let object = object as &dyn CloudStringObject;
+    fn upsert_event(
+        &self,
+        object: &GenericStoredObject<GenericStringObjectId, Self>,
+    ) -> ModelEvent {
+        let object = object as &dyn StoredStringObject;
         ModelEvent::UpsertGenericStringObject {
-            object: CloudStringObject::clone_box(object),
+            object: StoredStringObject::clone_box(object),
         }
     }
 
@@ -220,10 +211,10 @@ where
     }
 
     fn bulk_upsert_event(
-        objects: &[GenericCloudObject<GenericStringObjectId, Self>],
+        objects: &[GenericStoredObject<GenericStringObjectId, Self>],
     ) -> ModelEvent {
         ModelEvent::UpsertGenericStringObjects(
-            objects.iter().map(CloudStringObject::clone_box).collect(),
+            objects.iter().map(StoredStringObject::clone_box).collect(),
         )
     }
 
@@ -235,64 +226,8 @@ where
         true
     }
 
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        self.string_model
-            .new_from_server_update(server_cloud_object)
-            .map(Self::new)
-    }
-
     fn serialized(&self) -> SerializedModel {
         S::serialize(&self.string_model)
-    }
-
-    async fn send_create_request(
-        object_client: Arc<dyn ObjectClient>,
-        request: CreateObjectRequest,
-    ) -> Result<CreateCloudObjectResult> {
-        let model_as_str = request
-            .serialized_model
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing serialized model"))?
-            .model_as_str();
-        let model = S::deserialize_owned(model_as_str)?;
-        object_client
-            .create_generic_string_object(M::model_format(), model.uniqueness_key(), request)
-            .await
-    }
-
-    async fn send_update_request(
-        &self,
-        object_client: Arc<dyn ObjectClient>,
-        server_id: ServerId,
-        revision: Option<Revision>,
-    ) -> Result<UpdateCloudObjectResult<GenericServerObject<GenericStringObjectId, Self>>> {
-        let revision =
-            if M::should_enforce_revisions() {
-                Some(revision.ok_or_else(|| {
-                    anyhow::anyhow!("Missing revision on update of generic object")
-                })?)
-            } else {
-                None
-            };
-        let res = object_client
-            .update_generic_string_object(server_id.into(), self.serialized(), revision)
-            .await;
-        res.and_then(|update_result| match update_result {
-            UpdateCloudObjectResult::Success {
-                revision_and_editor,
-            } => Ok(UpdateCloudObjectResult::Success {
-                revision_and_editor,
-            }),
-            UpdateCloudObjectResult::Rejected { object } => {
-                // Downcast to the concrete type to handle an update rejection (should be rare)
-                let concrete_object: Option<&GenericServerObject<GenericStringObjectId, Self>> =
-                    (&object).into();
-                let object = concrete_object
-                    .cloned()
-                    .ok_or_else(|| anyhow::anyhow!("Failed to convert object to concrete type"))?;
-                Ok(UpdateCloudObjectResult::Rejected { object })
-            }
-        })
     }
 
     fn renders_in_warp_drive(&self) -> bool {
@@ -303,7 +238,7 @@ where
         &self,
         id: SyncId,
         appearance: &Appearance,
-        object: &GenericCloudObject<GenericStringObjectId, Self>,
+        object: &GenericStoredObject<GenericStringObjectId, Self>,
     ) -> Option<Box<dyn WarpDriveItem>> {
         self.string_model.to_warp_drive_item(id, appearance, object)
     }
@@ -312,7 +247,7 @@ where
 impl<M, S> GenericStringModel<M, S>
 where
     M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
+        StoredObjectType = GenericStoredObject<GenericStringObjectId, GenericStringModel<M, S>>,
     >,
     S: Serializer<M>,
 {

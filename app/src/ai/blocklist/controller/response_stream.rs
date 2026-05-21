@@ -1,22 +1,24 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
+use crate::ai::api_error::AIApiError;
 use anyhow::anyhow;
 use chrono::{DateTime, Local, TimeDelta};
 use futures::channel::oneshot;
+use futures_util::StreamExt;
 use uuid::Uuid;
 use warp_multi_agent_api::response_event;
 use warpui::{Entity, ModelContext};
 
 use crate::{
     ai::agent::{
-        api::{self, generate_multi_agent_output, ConvertToAPITypeError},
+        api::{self, ConvertToAPITypeError},
         conversation::AIConversationId,
         AIAgentInput, AIIdentifiers, CancellationReason,
     },
     ai::blocklist::BlocklistAIHistoryModel,
+    ai::byop_readiness::BlockedByopReadinessError,
     network::NetworkStatus,
     report_error, send_telemetry_from_ctx,
-    server::server_api::ServerApiProvider,
 };
 use warpui::SingletonEntity;
 
@@ -167,6 +169,10 @@ fn pending_title_generation_from_byop(
 pub struct ResponseStreamId(String);
 
 impl ResponseStreamId {
+    pub fn new_local() -> Self {
+        Self(Uuid::new_v4().to_string())
+    }
+
     pub fn for_shared_session(init_event: &response_event::StreamInit) -> Self {
         // Make the stream ID unique per viewing by appending a local UUID
         // This prevents collisions when replaying the same conversation multiple times
@@ -176,7 +182,7 @@ impl ResponseStreamId {
 
     #[cfg(test)]
     pub fn new_for_test() -> Self {
-        Self(Uuid::new_v4().to_string())
+        Self::new_local()
     }
 }
 
@@ -232,7 +238,6 @@ impl ResponseStream {
         can_attempt_resume_on_error: bool,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        let server_api = ServerApiProvider::as_ref(ctx).get();
         let (cancellation_tx, cancellation_rx) = oneshot::channel();
         let start_time = Local::now();
 
@@ -249,24 +254,26 @@ impl ResponseStream {
             async move {
                 if let Some(byop) = byop_dispatch {
                     crate::ai::agent_providers::chat_stream::generate_byop_output(
-                        params_clone,
-                        byop.base_url,
-                        byop.api_key,
-                        byop.model_id,
-                        byop.api_type,
-                        byop.reasoning_effort,
-                        byop.extra_headers,
-                        byop.root_task_id,
-                        byop.target_task_id,
-                        byop.needs_create_task,
-                        byop.lrc_command_id,
-                        byop.lrc_should_spawn_subagent,
-                        byop.context_window,
-                        cancellation_rx,
+                        crate::ai::agent_providers::chat_stream::ByopOutputInput {
+                            params: params_clone,
+                            base_url: byop.base_url,
+                            api_key: byop.api_key,
+                            model_id: byop.model_id,
+                            api_type: byop.api_type,
+                            reasoning_effort: byop.reasoning_effort,
+                            extra_headers: byop.extra_headers,
+                            task_id: byop.root_task_id,
+                            target_task_id: byop.target_task_id,
+                            needs_create_task: byop.needs_create_task,
+                            lrc_command_id: byop.lrc_command_id,
+                            lrc_should_spawn_subagent: byop.lrc_should_spawn_subagent,
+                            context_window: byop.context_window,
+                            cancellation_rx,
+                        },
                     )
                     .await
                 } else {
-                    generate_multi_agent_output(server_api, params_clone, cancellation_rx).await
+                    byop_required_response_stream(cancellation_rx).await
                 }
             },
             move |me, stream, ctx| {
@@ -349,30 +356,31 @@ impl ResponseStream {
         let request_id = Uuid::new_v4();
         self.current_request_id = Some(request_id);
         let params = self.params.clone();
-        let server_api = ServerApiProvider::as_ref(ctx).get();
         let byop_dispatch = byop_dispatch_info(&params, &self.ai_identifiers, ctx);
         let _ = ctx.spawn(
             async move {
                 if let Some(byop) = byop_dispatch {
                     crate::ai::agent_providers::chat_stream::generate_byop_output(
-                        params,
-                        byop.base_url,
-                        byop.api_key,
-                        byop.model_id,
-                        byop.api_type,
-                        byop.reasoning_effort,
-                        byop.extra_headers,
-                        byop.root_task_id,
-                        byop.target_task_id,
-                        byop.needs_create_task,
-                        byop.lrc_command_id,
-                        byop.lrc_should_spawn_subagent,
-                        byop.context_window,
-                        cancellation_rx,
+                        crate::ai::agent_providers::chat_stream::ByopOutputInput {
+                            params,
+                            base_url: byop.base_url,
+                            api_key: byop.api_key,
+                            model_id: byop.model_id,
+                            api_type: byop.api_type,
+                            reasoning_effort: byop.reasoning_effort,
+                            extra_headers: byop.extra_headers,
+                            task_id: byop.root_task_id,
+                            target_task_id: byop.target_task_id,
+                            needs_create_task: byop.needs_create_task,
+                            lrc_command_id: byop.lrc_command_id,
+                            lrc_should_spawn_subagent: byop.lrc_should_spawn_subagent,
+                            context_window: byop.context_window,
+                            cancellation_rx,
+                        },
                     )
                     .await
                 } else {
-                    generate_multi_agent_output(server_api, params, cancellation_rx).await
+                    byop_required_response_stream(cancellation_rx).await
                 }
             },
             move |me, stream, ctx| {
@@ -421,6 +429,10 @@ impl ResponseStream {
             }
             Err(e) => {
                 log::error!("Failed to send request to multi-agent API: {e:?}");
+                let api_error = convert_to_api_error(e);
+                ctx.emit(ResponseStreamEvent::ReceivedEvent(Consumable::new(Err(
+                    Arc::new(api_error),
+                ))));
                 self.on_response_stream_complete(request_id, ctx);
             }
         }
@@ -523,32 +535,16 @@ impl ResponseStream {
                     self.should_resume_conversation_after_stream_finished = true;
                 }
 
-                #[cfg(feature = "crash_reporting")]
-                sentry::with_scope(
-                    |scope| {
-                        scope.set_tag(
-                            "has_received_client_actions",
-                            self.has_received_client_actions,
-                        );
-                        scope.set_tag("error", format!("{e:?}"));
-                        scope.set_tag("is_retryable", e.is_retryable());
-                        scope.set_tag("is_online", is_online);
-                        scope.set_tag("retry_count", self.retry_count);
-                    },
-                    || {
-                        report_error!(anyhow!(e.clone()).context(format!(
-                            "MultiAgent request failed after {} retries",
-                            self.retry_count
-                        )));
-                    },
+                log::warn!(
+                    "MultiAgent request failed after {} retries: has_received_client_actions={}, is_retryable={}, is_online={is_online}",
+                    self.retry_count,
+                    self.has_received_client_actions,
+                    e.is_retryable()
                 );
-                #[cfg(not(feature = "crash_reporting"))]
-                {
-                    report_error!(anyhow!(e.clone()).context(format!(
-                        "MultiAgent request failed after {} retries",
-                        self.retry_count
-                    )));
-                }
+                report_error!(anyhow!(e.clone()).context(format!(
+                    "MultiAgent request failed after {} retries",
+                    self.retry_count
+                )));
 
                 ctx.emit(ResponseStreamEvent::ReceivedEvent(Consumable::new(event)));
             }
@@ -561,6 +557,22 @@ impl ResponseStream {
         }
         ctx.emit(ResponseStreamEvent::AfterStreamFinished { cancellation: None });
         self.cancellation_tx = None;
+    }
+}
+
+fn convert_to_api_error(error: ConvertToAPITypeError) -> AIApiError {
+    match &error {
+        ConvertToAPITypeError::Other(inner)
+            if inner.downcast_ref::<BlockedByopReadinessError>().is_some() =>
+        {
+            let blocked = inner
+                .downcast_ref::<BlockedByopReadinessError>()
+                .expect("checked blocked readiness error");
+            AIApiError::Other(BlockedByopReadinessError::new(blocked.category()).into())
+        }
+        ConvertToAPITypeError::Ignore
+        | ConvertToAPITypeError::Unimplemented(_)
+        | ConvertToAPITypeError::Other(_) => AIApiError::Other(anyhow!(error.to_string())),
     }
 }
 
@@ -608,4 +620,17 @@ pub enum ResponseStreamEvent {
 
 impl Entity for ResponseStream {
     type Event = ResponseStreamEvent;
+}
+
+async fn byop_required_response_stream(
+    cancellation_rx: oneshot::Receiver<()>,
+) -> Result<api::ResponseStream, ConvertToAPITypeError> {
+    log::debug!("No BYOP provider selected for OpenWarp agent request");
+    let error_stream = futures::stream::once(async {
+        Err(Arc::new(AIApiError::Other(anyhow!(
+            "OpenWarp requires a configured BYOP provider in Settings"
+        ))))
+    })
+    .take_until(cancellation_rx);
+    Ok(Box::pin(error_stream))
 }

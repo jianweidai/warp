@@ -21,12 +21,16 @@ use diesel::SqliteConnection;
 
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::agent::conversation::{ServerAIConversationMetadata, UpdateConversationError};
+use crate::ai::agent::conversation::UpdateConversationError;
 use crate::ai::agent::task::helper::{MessageExt, ToolCallExt};
 use crate::ai::agent::task::TaskId;
 use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::agent::CancellationReason;
+use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::artifacts::Artifact;
+use crate::ai::byop_readiness::{
+    RepairRecord, RepairSource, RepairState, RepairStateStatus, ToolCallKey,
+};
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::input_suggestions::HistoryOrder;
 use crate::persistence::model::AgentConversationData;
@@ -53,15 +57,13 @@ use super::RequestInput;
 
 mod conversation_loader;
 pub use conversation_loader::{
-    convert_persisted_conversation_to_ai_conversation_with_metadata, load_conversation_from_server,
-    CLIAgentConversation, CloudConversationData,
+    convert_persisted_conversation_to_ai_conversation_with_metadata, CLIAgentConversation,
+    LoadedConversationData,
 };
 
 pub(super) const MAX_HISTORICAL_CONVERSATIONS: usize = 100;
 
-/// Metadata for conversations
-/// When created from local DB, has_local_data=true and server_metadata=None.
-/// When fetched from server, has_local_data=false and server_metadata=Some(...).
+/// Metadata for conversations restored from memory or local SQLite.
 #[derive(Debug, Clone)]
 pub struct AIConversationMetadata {
     pub id: AIConversationId,
@@ -79,20 +81,13 @@ pub struct AIConversationMetadata {
     pub server_conversation_token: Option<ServerConversationToken>,
 
     /// Whether the full conversation data exists in the local database.
-    /// false = must be fetched from server
-    /// true = exists in local DB and can be fetched from there, even if it also exists in server
-    pub has_local_data: bool,
-
-    /// Whether this conversation exists in the cloud (has been synced).
-    /// This is used to determine if the conversation can be shared.
-    pub has_cloud_data: bool,
+    pub is_restorable_locally: bool,
 
     /// Artifacts (plans, PRs) created during this conversation.
     pub artifacts: Vec<Artifact>,
 
-    /// Full server metadata for cloud conversations, including permissions.
-    /// Used by the sharing dialog to display permissions when the full conversation isn't loaded.
-    pub server_conversation_metadata: Option<ServerAIConversationMetadata>,
+    /// Local marker for conversations owned by an ambient agent run.
+    pub ambient_agent_task_id: Option<AmbientAgentTaskId>,
 }
 
 impl From<&AIConversation> for AIConversationMetadata {
@@ -113,59 +108,18 @@ impl From<&AIConversation> for AIConversationMetadata {
             initial_working_directory: conversation.initial_working_directory(),
             credits_spent: Some(conversation.credits_spent()),
             server_conversation_token: conversation.server_conversation_token().cloned(),
-            has_local_data: true,
-            has_cloud_data: conversation.server_metadata().is_some(),
+            is_restorable_locally: true,
             artifacts: conversation.artifacts().to_vec(),
-            server_conversation_metadata: conversation.server_metadata().cloned(),
+            ambient_agent_task_id: conversation.task_id(),
         }
     }
 }
 
 impl AIConversationMetadata {
-    /// Create metadata from server-fetched GraphQL data.
-    /// This is used when loading conversations from the cloud.
-    pub fn from_server_metadata(
-        conversation_id: AIConversationId,
-        server_conversation_metadata: ServerAIConversationMetadata,
-    ) -> Self {
-        let title = server_conversation_metadata.title.clone();
-        let last_modified_at = server_conversation_metadata
-            .metadata
-            .metadata_last_updated_ts
-            .utc()
-            .naive_utc();
-        let credits_spent = Some(server_conversation_metadata.usage.credits_spent);
-        let server_conversation_token = Some(
-            server_conversation_metadata
-                .server_conversation_token
-                .clone(),
-        );
-        let initial_working_directory = server_conversation_metadata.working_directory.clone();
-        let artifacts = server_conversation_metadata.artifacts.clone();
-
-        Self {
-            id: conversation_id,
-            title,
-            // Server doesn't currently provide initial query in metadata
-            // This is used to allow searching by initial query in command palette.
-            initial_query: String::new(),
-            last_modified_at,
-            initial_working_directory,
-            credits_spent,
-            server_conversation_token,
-            has_local_data: false,
-            has_cloud_data: true, // Server metadata implies cloud data exists
-            artifacts,
-            server_conversation_metadata: Some(server_conversation_metadata),
-        }
-    }
-
     /// Whether this conversation is owned by an ambient agent run rather than
     /// being a direct user conversation.
     pub fn is_ambient_agent_conversation(&self) -> bool {
-        self.server_conversation_metadata
-            .as_ref()
-            .is_some_and(|m| m.ambient_agent_task_id.is_some())
+        self.ambient_agent_task_id.is_some()
     }
 }
 
@@ -229,9 +183,8 @@ pub struct BlocklistAIHistoryModel {
 
     /// Reverse index from server-side agent identifier to local conversation ID.
     ///
-    /// Keyed by `run_id` when OrchestrationV2 is enabled, otherwise by
-    /// `server_conversation_token`. Only the identifier relevant to the
-    /// active orchestration version is stored.
+    /// Keyed by the conversation run id when available, falling back to the
+    /// server conversation token for restored legacy conversations.
     agent_id_to_conversation_id: HashMap<String, AIConversationId>,
 
     /// Reverse index from [`ServerConversationToken`] to local [`AIConversationId`].
@@ -399,7 +352,7 @@ impl BlocklistAIHistoryModel {
     ) -> AIConversationId {
         let parent_agent_id = self
             .conversation(&parent_conversation_id)
-            .and_then(|c| c.orchestration_agent_id());
+            .and_then(|c| c.agent_link_id());
         if parent_agent_id.is_none() {
             log::warn!(
                 "No agent identifier for parent conversation {parent_conversation_id:?}; \
@@ -450,23 +403,6 @@ impl BlocklistAIHistoryModel {
             .unwrap_or_default()
     }
 
-    /// Updates the persisted `last_event_sequence` for a conversation and
-    /// writes the updated conversation state to SQLite. Used by the
-    /// orchestration event poller after draining an event batch to keep the
-    /// cursor durable across restarts.
-    pub fn update_event_sequence(
-        &mut self,
-        conversation_id: AIConversationId,
-        sequence: i64,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
-            return;
-        };
-        conversation.set_last_event_sequence(sequence);
-        conversation.write_updated_conversation_state(ctx);
-    }
-
     /// Sets a live conversation's server token, and updates the mapping in the history
     /// model.
     pub fn set_server_conversation_token_for_conversation(
@@ -491,41 +427,6 @@ impl BlocklistAIHistoryModel {
         conversation.set_server_conversation_token(token.clone());
         self.server_token_to_conversation_id
             .insert(ServerConversationToken::new(token), conversation_id);
-    }
-
-    /// Sets server metadata for a conversation and emits the ConversationMetadataUpdated event.
-    /// This helper ensures we don't forget to emit the event when updating metadata.
-    /// Updates in-memory conversations, or historical metadata if the conversation isn't loaded.
-    pub fn set_server_metadata_for_conversation(
-        &mut self,
-        conversation_id: AIConversationId,
-        metadata: ServerAIConversationMetadata,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let terminal_view_id;
-
-        // Update in-memory conversation if it exists
-        if let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) {
-            conversation.set_server_metadata(metadata);
-            terminal_view_id = self.terminal_view_id_for_conversation(&conversation_id);
-        } else if let Some(conversation_metadata) =
-            self.all_conversations_metadata.get_mut(&conversation_id)
-        {
-            // Conversation not in memory - update historical metadata instead
-            // This is needed because we might update permissions from share dialog in
-            // conversation list view when we only have metadata.
-            conversation_metadata.server_conversation_metadata = Some(metadata);
-            terminal_view_id = None;
-        } else {
-            // Conversation not found anywhere
-            return;
-        }
-
-        // Emit event so sharing dialog and other listeners can refresh.
-        ctx.emit(BlocklistAIHistoryEvent::UpdatedConversationMetadata {
-            terminal_view_id,
-            conversation_id,
-        });
     }
 
     /// Returns the ID of the conversation that processed or is processing the response stream.
@@ -642,6 +543,22 @@ impl BlocklistAIHistoryModel {
             ctx,
         )?;
         Ok(())
+    }
+
+    pub fn append_byop_preflight_messages_to_task(
+        &mut self,
+        conversation_id: AIConversationId,
+        task_id: TaskId,
+        messages: Vec<warp_multi_agent_api::Message>,
+        ctx: &mut ModelContext<Self>,
+    ) -> Result<usize, UpdateHistoryError> {
+        let conversation = self
+            .conversations_by_id
+            .get_mut(&conversation_id)
+            .ok_or(UpdateHistoryError::ConversationNotFound(conversation_id))?;
+        conversation
+            .append_byop_preflight_messages_to_task(task_id, messages, ctx)
+            .map_err(UpdateHistoryError::from)
     }
 
     pub fn restore_conversations(
@@ -941,9 +858,9 @@ impl BlocklistAIHistoryModel {
                     .insert(token.clone(), conversation_id);
             }
 
-            // Notify observers when a conversation first receives its server token.
+            // Notify observers when a conversation first receives its agent id.
             if !had_token_before && conversation.server_conversation_token().is_some() {
-                ctx.emit(BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+                ctx.emit(BlocklistAIHistoryEvent::ConversationAgentIdAssigned {
                     conversation_id,
                     terminal_view_id,
                 });
@@ -953,8 +870,7 @@ impl BlocklistAIHistoryModel {
 
     /// Assigns a `run_id` to a conversation that was spawned as a remote child
     /// agent. Updates the `agent_id_to_conversation_id` index and emits
-    /// `ConversationServerTokenAssigned` so the `StartAgentExecutor` can
-    /// complete the pending `start_agent` tool call.
+    /// `ConversationAgentIdAssigned` so restored child-agent links can resolve.
     pub fn assign_run_id_for_conversation(
         &mut self,
         conversation_id: AIConversationId,
@@ -984,7 +900,7 @@ impl BlocklistAIHistoryModel {
                 .insert(token.clone(), conversation_id);
         }
 
-        ctx.emit(BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+        ctx.emit(BlocklistAIHistoryEvent::ConversationAgentIdAssigned {
             conversation_id,
             terminal_view_id,
         });
@@ -1092,7 +1008,13 @@ impl BlocklistAIHistoryModel {
             .filter_map(|t| t.source().cloned())
             .collect();
 
-        let updated_tasks_with_new_ids = update_forked_task_properties(tasks, prefix);
+        let updated_tasks_with_new_ids = update_forked_task_properties(tasks.clone(), prefix);
+        let byop_repair_state_json = byop_fork_repair_state_json(
+            &tasks,
+            &updated_tasks_with_new_ids,
+            &source_conversation.byop_repair_state,
+            None,
+        );
         let Some(sqlite_sender) = GlobalResourceHandlesProvider::as_ref(app)
             .get()
             .model_event_sender
@@ -1147,6 +1069,7 @@ impl BlocklistAIHistoryModel {
             // forked conversation will establish its own cursor.
             last_event_sequence: None,
             compaction_state_json: None,
+            byop_repair_state_json,
         };
         let forked_conversation_id = AIConversationId::new();
         if let Err(e) = sqlite_sender.send(ModelEvent::UpdateMultiAgentConversation {
@@ -1223,11 +1146,17 @@ impl BlocklistAIHistoryModel {
         // Build truncated tasks by retaining only messages whose IDs are in
         // `allowed_message_ids`. Tasks whose message list becomes empty and
         // which are non-root tasks are dropped.
-        let truncated_tasks: Vec<warp_multi_agent_api::Task> = conversation
+        let source_tasks: Vec<warp_multi_agent_api::Task> = conversation
             .all_tasks()
+            .filter_map(|t| t.source().cloned())
+            .collect();
+        let truncated_tasks: Vec<warp_multi_agent_api::Task> = source_tasks
+            .iter()
             .filter_map(|t| {
-                if let Some(message_ids_to_retain) = message_ids_to_retain_by_task.get(t.id()) {
-                    let mut truncated_task = t.source().cloned()?;
+                if let Some(message_ids_to_retain) =
+                    message_ids_to_retain_by_task.get(&TaskId::new(t.id.clone()))
+                {
+                    let mut truncated_task = t.clone();
                     truncated_task
                         .messages
                         .retain(|m| message_ids_to_retain.contains(&MessageId::new(m.id.clone())));
@@ -1246,6 +1175,12 @@ impl BlocklistAIHistoryModel {
         }
 
         let updated_tasks_with_new_ids = update_forked_task_properties(truncated_tasks, prefix);
+        let byop_repair_state_json = byop_fork_repair_state_json(
+            &source_tasks,
+            &updated_tasks_with_new_ids,
+            &conversation.byop_repair_state,
+            Some(from_exchange_id.to_string()),
+        );
 
         let Some(sqlite_sender) = GlobalResourceHandlesProvider::as_ref(app)
             .get()
@@ -1303,6 +1238,7 @@ impl BlocklistAIHistoryModel {
             // forked conversation will establish its own cursor.
             last_event_sequence: None,
             compaction_state_json: None,
+            byop_repair_state_json,
         };
 
         let forked_conversation_id = AIConversationId::new();
@@ -1555,15 +1491,15 @@ impl BlocklistAIHistoryModel {
             |_, _, _| {},
         );
 
-        // Only emit the event if we have a terminal_view_id, since the event is
-        // filtered by terminal_view_id in handlers.
-        if let Some(terminal_view_id) = terminal_view_id {
-            ctx.emit(BlocklistAIHistoryEvent::DeletedConversation {
-                terminal_view_id,
-                conversation_id,
-                conversation_title,
-            });
-        }
+        // Always emit the event so subscribers (e.g. AgentConversationsModel,
+        // the conversation list UI) can refresh their caches. Historical-only
+        // conversations have no terminal_view_id; handlers that filter on it
+        // already tolerate `None`.
+        ctx.emit(BlocklistAIHistoryEvent::DeletedConversation {
+            terminal_view_id,
+            conversation_id,
+            conversation_title,
+        });
     }
 
     /// Remove a conversation from all in-memory storage.
@@ -1894,39 +1830,6 @@ impl BlocklistAIHistoryModel {
         self.all_conversations_metadata.get(conversation_id)
     }
 
-    /// Returns whether a conversation can be shared.
-    ///
-    /// A conversation can be shared if we have server metadata available
-    /// (either from a loaded conversation or from conversation metadata).
-    pub fn can_conversation_be_shared(&self, conversation_id: &AIConversationId) -> bool {
-        self.get_server_conversation_metadata(conversation_id)
-            .is_some()
-    }
-
-    /// Returns the server conversation metadata, used by the sharing dialog.
-    ///
-    /// This checks:
-    /// 1. If the conversation is loaded in memory, returns from its server metadata
-    /// 2. Otherwise, falls back to data stored in conversation metadata
-    pub fn get_server_conversation_metadata(
-        &self,
-        conversation_id: &AIConversationId,
-    ) -> Option<&ServerAIConversationMetadata> {
-        // Check if conversation exists in memory and has server metadata
-        if let Some(conversation) = self.conversation(conversation_id) {
-            if let Some(m) = conversation.server_metadata() {
-                return Some(m);
-            }
-        }
-
-        // Fall back to conversation metadata
-        if let Some(metadata) = self.get_conversation_metadata(conversation_id) {
-            return metadata.server_conversation_metadata.as_ref();
-        }
-
-        None
-    }
-
     /// Finds an AIConversationId by its server conversation token.
     ///
     /// O(1) lookup via `server_token_to_conversation_id`, which is maintained
@@ -2046,7 +1949,7 @@ impl BlocklistAIHistoryModel {
 /// Returns the key to use in `agent_id_to_conversation_id` for the given
 /// conversation.
 fn agent_id_key(conversation: &AIConversation) -> Option<String> {
-    conversation.orchestration_agent_id()
+    conversation.agent_link_id()
 }
 
 #[derive(Clone, Debug)]
@@ -2063,11 +1966,11 @@ pub enum BlocklistAIHistoryEvent {
         task_id: TaskId,
     },
 
-    /// Emitted when the optimistically created task is "upgraded" to a server-backed task upon
+    /// Emitted when the optimistically created task is upgraded to a confirmed task upon
     /// receiving a CreateTask client action.
     UpgradedTask {
         optimistic_id: TaskId,
-        server_id: TaskId,
+        confirmed_task_id: TaskId,
         terminal_view_id: EntityId,
     },
 
@@ -2145,8 +2048,11 @@ pub enum BlocklistAIHistoryEvent {
     },
 
     /// This is emitted when a user explicitly deletes an existing conversation.
+    /// `terminal_view_id` is `None` when deleting a historical-only conversation that
+    /// is not currently bound to any terminal view (e.g. right-click delete from the
+    /// conversation list for a session that was never opened in this run).
     DeletedConversation {
-        terminal_view_id: EntityId,
+        terminal_view_id: Option<EntityId>,
         conversation_id: AIConversationId,
         conversation_title: Option<String>,
     },
@@ -2172,9 +2078,8 @@ pub enum BlocklistAIHistoryEvent {
     },
 
     /// Emitted when a conversation first receives its server-assigned conversation token
-    /// (during StreamInit). Used by the StartAgentExecutor to resolve pending StartAgent
-    /// actions for child agent conversations.
-    ConversationServerTokenAssigned {
+    /// during StreamInit. Retained for child-agent and restored conversation linking.
+    ConversationAgentIdAssigned {
         conversation_id: AIConversationId,
         terminal_view_id: EntityId,
     },
@@ -2222,9 +2127,6 @@ impl BlocklistAIHistoryEvent {
             | BlocklistAIHistoryEvent::RemoveConversation {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::DeletedConversation {
-                terminal_view_id, ..
-            }
             | BlocklistAIHistoryEvent::CreatedSubtask {
                 terminal_view_id, ..
             }
@@ -2237,11 +2139,15 @@ impl BlocklistAIHistoryEvent {
             | BlocklistAIHistoryEvent::UpdatedConversationArtifacts {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+            | BlocklistAIHistoryEvent::ConversationAgentIdAssigned {
                 terminal_view_id, ..
             } => Some(*terminal_view_id),
             // UpdatedConversationMetadata can have None when updating historical-only conversations
             BlocklistAIHistoryEvent::UpdatedConversationMetadata {
+                terminal_view_id, ..
+            } => *terminal_view_id,
+            // DeletedConversation can have None when deleting historical-only conversations
+            BlocklistAIHistoryEvent::DeletedConversation {
                 terminal_view_id, ..
             } => *terminal_view_id,
         }
@@ -2425,6 +2331,253 @@ fn update_forked_task_properties(
             t
         })
         .collect()
+}
+
+fn byop_fork_repair_state_json(
+    source_tasks: &[warp_multi_agent_api::Task],
+    forked_tasks: &[warp_multi_agent_api::Task],
+    source_repair_state: &RepairStateStatus,
+    exchange_id: Option<String>,
+) -> Option<String> {
+    let records = collect_byop_fork_repair_records(
+        source_tasks,
+        forked_tasks,
+        source_repair_state,
+        exchange_id,
+    );
+    RepairStateStatus::Valid(RepairState::new(records)).to_sidecar_json()
+}
+
+fn collect_byop_fork_repair_records(
+    source_tasks: &[warp_multi_agent_api::Task],
+    forked_tasks: &[warp_multi_agent_api::Task],
+    source_repair_state: &RepairStateStatus,
+    exchange_id: Option<String>,
+) -> Vec<RepairRecord> {
+    let source_tool_call_keys = byop_tool_call_keys_by_message_id(source_tasks);
+    let forked_tool_call_keys = byop_tool_call_keys_by_message_id(forked_tasks);
+    let source_result_message_ids = byop_result_message_ids_by_tool_call_key(source_tasks);
+    let retained_message_ids = byop_message_ids(forked_tasks);
+
+    let mut source_to_fork_key = HashMap::new();
+    for (message_id, fork_key) in &forked_tool_call_keys {
+        let Some(source_key) = source_tool_call_keys.get(message_id) else {
+            continue;
+        };
+        source_to_fork_key.insert(source_key.clone(), fork_key.clone());
+    }
+
+    let mut records = Vec::new();
+    let mut seen_keys = HashSet::new();
+    for (source_key, fork_key) in &source_to_fork_key {
+        let result_ids = source_result_message_ids
+            .get(source_key)
+            .cloned()
+            .unwrap_or_default();
+        if result_ids.is_empty()
+            || result_ids
+                .iter()
+                .any(|id| retained_message_ids.contains(id))
+        {
+            continue;
+        }
+
+        let mut record = RepairRecord::new(RepairSource::ForkedHistory, fork_key.clone());
+        record.exchange_id = exchange_id.clone();
+        push_unique_repair_record(&mut records, &mut seen_keys, record);
+    }
+
+    for record in source_repair_state.repair_records() {
+        let Some(fork_key) = source_to_fork_key.get(&record.key) else {
+            continue;
+        };
+        if source_result_message_ids
+            .get(&record.key)
+            .is_some_and(|ids| ids.iter().any(|id| retained_message_ids.contains(id)))
+        {
+            continue;
+        }
+
+        let mut translated = RepairRecord::new(record.source, fork_key.clone());
+        translated.fork_point_message_id = record.fork_point_message_id.clone();
+        translated.exchange_id = record.exchange_id.clone().or_else(|| exchange_id.clone());
+        push_unique_repair_record(&mut records, &mut seen_keys, translated);
+    }
+
+    records
+}
+
+fn push_unique_repair_record(
+    records: &mut Vec<RepairRecord>,
+    seen_keys: &mut HashSet<ToolCallKey>,
+    record: RepairRecord,
+) {
+    if seen_keys.insert(record.key.clone()) {
+        records.push(record);
+    }
+}
+
+fn byop_message_ids(tasks: &[warp_multi_agent_api::Task]) -> HashSet<String> {
+    tasks
+        .iter()
+        .flat_map(|task| task.messages.iter().map(|message| message.id.clone()))
+        .collect()
+}
+
+fn byop_result_message_ids_by_tool_call_key(
+    tasks: &[warp_multi_agent_api::Task],
+) -> HashMap<ToolCallKey, HashSet<String>> {
+    let mut result_ids = HashMap::new();
+    for task in tasks {
+        let mut active_task_id: Option<String> = None;
+        let mut active_assistant_message_id: Option<String> = None;
+        let mut active_tool_call_ids: Vec<String> = Vec::new();
+        let mut active_saw_tool_result = false;
+        for message in &task.messages {
+            match message.message.as_ref() {
+                Some(warp_multi_agent_api::message::Message::ToolCall(tool_call)) => {
+                    if tool_call.subagent().is_some() {
+                        continue;
+                    }
+
+                    if active_task_id
+                        .as_deref()
+                        .is_some_and(|task_id| task_id != message.task_id)
+                    {
+                        active_assistant_message_id = None;
+                        active_tool_call_ids.clear();
+                        active_saw_tool_result = false;
+                    }
+
+                    if active_saw_tool_result {
+                        active_task_id = None;
+                        active_assistant_message_id = None;
+                        active_tool_call_ids.clear();
+                        active_saw_tool_result = false;
+                    }
+
+                    if active_tool_call_ids.is_empty() {
+                        active_task_id = Some(message.task_id.clone());
+                        active_assistant_message_id = Some(message.id.clone());
+                    }
+                    active_tool_call_ids.push(tool_call.tool_call_id.clone());
+                }
+                Some(warp_multi_agent_api::message::Message::ToolCallResult(result)) => {
+                    let Some(assistant_message_id) = active_assistant_message_id.as_ref() else {
+                        continue;
+                    };
+                    if active_task_id.as_deref() != Some(message.task_id.as_str()) {
+                        continue;
+                    }
+                    let matching_count = active_tool_call_ids
+                        .iter()
+                        .filter(|tool_call_id| *tool_call_id == &result.tool_call_id)
+                        .count();
+                    if matching_count != 1 {
+                        continue;
+                    }
+
+                    result_ids
+                        .entry(ToolCallKey::new(
+                            message.task_id.clone(),
+                            assistant_message_id.clone(),
+                            result.tool_call_id.clone(),
+                        ))
+                        .or_insert_with(HashSet::new)
+                        .insert(message.id.clone());
+                    active_saw_tool_result = true;
+                }
+                Some(warp_multi_agent_api::message::Message::UserQuery(_))
+                | Some(warp_multi_agent_api::message::Message::AgentOutput(_)) => {
+                    active_task_id = None;
+                    active_assistant_message_id = None;
+                    active_tool_call_ids.clear();
+                    active_saw_tool_result = false;
+                }
+                Some(warp_multi_agent_api::message::Message::AgentReasoning(_))
+                | Some(warp_multi_agent_api::message::Message::ServerEvent(_))
+                | Some(warp_multi_agent_api::message::Message::SystemQuery(_))
+                | Some(warp_multi_agent_api::message::Message::UpdateTodos(_))
+                | Some(warp_multi_agent_api::message::Message::Summarization(_))
+                | Some(warp_multi_agent_api::message::Message::CodeReview(_))
+                | Some(warp_multi_agent_api::message::Message::UpdateReviewComments(_))
+                | Some(warp_multi_agent_api::message::Message::WebSearch(_))
+                | Some(warp_multi_agent_api::message::Message::WebFetch(_))
+                | Some(warp_multi_agent_api::message::Message::DebugOutput(_))
+                | Some(warp_multi_agent_api::message::Message::ArtifactEvent(_))
+                | Some(warp_multi_agent_api::message::Message::InvokeSkill(_))
+                | Some(warp_multi_agent_api::message::Message::MessagesReceivedFromAgents(_))
+                | Some(warp_multi_agent_api::message::Message::ModelUsed(_))
+                | Some(warp_multi_agent_api::message::Message::EventsFromAgents(_))
+                | Some(warp_multi_agent_api::message::Message::PassiveSuggestionResult(_))
+                | None => {}
+            }
+        }
+    }
+    result_ids
+}
+
+fn byop_tool_call_keys_by_message_id(
+    tasks: &[warp_multi_agent_api::Task],
+) -> HashMap<String, ToolCallKey> {
+    let mut keys = HashMap::new();
+    for task in tasks {
+        let mut pending_task_id: Option<String> = None;
+        let mut pending_assistant_message_id: Option<String> = None;
+        for message in &task.messages {
+            match message.message.as_ref() {
+                Some(warp_multi_agent_api::message::Message::ToolCall(tool_call)) => {
+                    if tool_call.subagent().is_some() {
+                        continue;
+                    }
+
+                    if pending_task_id
+                        .as_deref()
+                        .is_some_and(|task_id| task_id != message.task_id)
+                    {
+                        pending_assistant_message_id = None;
+                    }
+
+                    let assistant_message_id = pending_assistant_message_id
+                        .get_or_insert_with(|| message.id.clone())
+                        .clone();
+                    pending_task_id = Some(message.task_id.clone());
+                    keys.insert(
+                        message.id.clone(),
+                        ToolCallKey::new(
+                            message.task_id.clone(),
+                            assistant_message_id,
+                            tool_call.tool_call_id.clone(),
+                        ),
+                    );
+                }
+                Some(warp_multi_agent_api::message::Message::UserQuery(_))
+                | Some(warp_multi_agent_api::message::Message::AgentOutput(_))
+                | Some(warp_multi_agent_api::message::Message::ToolCallResult(_)) => {
+                    pending_task_id = None;
+                    pending_assistant_message_id = None;
+                }
+                Some(warp_multi_agent_api::message::Message::AgentReasoning(_))
+                | Some(warp_multi_agent_api::message::Message::ServerEvent(_))
+                | Some(warp_multi_agent_api::message::Message::SystemQuery(_))
+                | Some(warp_multi_agent_api::message::Message::UpdateTodos(_))
+                | Some(warp_multi_agent_api::message::Message::Summarization(_))
+                | Some(warp_multi_agent_api::message::Message::CodeReview(_))
+                | Some(warp_multi_agent_api::message::Message::UpdateReviewComments(_))
+                | Some(warp_multi_agent_api::message::Message::WebSearch(_))
+                | Some(warp_multi_agent_api::message::Message::WebFetch(_))
+                | Some(warp_multi_agent_api::message::Message::DebugOutput(_))
+                | Some(warp_multi_agent_api::message::Message::ArtifactEvent(_))
+                | Some(warp_multi_agent_api::message::Message::InvokeSkill(_))
+                | Some(warp_multi_agent_api::message::Message::MessagesReceivedFromAgents(_))
+                | Some(warp_multi_agent_api::message::Message::ModelUsed(_))
+                | Some(warp_multi_agent_api::message::Message::EventsFromAgents(_))
+                | Some(warp_multi_agent_api::message::Message::PassiveSuggestionResult(_))
+                | None => {}
+            }
+        }
+    }
+    keys
 }
 
 /// The default prefix used when forking a conversation.

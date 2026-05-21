@@ -15,23 +15,21 @@ use crate::{
         block_context::BlockContext,
         blocklist::BlocklistAIContextModel,
         document::ai_document_model::{AIDocumentId, AIDocumentModel},
-        facts::CloudAIFactModel,
+        facts::AIFactObjectModel,
         skills::list_skills,
     },
     cloud_object::{
         model::{
-            generic_string_model::{CloudStringObject, GenericStringObjectId},
-            persistence::CloudModel,
+            generic_string_model::{GenericStringObjectId, StoredStringObject},
+            persistence::ObjectStoreModel,
         },
-        GenericCloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType,
+        GenericStoredObject, GenericStringObjectFormat, JsonObjectType, ObjectType,
     },
     terminal::{
         model::{block::BlockId, session::active_session::ActiveSession},
         TerminalView,
     },
 };
-use warp_graphql::generic_string_object::GenericStringObjectFormat as GraphQLFormat;
-
 lazy_static! {
     // Regex to match <block:[block_id]> patterns
     pub static ref BLOCK_CONTEXT_ATTACHMENT_REGEX: Regex = Regex::new(r"<block:([^>]+)>")
@@ -122,37 +120,8 @@ pub(super) fn parse_context_attachments(
             let id_str = object_id_match.as_str();
 
             if object_type_str == "plan" {
-                // For plans, id_str is ai_document_id
-                let ai_doc_id = match AIDocumentId::try_from(id_str) {
-                    Ok(id) => id,
-                    Err(_) => {
-                        log::warn!("Invalid ai_document_id in plan reference: {id_str}");
-                        continue;
-                    }
-                };
-
-                // Prefer live editor content from AIDocumentModel (picks up unsaved user edits).
-                // Fall back to the synced CloudModel notebook if the document isn't loaded in
-                // the current session.
-                let content = AIDocumentModel::as_ref(ctx)
-                    .get_document_content(&ai_doc_id, ctx)
-                    .or_else(|| {
-                        CloudModel::as_ref(ctx)
-                            .get_all_active_notebooks()
-                            .find(|nb| nb.model().ai_document_id.as_ref() == Some(&ai_doc_id))
-                            .map(|nb| nb.model().data.clone())
-                    });
-
-                if let Some(content) = content {
-                    let attachment = AIAgentAttachment::DocumentContent {
-                        document_id: id_str.to_string(),
-                        content,
-                        source: DocumentContentAttachmentSource::UserAttached,
-                        line_range: None,
-                    };
+                if let Some(attachment) = plan_attachment_for_reference(id_str, ctx) {
                     referenced_attachments.insert(reference_string, attachment);
-                } else {
-                    log::warn!("Plan not found for ai_document_id: {ai_doc_id}");
                 }
             } else {
                 let object_type = match object_type_str {
@@ -164,14 +133,7 @@ pub(super) fn parse_context_attachments(
                     _ => continue, // Skip unknown object types
                 };
 
-                // Try to get the object data from CloudModel
-                let payload = get_object_attachment_payload(id_str, object_type, ctx);
-
-                // Create a DriveObject attachment with the object UID and payload
-                let attachment = AIAgentAttachment::DriveObject {
-                    uid: id_str.to_string(),
-                    payload,
-                };
+                let attachment = drive_object_attachment_for_reference(id_str, object_type, ctx);
                 referenced_attachments.insert(reference_string, attachment);
             }
         }
@@ -190,9 +152,11 @@ pub(super) fn parse_context_attachments(
         }
     }
 
+    referenced_attachments.extend(context_model.referenced_at_context_attachments(query));
+
     // Add pending file attachments as FilePathReference.
     // Duplicate basenames get a (1), (2), ... suffix to avoid collisions,
-    // matching the pattern in build_file_attachment_map.
+    // matching the legacy attachment-key pattern.
     for file in context_model.pending_files().iter() {
         let attachment = AIAgentAttachment::FilePathReference {
             file_id: uuid::Uuid::new_v4().to_string(),
@@ -274,43 +238,91 @@ fn find_block_attachment_in_all_terminals(
     None
 }
 
-/// Gets the object payload from CloudModel for the given UID and object type.
-/// Returns None if the object is not found.
+pub(crate) fn drive_object_attachment_for_reference(
+    uid: &str,
+    object_type: ObjectType,
+    ctx: &AppContext,
+) -> AIAgentAttachment {
+    AIAgentAttachment::DriveObject {
+        uid: uid.to_string(),
+        payload: get_object_attachment_payload(uid, object_type, ctx),
+    }
+}
+
+pub(crate) fn plan_attachment_for_reference(
+    ai_document_uid: &str,
+    ctx: &AppContext,
+) -> Option<AIAgentAttachment> {
+    let ai_doc_id = match AIDocumentId::try_from(ai_document_uid) {
+        Ok(id) => id,
+        Err(_) => {
+            log::warn!("Invalid ai_document_id in plan reference: {ai_document_uid}");
+            return None;
+        }
+    };
+
+    let content = AIDocumentModel::as_ref(ctx)
+        .get_document_content(&ai_doc_id, ctx)
+        .or_else(|| {
+            ObjectStoreModel::as_ref(ctx)
+                .get_all_active_notebooks()
+                .find(|nb| nb.model().ai_document_id.as_ref() == Some(&ai_doc_id))
+                .map(|nb| nb.model().data.clone())
+        });
+
+    if let Some(content) = content {
+        return Some(AIAgentAttachment::DocumentContent {
+            document_id: ai_document_uid.to_string(),
+            content,
+            source: DocumentContentAttachmentSource::UserAttached,
+            line_range: None,
+        });
+    }
+
+    log::warn!("Plan not found for ai_document_id: {ai_doc_id}");
+    None
+}
+
+/// 从 ObjectStoreModel 中按 UID 和类型取对象 payload。
+/// 找不到对象时返回 None。
 fn get_object_attachment_payload(
     uid: &str,
     object_type: ObjectType,
     ctx: &AppContext,
 ) -> Option<DriveObjectPayload> {
     match object_type {
-        ObjectType::Workflow => CloudModel::as_ref(ctx)
-            .get_workflow_by_uid(uid)
-            .map(|workflow| {
-                let workflow_data = &workflow.model().data;
-                DriveObjectPayload::Workflow {
-                    name: workflow_data.name().to_string(),
-                    description: workflow_data.description().cloned().unwrap_or_default(),
-                    command: workflow_data.content().to_string(),
-                }
-            }),
-        ObjectType::Notebook => CloudModel::as_ref(ctx)
-            .get_notebook_by_uid(uid)
-            .map(|notebook| DriveObjectPayload::Notebook {
-                title: notebook.model().title.clone(),
-                content: notebook.model().data.clone(),
-            }),
+        ObjectType::Workflow => {
+            ObjectStoreModel::as_ref(ctx)
+                .get_workflow_by_uid(uid)
+                .map(|workflow| {
+                    let workflow_data = &workflow.model().data;
+                    DriveObjectPayload::Workflow {
+                        name: workflow_data.name().to_string(),
+                        description: workflow_data.description().cloned().unwrap_or_default(),
+                        command: workflow_data.content().to_string(),
+                    }
+                })
+        }
+        ObjectType::Notebook => {
+            ObjectStoreModel::as_ref(ctx)
+                .get_notebook_by_uid(uid)
+                .map(|notebook| DriveObjectPayload::Notebook {
+                    title: notebook.model().title.clone(),
+                    content: notebook.model().data.clone(),
+                })
+        }
         ObjectType::GenericStringObject(_) => {
             // For generic string objects, we only support AI facts (rules) for now
-            CloudModel::as_ref(ctx)
+            ObjectStoreModel::as_ref(ctx)
                 .get_by_uid(&uid.to_string())
                 .and_then(|object| {
-                    if let Some(ai_fact) = object.as_any().downcast_ref::<GenericCloudObject<GenericStringObjectId, CloudAIFactModel>>() {
-                        let string_object = ai_fact as &dyn CloudStringObject;
-                        // Convert the format to GraphQL format since that's what the server expects
-                        let graphql_format: GraphQLFormat =
-                            string_object.generic_string_object_format().into();
+                    if let Some(ai_fact) = object.as_any().downcast_ref::<GenericStoredObject<GenericStringObjectId, AIFactObjectModel>>() {
+                        let string_object = ai_fact as &dyn StoredStringObject;
+                        let object_type =
+                            generic_string_object_format_name(string_object.generic_string_object_format());
                         Some(DriveObjectPayload::GenericStringObject {
                             payload: string_object.serialized().model_as_str().to_string(),
-                            object_type: graphql_format.to_string(),
+                            object_type,
                         })
                     } else {
                         None
@@ -319,4 +331,21 @@ fn get_object_attachment_payload(
         }
         _ => None, // Other object types not supported for drive object attachments
     }
+}
+
+fn generic_string_object_format_name(format: GenericStringObjectFormat) -> String {
+    match format {
+        GenericStringObjectFormat::Json(JsonObjectType::Preference) => "JsonPreference",
+        GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection) => "JsonEnvVarCollection",
+        GenericStringObjectFormat::Json(JsonObjectType::WorkflowEnum) => "JsonWorkflowEnum",
+        GenericStringObjectFormat::Json(JsonObjectType::AIFact) => "JsonAIFact",
+        GenericStringObjectFormat::Json(JsonObjectType::MCPServer) => "JsonMCPServer",
+        GenericStringObjectFormat::Json(JsonObjectType::AIExecutionProfile) => {
+            "JsonAIExecutionProfile"
+        }
+        GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer) => {
+            "JsonTemplatableMCPServer"
+        }
+    }
+    .to_string()
 }

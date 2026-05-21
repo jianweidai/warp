@@ -21,6 +21,34 @@ use warp_core::{
 };
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkillManagerEvent {
+    InventoryChanged,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillInventoryDuplicate {
+    pub path: PathBuf,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    pub provider: SkillProvider,
+    pub scope: ai::skills::SkillScope,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillInventoryItem {
+    pub name: String,
+    pub default_skill: SkillInventoryDuplicate,
+    pub duplicates: Vec<SkillInventoryDuplicate>,
+}
+
+impl SkillInventoryItem {
+    pub fn has_duplicates(&self) -> bool {
+        self.duplicates.len() > 1
+    }
+}
+
 /// Activation condition for a bundled skill.
 #[derive(Debug, Clone)]
 pub enum BundledSkillActivation {
@@ -71,11 +99,6 @@ pub struct SkillManager {
     skills_by_name: HashMap<String, HashSet<PathBuf>>,
     /// Skills bundled into Warp, each with activation condition and icon.
     bundled_skills: HashMap<String, BundledSkill>,
-    /// When true, all skills in `directory_skills` are in scope regardless of
-    /// the current working directory. Set by `AgentDriver` when a cloud
-    /// environment with configured repos is active, so the agent sees every
-    /// skill from every cloned repo.
-    is_cloud_environment: bool,
     #[allow(dead_code)]
     skill_watcher: ModelHandle<SkillWatcher>, // Can't remove this or it'll get cleaned up after new()
 }
@@ -86,8 +109,8 @@ impl SkillManager {
 
         ctx.spawn_stream_local(
             skill_watcher_rx,
-            |me, message, _ctx| {
-                me.handle_skill_watcher_event(message);
+            |me, message, ctx| {
+                me.handle_skill_watcher_event(message, ctx);
             },
             |_, _| {}, // No cleanup needed when stream ends
         );
@@ -109,15 +132,8 @@ impl SkillManager {
             skills_by_path: HashMap::new(),
             skills_by_name: HashMap::new(),
             bundled_skills: HashMap::new(),
-            is_cloud_environment: false,
             skill_watcher,
         }
-    }
-
-    /// Marks this manager as running in a cloud environment, enabling all
-    /// directory skills to be in scope regardless of the current working directory.
-    pub fn set_cloud_environment(&mut self, value: bool) {
-        self.is_cloud_environment = value;
     }
 
     /// Returns skills available for the given working directory.
@@ -139,17 +155,7 @@ impl SkillManager {
             );
         }
 
-        if self.is_cloud_environment {
-            // In cloud environments, all skills are in scope regardless of cwd.
-            for (dir, dir_skill_paths) in &self.directory_skills {
-                if is_home_directory(dir) {
-                    continue;
-                }
-                for path in dir_skill_paths {
-                    skill_paths.push((dir.clone(), path.clone()));
-                }
-            }
-        } else if let Some(working_directory) = working_directory {
+        if let Some(working_directory) = working_directory {
             let repo_root = repo_metadata::repositories::DetectedRepositories::as_ref(ctx)
                 .get_root_for_path(working_directory);
 
@@ -342,18 +348,66 @@ impl SkillManager {
         bundled.activation.is_enabled(ctx).then_some(&bundled.skill)
     }
 
-    fn handle_skill_watcher_event(&mut self, event: SkillWatcherEvent) {
+    pub fn list_skill_inventory(&self, ctx: &AppContext) -> Vec<SkillInventoryItem> {
+        let _ = ctx;
+        let mut by_name: HashMap<String, Vec<SkillInventoryDuplicate>> = HashMap::new();
+
+        for skill in self.skills_by_path.values() {
+            by_name
+                .entry(skill.name.clone())
+                .or_default()
+                .push(SkillInventoryDuplicate {
+                    path: skill.path.clone(),
+                    name: skill.name.clone(),
+                    description: skill.description.clone(),
+                    content: skill.content.clone(),
+                    provider: skill.provider,
+                    scope: skill.scope,
+                });
+        }
+
+        let mut items = by_name
+            .into_iter()
+            .filter_map(|(name, mut duplicates)| {
+                duplicates.sort_by(|a, b| {
+                    provider_rank(a.provider)
+                        .cmp(&provider_rank(b.provider))
+                        .then_with(|| format!("{:?}", a.scope).cmp(&format!("{:?}", b.scope)))
+                        .then_with(|| a.path.cmp(&b.path))
+                });
+                let default_skill = duplicates.first()?.clone();
+                Some(SkillInventoryItem {
+                    name,
+                    default_skill,
+                    duplicates,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        items.sort_by(|a, b| a.name.cmp(&b.name));
+        items
+    }
+
+    fn handle_skill_watcher_event(
+        &mut self,
+        event: SkillWatcherEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
         match event {
             SkillWatcherEvent::SkillsAdded { skills } => {
-                self.handle_skills_added(skills);
+                self.handle_skills_added(skills, ctx);
             }
             SkillWatcherEvent::SkillsDeleted { paths } => {
-                self.handle_skills_deleted(paths);
+                self.handle_skills_deleted(paths, ctx);
             }
         }
     }
 
-    pub fn handle_skills_added(&mut self, skills: Vec<ParsedSkill>) {
+    pub fn handle_skills_added(&mut self, skills: Vec<ParsedSkill>, ctx: &mut ModelContext<Self>) {
+        if skills.is_empty() {
+            return;
+        }
+
         for skill in skills {
             if let Ok(parent_dir) = extract_skill_parent_directory(&skill.path) {
                 self.directory_skills
@@ -373,12 +427,20 @@ impl SkillManager {
                 );
             }
         }
+
+        ctx.emit(SkillManagerEvent::InventoryChanged);
     }
 
-    fn handle_skills_deleted(&mut self, paths: Vec<PathBuf>) {
+    fn handle_skills_deleted(&mut self, paths: Vec<PathBuf>, ctx: &mut ModelContext<Self>) {
+        if paths.is_empty() {
+            return;
+        }
+
         for path in paths {
             self.handle_path_deleted(&path);
         }
+
+        ctx.emit(SkillManagerEvent::InventoryChanged);
     }
 
     fn handle_path_deleted(&mut self, path: &Path) {
@@ -523,17 +585,14 @@ async fn read_bundled_skills(skills_dir: &Path) -> HashMap<String, ParsedSkill> 
 /// Builds the context map for bundled skill variable substitution.
 ///
 /// Supported variables:
-/// - `{{warp_server_url}}` - The server root URL (e.g., `https://api.warp.dev`)
+/// - `{{warp_server_url}}` - Empty in OpenWarp; retained for bundled skill compatibility.
 /// - `{{warp_cli_binary_name}}` - The CLI binary name (e.g., `warp` or `warp-cli`)
 /// - `{{warp_url_scheme}}` - The URL scheme (e.g., `warp`, `warpdev`, `warppreview`)
 /// - `{{settings_schema_path}}` - Path to the bundled JSON settings schema
 /// - `{{settings_file_path}}` - Path to the user's settings TOML file
 fn build_bundled_skill_context() -> HashMap<String, String> {
     let mut context: HashMap<String, String> = [
-        (
-            "warp_server_url".to_owned(),
-            ChannelState::server_root_url().into_owned(),
-        ),
+        ("warp_server_url".to_owned(), String::new()),
         (
             "warp_cli_binary_name".to_owned(),
             ChannelState::channel().cli_command_name().to_owned(),
@@ -593,7 +652,7 @@ fn is_home_directory(path: &Path) -> bool {
 }
 
 impl Entity for SkillManager {
-    type Event = ();
+    type Event = SkillManagerEvent;
 }
 
 impl SingletonEntity for SkillManager {}

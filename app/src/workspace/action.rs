@@ -1,4 +1,4 @@
-﻿use std::collections::HashMap;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -11,9 +11,8 @@ use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::auth::LoginGatedFeature;
 use crate::drive::items::WarpDriveItemId;
-use crate::drive::CloudObjectTypeAndId;
+use crate::drive::ObjectTypeAndId;
 use crate::palette::PaletteMode;
-use crate::pane_group::PaneGroup;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
 use crate::server::ids::SyncId;
@@ -27,14 +26,13 @@ use crate::themes::theme::AnsiColorIdentifier;
 use crate::themes::theme_chooser::ThemeChooserMode;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::PaneViewLocator;
-use session_sharing_protocol::common::SessionId;
 
 use ui_components::lightbox;
 use warpui::accessibility::AccessibilityVerbosity;
 use warpui::geometry::rect::RectF;
 use warpui::geometry::vector::Vector2F;
 use warpui::platform::Cursor;
-use warpui::{EntityId, WeakViewHandle, WindowId};
+use warpui::{EntityId, WindowId};
 
 use super::global_actions::{ForkFromExchange, ForkedConversationDestination};
 use super::tab_settings::{
@@ -150,12 +148,13 @@ pub enum WorkspaceAction {
     },
     /// 打开/关闭左侧 panel 的 SSH 管理器视图(openWarp 独有)。
     ToggleSshManager,
+    /// 打开/关闭左侧 panel 的 Skill 管理器视图(openWarp 独有)。
+    ToggleSkillManager,
     AddTabWithShell {
         shell: AvailableShell,
         source: AddTabWithShellSource,
     },
     AddGetStartedTab,
-    AddAmbientAgentTab,
     /// Add a new tab that immediately enters agent view with a new conversation.
     AddAgentTab,
     /// Add a new tab running a local Docker sandbox via `sbx`.
@@ -210,6 +209,11 @@ pub enum WorkspaceAction {
     /// Open the log directory in the system file explorer with the current log file selected.
     #[cfg(not(target_family = "wasm"))]
     ViewLogs,
+    /// Prompt the user with a native save-file dialog and write the log
+    /// bundle (recent logs + MCP / update logs + diagnostic manifest) to
+    /// the chosen path. Used by the "Export logs" link on the About page.
+    #[cfg(not(target_family = "wasm"))]
+    ExportLogsToPath,
     ChangeCursor(Cursor),
     ToggleBlockSnackbar,
     ToggleErrorUnderlining,
@@ -233,16 +237,10 @@ pub enum WorkspaceAction {
     ShowCommandSearch(CommandSearchOptions),
     CreatePersonalNotebook,
     ImportToPersonalDrive,
-    ImportToTeamDrive,
-    CreateTeamNotebook,
     CreatePersonalWorkflow,
-    CreateTeamWorkflow,
     CreatePersonalFolder,
-    CreateTeamFolder,
-    CreateTeamEnvVarCollection,
     CreatePersonalEnvVarCollection,
     CreatePersonalAIPrompt,
-    CreateTeamAIPrompt,
     ToggleMouseReporting,
     ToggleScrollReporting,
     ToggleFocusReporting,
@@ -285,7 +283,7 @@ pub enum WorkspaceAction {
     CopyAccessTokenToClipboard,
     DismissWorkspaceBanner(WorkspaceBanner),
     /// An action only registered in dev and local builds, which crashes the
-    /// app (via a Sentry helper method) immediately when called.
+    /// 调用后立即触发 app crash。
     Crash,
     /// An action only registered in dev and local builds, which triggers a
     /// panic immediately when called.
@@ -323,16 +321,6 @@ pub enum WorkspaceAction {
     #[cfg(target_family = "wasm")]
     OpenLinkOnDesktop(url::Url),
     ReopenClosedSession,
-    OpenShareSessionModal(usize),
-    StopSharingSessionFromTabMenu {
-        terminal_view_id: EntityId,
-    },
-    StopSharingAllSessionsInTab {
-        pane_group: WeakViewHandle<PaneGroup>,
-    },
-    CopySharedSessionLinkFromTab {
-        tab_index: usize,
-    },
     AddWindow,
     AddWindowWithShell {
         shell: AvailableShell,
@@ -343,7 +331,7 @@ pub enum WorkspaceAction {
     FocusRightPanel,
     /// An action to view a newly created/edited workflow in WD from the toast
     ViewObjectInWarpDrive(WarpDriveItemId),
-    UndoTrash(CloudObjectTypeAndId),
+    UndoTrash(ObjectTypeAndId),
     /// Open a local path in the file explorer.
     OpenInExplorer {
         path: PathBuf,
@@ -384,7 +372,6 @@ pub enum WorkspaceAction {
         /// The type of zero state prompt suggestion to start with (optional).
         zero_state_prompt_suggestion_type: Option<ZeroStatePromptSuggestionType>,
     },
-    OpenCloudAgentSetupGuide,
     // 去中心化分支:`AttemptLoginGatedAIUpgrade` 已删除。
     /// Dismisses the Wayland crash recovery banner and opens a link to our docs page with more
     /// information.
@@ -397,8 +384,8 @@ pub enum WorkspaceAction {
     },
     OpenAIFactCollection,
     OpenMCPServerCollection,
-    /// Open the Environment Management pane in Create mode.
-    OpenEnvironmentManagementPane,
+    // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` WorkspaceAction 随 ambient-agent UI
+    // 子系统物理删。
     ToggleAIDocumentPane {
         document_id: AIDocumentId,
         document_version: AIDocumentVersion,
@@ -528,21 +515,9 @@ pub enum WorkspaceAction {
     ToggleGlobalSearch,
     OpenGlobalSearch,
     ToggleConversationListView,
-    /// Open the Build Plan Migration Modal (for debugging)
-    #[cfg(debug_assertions)]
-    OpenBuildPlanMigrationModal,
-    /// Reset the build plan migration modal dismissed state (for debugging)
-    #[cfg(debug_assertions)]
-    ResetBuildPlanMigrationModalState,
     /// Reset the AWS Bedrock login banner dismissed state (for debugging).
     #[cfg(debug_assertions)]
     DebugResetAwsBedrockLoginBannerDismissed,
-    /// Open the Oz Launch Modal (for debugging)
-    #[cfg(debug_assertions)]
-    OpenOzLaunchModal,
-    /// Reset the Oz launch modal dismissed state (for debugging)
-    #[cfg(debug_assertions)]
-    ResetOzLaunchModalState,
     /// Open the OpenWarp Launch Modal (for debugging)
     #[cfg(debug_assertions)]
     OpenOpenWarpLaunchModal,
@@ -560,10 +535,6 @@ pub enum WorkspaceAction {
     SampleProcess,
     ToggleNotificationMailbox {
         select_first: bool,
-    },
-    ToggleAgentManagementView,
-    ViewAgentRunsForEnvironment {
-        environment_id: String,
     },
     /// Show the rewind confirmation dialog before rewinding an AI conversation
     ShowRewindConfirmationDialog {
@@ -585,11 +556,10 @@ pub enum WorkspaceAction {
     /// Open an ambient agent session by joining its shared session.
     /// Used when the sandbox is running or when we need to view a live session.
     OpenAmbientAgentSession {
-        session_id: SessionId,
         task_id: AmbientAgentTaskId,
     },
-    /// Load cloud conversation data into a transcript viewer.
-    /// Used when CloudConversations is enabled and the sandbox is not running.
+    /// Load conversation data into a transcript viewer.
+    /// Used for persisted view-only conversations.
     OpenConversationTranscriptViewer {
         conversation_id: ServerConversationToken,
         ambient_agent_task_id: Option<AmbientAgentTaskId>,
@@ -655,33 +625,14 @@ pub enum WorkspaceAction {
 
 impl From<&WorkspaceAction> for LoginGatedFeature {
     fn from(val: &WorkspaceAction) -> LoginGatedFeature {
-        use WorkspaceAction::*;
-        match val {
-            ImportToTeamDrive => "Importing to a team drive",
-            CreateTeamNotebook => "Creating a team notebook",
-            CreateTeamWorkflow => "Creating a team workflow",
-            CreateTeamFolder => "Creating a team folder",
-            CreateTeamEnvVarCollection => "Creating a team environment variable collection",
-            CreateTeamAIPrompt => "Creating a team prompt",
-            OpenShareSessionModal(_) => "Sharing a session",
-            _ => "Unknown reason",
-        }
+        let _ = val;
+        "Unknown reason"
     }
 }
 
 impl WorkspaceAction {
     pub fn blocked_for_anonymous_user(&self) -> bool {
-        use WorkspaceAction::*;
-        matches!(
-            self,
-            ImportToTeamDrive
-                | CreateTeamNotebook
-                | CreateTeamWorkflow
-                | CreateTeamFolder
-                | CreateTeamEnvVarCollection
-                | CreateTeamAIPrompt
-                | OpenShareSessionModal(_)
-        )
+        false
     }
 
     /// Matches what actions require the app state to be saved, and which don't. We match all
@@ -722,10 +673,10 @@ impl WorkspaceAction {
             | AddTerminalTab { .. }
             | OpenSshTerminal { .. }
             | ToggleSshManager
+            | ToggleSkillManager
             | AddTabWithShell { .. }
             | AddGetStartedTab
             | AddAgentTab
-            | AddAmbientAgentTab
             | AddDockerSandboxTab
             | AddWindow
             | AddWindowWithShell { .. }
@@ -790,24 +741,17 @@ impl WorkspaceAction {
             | ToggleUserMenu
             | ClickedAIAssistantIcon
             | ToggleAIAssistant
-            | OpenCloudAgentSetupGuide
             | ToggleKeybindingsPage
             | ShowCommandSearch(_)
             | ToggleMouseReporting
             | ToggleScrollReporting
             | ToggleFocusReporting
             | ImportToPersonalDrive
-            | ImportToTeamDrive
             | CreatePersonalNotebook
-            | CreateTeamNotebook
             | CreatePersonalWorkflow
-            | CreateTeamWorkflow
             | CreatePersonalFolder
-            | CreateTeamFolder
-            | CreateTeamEnvVarCollection
             | CreatePersonalEnvVarCollection
             | CreatePersonalAIPrompt
-            | CreateTeamAIPrompt
             | OpenInExplorer { .. }
             | DragTab { .. }
             | StartTabDrag
@@ -852,10 +796,6 @@ impl WorkspaceAction {
             | OpenHeaderToolbarEditor
             | ShowHeaderToolbarContextMenu { .. }
             | OpenLink(_)
-            | OpenShareSessionModal(_)
-            | StopSharingSessionFromTabMenu { .. }
-            | StopSharingAllSessionsInTab { .. }
-            | CopySharedSessionLinkFromTab { .. }
             | ReopenClosedSession
             | FocusLeftPanel
             | FocusRightPanel
@@ -890,8 +830,6 @@ impl WorkspaceAction {
             | OpenGlobalSearch
             | ToggleConversationListView
             | ToggleNotificationMailbox { .. }
-            | ToggleAgentManagementView
-            | ViewAgentRunsForEnvironment { .. }
             | ToggleAIDocumentPane { .. }
             | HideAIDocumentPanes
             | OpenAIDocumentPane { .. }
@@ -918,17 +856,15 @@ impl WorkspaceAction {
             #[cfg(target_family = "wasm")]
             ToggleConversationTranscriptDetailsPanel => false,
             #[cfg(debug_assertions)]
-            OpenBuildPlanMigrationModal
-            | ResetBuildPlanMigrationModalState
-            | DebugResetAwsBedrockLoginBannerDismissed
-            | OpenOzLaunchModal
-            | ResetOzLaunchModalState
+            DebugResetAwsBedrockLoginBannerDismissed
             | OpenOpenWarpLaunchModal
             | ResetOpenWarpLaunchModalState
             | InstallOpenCodeWarpPlugin
             | UseLocalOpenCodeWarpPlugin => false,
             #[cfg(not(target_family = "wasm"))]
             ViewLogs => false,
+            #[cfg(not(target_family = "wasm"))]
+            ExportLogsToPath => false,
             #[cfg(target_os = "macos")]
             SampleProcess => false,
             #[cfg(target_os = "macos")]
@@ -937,7 +873,8 @@ impl WorkspaceAction {
             FileRenamed { .. } => false, // File rename doesn't change workspace state
             #[cfg(feature = "local_fs")]
             FileDeleted { .. } => false, // File deletion doesn't change workspace state
-            OpenEnvironmentManagementPane => false,
+            // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` WorkspaceAction 随 ambient-agent UI
+            // 子系统物理删。
             #[cfg(target_os = "linux")]
             DismissWaylandCrashRecoveryBannerAndOpenLink => false,
             #[cfg(target_family = "wasm")]

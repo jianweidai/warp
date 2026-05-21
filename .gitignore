@@ -3,6 +3,7 @@ app/frameworks/default/Carthage
 app/frameworks/dev/Carthage
 app/frameworks/**/*.xcframework
 /target
+/Cargo.lock
 /app/target
 /lib/*
 !/lib/rust-genai/
@@ -79,3 +80,4 @@ Logfile.CSV
 docs/tmp.md
 official-website/
 docs/openwarp-cloud-removal-plan.md
+.omx/

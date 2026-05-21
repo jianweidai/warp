@@ -20,8 +20,9 @@ use warpui::{SingletonEntity, ViewContext};
 use crate::ai::blocklist::agent_view::{
     AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
+use crate::ai::blocklist::drive_object_attachment_for_reference;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, SlashCommandRequest};
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::{model::persistence::ObjectStoreModel, ObjectType};
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::search::slash_command_menu::static_commands::commands::{self, COMMAND_REGISTRY};
 use crate::search::slash_command_menu::static_commands::Availability;
@@ -42,7 +43,6 @@ use crate::terminal::input::{
 use crate::terminal::model::session::Session;
 use crate::terminal::view::TerminalAction;
 use crate::view_components::DismissibleToast;
-use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
 use crate::TelemetryEvent;
 
@@ -271,7 +271,7 @@ impl Input {
                 ctx.notify();
             }
             SlashCommandsEvent::SelectedSavedPrompt { id } => {
-                let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(id).cloned() else {
+                let Some(workflow) = ObjectStoreModel::as_ref(ctx).get_workflow(id).cloned() else {
                     log::warn!("Tried to execute workflow for id {id:?} but it does not exist");
                     return;
                 };
@@ -285,13 +285,29 @@ impl Input {
                     ctx
                 );
 
-                self.show_workflows_info_box_on_workflow_selection(
-                    WorkflowType::Cloud(Box::new(workflow)),
-                    WorkflowSource::WarpAI,
-                    WorkflowSelectionSource::SlashMenu,
-                    None,
+                self.close_slash_commands_menu(ctx);
+                self.clear_buffer_and_reset_undo_stack(ctx);
+                self.ai_context_model.update(ctx, |model, _ctx| {
+                    model.clear_at_context_attachments();
+                });
+
+                let workflow_uid = workflow.id.uid();
+                let reference = self.at_context_reference_for_display_name(
+                    workflow.model().data.name(),
+                    &workflow_uid,
                     ctx,
                 );
+                let attachment =
+                    drive_object_attachment_for_reference(&workflow_uid, ObjectType::Workflow, ctx);
+
+                self.enter_ai_mode_for_ai_context_menu_selection(ctx);
+                self.ai_context_model.update(ctx, |model, _ctx| {
+                    model.register_at_context_attachment(reference.clone(), attachment);
+                });
+                self.editor.update(ctx, |editor, ctx| {
+                    editor.set_buffer_text(&format!("{reference} "), ctx);
+                });
+                self.focus_input_box(ctx);
             }
             SlashCommandsEvent::SelectedStaticCommand {
                 id,
@@ -439,19 +455,6 @@ impl Input {
                 };
 
                 ctx.dispatch_typed_action(&WorkspaceAction::SetActiveTabName(name.to_owned()));
-            }
-            create_env if command.name == commands::CREATE_ENVIRONMENT.name => {
-                // If the user included args after the slash command, treat them as repo paths/URLs.
-                let repos = argument
-                    .map(|arg| {
-                        arg.split_whitespace()
-                            .filter(|s| !s.is_empty())
-                            .map(|s| s.to_string())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
-                ctx.emit(Event::TriggerEnvironmentSetup { repos });
             }
             create_project if command.name == commands::CREATE_NEW_PROJECT.name => {
                 if argument.is_none_or(|args| args.is_empty()) {
@@ -673,23 +676,6 @@ impl Input {
                     )
                 });
             }
-            remote_control if command.name == commands::REMOTE_CONTROL.name => {
-                if !FeatureFlag::CreatingSharedSessions.is_enabled()
-                    || !FeatureFlag::HOARemoteControl.is_enabled()
-                {
-                    return false;
-                }
-                if self
-                    .model
-                    .lock()
-                    .shared_session_status()
-                    .is_sharer_or_viewer()
-                {
-                    show_error_toast("Session is already being shared".to_owned(), ctx);
-                    return true;
-                }
-                ctx.emit(Event::StartRemoteControl);
-            }
             fork if command.name == commands::FORK.name => {
                 let Some(conversation_id) = self
                     .ai_context_model
@@ -832,9 +818,7 @@ impl Input {
                 });
             }
             command_that_just_sends_ai_request_with_prefix
-                if command.name == commands::INIT.name
-                    || command.name == commands::PLAN.name
-                    || command.name == commands::ORCHESTRATE.name =>
+                if command.name == commands::INIT.name || command.name == commands::PLAN.name =>
             {
                 // These slash commands just send AI requests with the slash command text as a
                 // prefix, and special handling is done downstream as an implementation detail

@@ -4,6 +4,10 @@ use ai::skills::{ParsedSkill, SkillProvider, SkillScope};
 use repo_metadata::{repositories::DetectedRepositories, DirectoryWatcher, RepoMetadataModel};
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tempfile::TempDir;
 use warp_core::channel::ChannelState;
 use warpui::App;
@@ -12,6 +16,93 @@ use watcher::HomeDirectoryWatcher;
 // ============================================================================
 // Tests for get_skills_for_working_directory subdirectory scoping
 // ============================================================================
+
+#[test]
+fn list_skill_inventory_groups_same_name_skills_and_marks_default() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(DirectoryWatcher::new);
+        app.add_singleton_model(|_| DetectedRepositories::default());
+        app.add_singleton_model(RepoMetadataModel::new);
+        app.add_singleton_model(HomeDirectoryWatcher::new_for_test);
+        app.add_singleton_model(WarpManagedPathsWatcher::new_for_testing);
+        let handle = app.add_singleton_model(SkillManager::new);
+
+        let repo = PathBuf::from("/repo");
+        let agents_path = repo.join(".agents/skills/deploy/SKILL.md");
+        let codex_path = repo.join(".codex/skills/deploy/SKILL.md");
+
+        let agents_skill = ParsedSkill {
+            name: "deploy".to_string(),
+            description: "Agents copy".to_string(),
+            path: agents_path.clone(),
+            content: "# Deploy".to_string(),
+            line_range: None,
+            provider: SkillProvider::Agents,
+            scope: SkillScope::Project,
+        };
+        let codex_skill = ParsedSkill {
+            name: "deploy".to_string(),
+            description: "Codex copy".to_string(),
+            path: codex_path,
+            content: "# Deploy".to_string(),
+            line_range: None,
+            provider: SkillProvider::Codex,
+            scope: SkillScope::Project,
+        };
+
+        handle.update(&mut app, |manager, ctx| {
+            manager.handle_skills_added(vec![agents_skill, codex_skill], ctx);
+        });
+
+        let inventory = handle.read(&app, |manager, ctx| manager.list_skill_inventory(ctx));
+
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(inventory[0].name, "deploy");
+        assert_eq!(inventory[0].duplicates.len(), 2);
+        assert_eq!(inventory[0].default_skill.path, agents_path);
+        assert_eq!(inventory[0].default_skill.content, "# Deploy");
+        assert!(inventory[0].has_duplicates());
+    });
+}
+
+#[test]
+fn skill_manager_emits_inventory_changed_when_skills_change() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(DirectoryWatcher::new);
+        app.add_singleton_model(|_| DetectedRepositories::default());
+        app.add_singleton_model(RepoMetadataModel::new);
+        app.add_singleton_model(HomeDirectoryWatcher::new_for_test);
+        app.add_singleton_model(WarpManagedPathsWatcher::new_for_testing);
+        let handle = app.add_singleton_model(SkillManager::new);
+        let saw_inventory_changed = Arc::new(AtomicBool::new(false));
+
+        app.update(|ctx| {
+            let saw_inventory_changed = saw_inventory_changed.clone();
+            ctx.subscribe_to_model(&handle, move |_, event, _| {
+                if matches!(event, SkillManagerEvent::InventoryChanged) {
+                    saw_inventory_changed.store(true, Ordering::SeqCst);
+                }
+            });
+        });
+
+        let skill_path = PathBuf::from("/repo/.agents/skills/deploy/SKILL.md");
+        let skill = ParsedSkill {
+            name: "deploy".to_string(),
+            description: "Deploy skill".to_string(),
+            path: skill_path,
+            content: "# Deploy".to_string(),
+            line_range: None,
+            provider: SkillProvider::Agents,
+            scope: SkillScope::Project,
+        };
+
+        handle.update(&mut app, |manager, ctx| {
+            manager.handle_skills_added(vec![skill], ctx);
+        });
+
+        assert!(saw_inventory_changed.load(Ordering::SeqCst));
+    });
+}
 
 #[test]
 fn get_skills_for_working_directory_scopes_subdirectory_skills() {
@@ -238,108 +329,6 @@ fn get_skills_for_working_directory_name_collision_returns_both() {
 }
 
 #[test]
-fn cloud_environment_skills_always_included() {
-    // In a cloud environment, all skills should be in scope regardless of
-    // the working directory—even when cwd is inside a different repo or
-    // when working_directory is None.
-
-    let temp = TempDir::new().unwrap();
-    let base = dunce::canonicalize(temp.path()).unwrap();
-    let repo_a = base.join("repo-a");
-    let repo_b = base.join("repo-b");
-    fs::create_dir_all(&repo_a).unwrap();
-    fs::create_dir_all(&repo_b).unwrap();
-
-    let skill_a_path = repo_a.join(".agents/skills/build/SKILL.md");
-    let skill_b_path = repo_b.join(".agents/skills/deploy/SKILL.md");
-
-    let skill_a = ParsedSkill {
-        name: "build".to_string(),
-        description: "Repo A skill".to_string(),
-        path: skill_a_path.clone(),
-        content: "# Build".to_string(),
-        line_range: None,
-        provider: SkillProvider::Agents,
-        scope: SkillScope::Project,
-    };
-
-    let skill_b = ParsedSkill {
-        name: "deploy".to_string(),
-        description: "Repo B skill".to_string(),
-        path: skill_b_path.clone(),
-        content: "# Deploy".to_string(),
-        line_range: None,
-        provider: SkillProvider::Agents,
-        scope: SkillScope::Project,
-    };
-
-    let mut directory_skills: HashMap<PathBuf, HashSet<PathBuf>> = HashMap::new();
-    directory_skills
-        .entry(repo_a.clone())
-        .or_default()
-        .insert(skill_a_path.clone());
-    directory_skills
-        .entry(repo_b.clone())
-        .or_default()
-        .insert(skill_b_path.clone());
-
-    let mut skills_by_path: HashMap<PathBuf, ParsedSkill> = HashMap::new();
-    skills_by_path.insert(skill_a_path.clone(), skill_a);
-    skills_by_path.insert(skill_b_path.clone(), skill_b);
-
-    App::test((), |mut app| async move {
-        app.add_singleton_model(DirectoryWatcher::new);
-        let repo_handle = app.add_singleton_model(|_| DetectedRepositories::default());
-        app.add_singleton_model(RepoMetadataModel::new);
-        app.add_singleton_model(HomeDirectoryWatcher::new_for_test);
-        app.add_singleton_model(WarpManagedPathsWatcher::new_for_testing);
-        let skill_manager_handle = app.add_singleton_model(SkillManager::new);
-
-        let canonical_repo_a =
-            warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo_a)
-                .unwrap();
-        repo_handle.update(&mut app, |repos, _ctx| {
-            repos.insert_test_repo_root(canonical_repo_a);
-        });
-
-        skill_manager_handle.update(&mut app, |manager, _ctx| {
-            manager.directory_skills = directory_skills;
-            manager.skills_by_path = skills_by_path;
-            manager.is_cloud_environment = true;
-        });
-
-        // From inside repo_a, both repo_a and repo_b skills are visible
-        // because is_cloud_environment skips the ancestor filter.
-        let skills = skill_manager_handle.read(&app, |manager, ctx| {
-            manager.get_skills_for_working_directory(Some(&repo_a), ctx)
-        });
-        let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
-        assert!(
-            names.contains(&"build"),
-            "Repo A skill should be visible from repo A"
-        );
-        assert!(
-            names.contains(&"deploy"),
-            "Repo B skill should be visible from repo A in cloud environment"
-        );
-
-        // With no working directory, all skills are still included.
-        let skills_none = skill_manager_handle.read(&app, |manager, ctx| {
-            manager.get_skills_for_working_directory(None, ctx)
-        });
-        let names_none: Vec<&str> = skills_none.iter().map(|s| s.name.as_str()).collect();
-        assert!(
-            names_none.contains(&"build"),
-            "Repo A skill should be visible even without a working directory"
-        );
-        assert!(
-            names_none.contains(&"deploy"),
-            "Repo B skill should be visible even without a working directory"
-        );
-    });
-}
-
-#[test]
 fn test_read_bundled_skills_with_variable_substitution() {
     let temp_dir = TempDir::new().unwrap();
     let skills_dir = temp_dir.path();
@@ -366,10 +355,9 @@ Run `{{warp_cli_binary_name}}` to connect to {{warp_server_url}}.
     let skill = skills.get("test-skill").unwrap();
 
     let expected_cli = ChannelState::channel().cli_command_name();
-    let expected_url = ChannelState::server_root_url();
-    assert!(skill.content.contains(&format!(
-        "Run `{expected_cli}` to connect to {expected_url}."
-    )));
+    assert!(skill
+        .content
+        .contains(&format!("Run `{expected_cli}` to connect to .")));
 }
 
 #[test]
@@ -444,10 +432,7 @@ fn test_build_bundled_skill_context() {
     assert!(context.contains_key("warp_url_scheme"));
     assert!(context.contains_key("settings_file_path"));
 
-    assert_eq!(
-        context.get("warp_server_url").unwrap(),
-        &ChannelState::server_root_url().to_string()
-    );
+    assert_eq!(context.get("warp_server_url").unwrap(), "");
     assert_eq!(
         context.get("warp_cli_binary_name").unwrap(),
         ChannelState::channel().cli_command_name()

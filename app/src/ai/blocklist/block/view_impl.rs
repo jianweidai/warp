@@ -69,7 +69,7 @@ use super::TextLocation;
 use crate::ai::blocklist::block::view_impl::comments::address_comment_chips;
 use crate::ai::blocklist::block::{DetectedLinksState, RICH_CONTENT_LINK_FIRST_CHAR_POSITION_ID};
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 
 use crate::settings_view::SettingsSection;
 use crate::terminal::block_list_element::BlockListMenuSource;
@@ -151,27 +151,6 @@ fn add_slash_command_highlight(
             .with_foreground_color(slash_command_foreground_color)
             .with_properties(default_properties)
     }
-}
-
-/// In shared ambient sessions, the first prompt is already shown by
-/// `InitialUserQuery` during live startup/streaming.
-///
-/// To avoid duplicate UI, we suppress the first AI block's header/query only while the viewer is
-/// live (not replaying historical conversation events).
-///
-/// That first prompt is rendered in the ambient-agent query block UI, so this helper only gates
-/// duplicate rendering in the AI block path when that optimistic block was actually inserted.
-fn should_hide_first_ai_block_query_and_header(
-    has_inserted_cloud_mode_user_query_block: bool,
-    is_shared_ambient_agent_session: bool,
-    is_first_exchange: bool,
-    is_receiving_agent_conversation_replay: bool,
-) -> bool {
-    FeatureFlag::CloudModeSetupV2.is_enabled()
-        && has_inserted_cloud_mode_user_query_block
-        && is_shared_ambient_agent_session
-        && is_first_exchange
-        && !is_receiving_agent_conversation_replay
 }
 
 /// Adds the appropriate highlighting for secrets and links to the given text element.
@@ -683,7 +662,7 @@ pub fn render_citation(
 
     let (icon, name) = match citation {
         AIAgentCitation::WarpDriveObject { uid } => {
-            let item = CloudModel::as_ref(app)
+            let item = ObjectStoreModel::as_ref(app)
                 .get_by_uid(uid)?
                 .to_warp_drive_item(appearance)?;
             (
@@ -844,26 +823,7 @@ impl View for AIBlock {
         };
         let addressed_comment_ids = conversation.addressed_comment_ids();
         let mut contents = Flex::column();
-        let (is_shared_ambient_agent_session, is_receiving_agent_conversation_replay) = {
-            let terminal_model = self.terminal_model.lock();
-            (
-                terminal_model.is_shared_ambient_agent_session(),
-                terminal_model.is_receiving_agent_conversation_replay(),
-            )
-        };
-        let is_first_exchange = conversation
-            .first_exchange()
-            .is_some_and(|exchange| exchange.id == self.client_ids.client_exchange_id);
-        let has_inserted_cloud_mode_user_query_block = self
-            .ambient_agent_view_model
-            .as_ref(app)
-            .has_inserted_cloud_mode_user_query_block();
-        let should_hide_first_block_query_and_header = should_hide_first_ai_block_query_and_header(
-            has_inserted_cloud_mode_user_query_block,
-            is_shared_ambient_agent_session,
-            is_first_exchange,
-            is_receiving_agent_conversation_replay,
-        );
+        let should_hide_first_block_query_and_header = false;
 
         let input_props = input::Props {
             comments: &self.comment_states,
@@ -880,7 +840,15 @@ impl View for AIBlock {
             .enumerate()
             .find_map(|(input_index, input)| {
                 let element_below_user_query = input.element_below_user_query(input_props, app);
-                let user_query = input.display_user_query(initial_conversation_query.as_ref())?;
+                let mut user_query =
+                    input.display_user_query(initial_conversation_query.as_ref())?;
+                let context_references = common::query_context_references(input, &user_query);
+                if !context_references.is_empty() {
+                    user_query = common::display_query_without_context_references(
+                        &user_query,
+                        &context_references,
+                    );
+                }
                 let query_prefix_highlight_len =
                     common::query_prefix_highlight_len(input, &user_query);
 
@@ -889,6 +857,7 @@ impl View for AIBlock {
                     input_index,
                     query_prefix_highlight_len,
                     element_below_user_query,
+                    context_references,
                 ))
             });
         let query_and_index_is_some =
@@ -901,6 +870,7 @@ impl View for AIBlock {
                 input_index,
                 query_prefix_highlight_len,
                 elements_below_query,
+                context_references,
             )) = query_and_index
             {
                 let mut did_render_header = false;
@@ -984,6 +954,7 @@ impl View for AIBlock {
                             .pending_context_selected_text()
                             .is_some(),
                         attachments: &attachment_name_list,
+                        context_references: &context_references,
                         find_context: self.find_model.as_ref(app).is_find_bar_open().then_some(
                             FindContext {
                                 model: self.find_model.as_ref(app),
@@ -1188,8 +1159,14 @@ impl View for AIBlock {
 
         let mut selectable = SelectableArea::new(
             self.state_handles.selection_handle.clone(),
-            move |selection_args, _, _| {
-                *selected_text.write() = selection_args.selection;
+            move |selection_args, ctx, _| {
+                let selection = selection_args.selection;
+                if let Some(selection) =
+                    selection.as_ref().filter(|selection| !selection.is_empty())
+                {
+                    ctx.dispatch_typed_action(AIBlockAction::CopyOnSelect(selection.clone()));
+                }
+                *selected_text.write() = selection;
             },
             SavePosition::new(content.finish(), self.saved_position_id().as_str()).finish(),
         )
@@ -1323,7 +1300,6 @@ impl AIAgentInput {
             | AIAgentInput::AutoCodeDiffQuery { .. }
             | AIAgentInput::ResumeConversation { .. }
             | AIAgentInput::InitProjectRules { .. }
-            | AIAgentInput::CreateEnvironment { .. }
             | AIAgentInput::TriggerPassiveSuggestion { .. }
             | AIAgentInput::CreateNewProject { .. }
             | AIAgentInput::CloneRepository { .. }

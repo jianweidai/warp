@@ -16,7 +16,8 @@
 //! 调用方静默 no-op。
 
 use anyhow::Context as _;
-use genai::chat::{ChatMessage, ChatOptions, ChatRequest};
+use futures::StreamExt;
+use genai::chat::{ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent};
 use warpui::{AppContext, EntityId, SingletonEntity as _};
 
 use super::chat_stream;
@@ -34,7 +35,7 @@ pub struct OneshotConfig {
 }
 
 /// One-shot 调用的可选参数。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct OneshotOptions {
     /// user message 字符截断上限(按 char,保护 CJK)。`None` = 默认 8000。
     pub max_chars: Option<usize>,
@@ -47,17 +48,6 @@ pub struct OneshotOptions {
     pub allow_reasoning: bool,
 }
 
-impl Default for OneshotOptions {
-    fn default() -> Self {
-        Self {
-            max_chars: None,
-            temperature: None,
-            response_format_json: false,
-            allow_reasoning: false,
-        }
-    }
-}
-
 const DEFAULT_MAX_CHARS: usize = 8000;
 
 fn truncate_chars(s: &str, max: usize) -> String {
@@ -67,17 +57,12 @@ fn truncate_chars(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
 
-/// 发送一次 BYOP 非流式 chat completion,返回模型 reply 的纯文本。
-///
-/// 错误吞由调用方决定 — 此处只 propagate `anyhow::Error`,不做日志。
-pub async fn byop_oneshot_completion(
+fn build_oneshot_request(
     cfg: &OneshotConfig,
     system: &str,
     user: &str,
     opts: &OneshotOptions,
-) -> anyhow::Result<String> {
-    let client = chat_stream::build_client(cfg.api_type, cfg.base_url.clone(), cfg.api_key.clone());
-
+) -> (ChatRequest, ChatOptions) {
     let mut chat_opts = ChatOptions::default()
         .with_capture_content(true)
         .with_capture_usage(true);
@@ -101,12 +86,72 @@ pub async fn byop_oneshot_completion(
     let chat_req = ChatRequest::from_messages(vec![ChatMessage::user(user_truncated)])
         .with_system(system.to_owned());
 
+    (chat_req, chat_opts)
+}
+
+/// 发送一次 BYOP 非流式 chat completion,返回模型 reply 的纯文本。
+///
+/// 错误吞由调用方决定 — 此处只 propagate `anyhow::Error`,不做日志。
+pub async fn byop_oneshot_completion(
+    cfg: &OneshotConfig,
+    system: &str,
+    user: &str,
+    opts: &OneshotOptions,
+) -> anyhow::Result<String> {
+    let client = chat_stream::build_client(cfg.api_type, cfg.base_url.clone(), cfg.api_key.clone());
+    let (chat_req, chat_opts) = build_oneshot_request(cfg, system, user, opts);
+
     let resp = client
         .exec_chat(&cfg.model_id, chat_req, Some(&chat_opts))
         .await
         .with_context(|| format!("byop oneshot exec_chat failed (model={})", cfg.model_id))?;
 
     Ok(resp.first_text().unwrap_or("").to_owned())
+}
+
+/// 发送一次 BYOP 流式 chat completion,聚合所有文本 chunk 后返回。
+///
+/// 给只接受 `stream=true` 的 OpenAI Responses 兼容代理使用。调用方仍然拿到完整
+/// 字符串,因此可以继续复用 one-shot 的标题清洗 / JSON 解析逻辑。
+pub async fn byop_oneshot_streaming_completion(
+    cfg: &OneshotConfig,
+    system: &str,
+    user: &str,
+    opts: &OneshotOptions,
+) -> anyhow::Result<String> {
+    let client = chat_stream::build_client(cfg.api_type, cfg.base_url.clone(), cfg.api_key.clone());
+    let (chat_req, chat_opts) = build_oneshot_request(cfg, system, user, opts);
+    let mut resp = client
+        .exec_chat_stream(&cfg.model_id, chat_req, Some(&chat_opts))
+        .await
+        .with_context(|| {
+            format!(
+                "byop oneshot exec_chat_stream failed (model={})",
+                cfg.model_id
+            )
+        })?
+        .stream;
+
+    let mut text = String::new();
+    while let Some(event) = resp.next().await {
+        match event.with_context(|| {
+            format!(
+                "byop oneshot exec_chat_stream event failed (model={})",
+                cfg.model_id
+            )
+        })? {
+            ChatStreamEvent::Chunk(chunk) => {
+                text.push_str(&chunk.content);
+            }
+            ChatStreamEvent::Start
+            | ChatStreamEvent::ReasoningChunk(_)
+            | ChatStreamEvent::ThoughtSignatureChunk(_)
+            | ChatStreamEvent::ToolCallChunk(_)
+            | ChatStreamEvent::End(_) => {}
+        }
+    }
+
+    Ok(text)
 }
 
 /// 解析当前 active profile 的 `active_ai_model`(fallback 到 `base_model`),

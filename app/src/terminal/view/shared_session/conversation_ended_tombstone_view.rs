@@ -30,9 +30,6 @@ use warpui::{
     ViewHandle,
 };
 
-#[cfg(not(target_family = "wasm"))]
-use crate::server::server_api::ServerApiProvider;
-
 /// Metadata collected for display in the tombstone.
 #[derive(Default)]
 struct TombstoneDisplayData {
@@ -52,7 +49,7 @@ struct TombstoneDisplayData {
     working_directory: Option<String>,
     /// Artifacts from the conversation
     artifacts: Vec<Artifact>,
-    /// Execution harness for the task. None until the task is loaded.
+    /// 在可从本地数据获得时记录任务执行 harness。
     #[cfg(not(target_family = "wasm"))]
     harness: Option<Harness>,
 }
@@ -115,7 +112,7 @@ impl TombstoneDisplayData {
         }
     }
 
-    /// Update with data from an AmbientAgentTask fetch
+    /// 用 AmbientAgentTask 的数据补充展示信息。
     #[cfg(not(target_family = "wasm"))]
     fn enrich_from_task(&mut self, task: AmbientAgentTask) {
         // Use task title if we don't have a conversation title.
@@ -264,12 +261,6 @@ impl ConversationEndedTombstoneView {
                 ArtifactButtonsRowEvent::OpenPullRequest { url } => {
                     ctx.open_url(url);
                 }
-                ArtifactButtonsRowEvent::ViewScreenshots { artifact_uids } => {
-                    crate::ai::artifacts::open_screenshot_lightbox(artifact_uids, ctx);
-                }
-                ArtifactButtonsRowEvent::DownloadFile { artifact_uid } => {
-                    crate::ai::artifacts::download_file_artifact(artifact_uid, ctx);
-                }
             },
         );
 
@@ -279,29 +270,6 @@ impl ConversationEndedTombstoneView {
                 ctx.notify();
             }
         });
-
-        // Fetch AmbientAgentTask for additional metadata (source, skill, artifacts, etc.)
-        #[cfg(not(target_family = "wasm"))]
-        if let Some(task_id) = task_id {
-            let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
-            ctx.spawn(
-                async move { ai_client.get_ambient_agent_task(&task_id).await },
-                |me, result, ctx| match result {
-                    Ok(task) => {
-                        me.display_data.enrich_from_task(task);
-                        me.artifact_buttons_view.update(ctx, |row, ctx| {
-                            row.update_artifacts(&me.display_data.artifacts, ctx);
-                        });
-                        ctx.notify();
-                    }
-                    Err(err) => {
-                        log::warn!(
-                            "Failed to fetch AmbientAgentTask for tombstone metadata: {err}"
-                        );
-                    }
-                },
-            );
-        }
 
         view
     }

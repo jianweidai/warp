@@ -2,7 +2,6 @@ mod agent;
 pub mod buffer_model;
 mod classic;
 mod cli_agent;
-mod cloud_mode_v2_history_menu;
 mod common;
 pub mod conversations;
 pub mod decorations;
@@ -25,8 +24,10 @@ mod terminal_message_bar;
 mod universal;
 pub mod user_query;
 
+use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::{AIAgentExchangeId, CancellationReason};
+use crate::ai::agent::{AIAgentAttachment, AIAgentExchangeId, CancellationReason};
+use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::blocklist::agent_view::shortcuts::AgentShortcutViewModel;
 use crate::ai::blocklist::agent_view::{AgentViewEntryOrigin, EphemeralMessageModel};
 use crate::ai::blocklist::block::cli_controller::CLISubagentController;
@@ -56,7 +57,6 @@ use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
 use crate::terminal::input::buffer_model::InputBufferModel;
-use crate::terminal::input::cloud_mode_v2_history_menu::CloudModeV2HistoryMenuView;
 use crate::terminal::input::conversations::{
     InlineConversationMenuEvent, InlineConversationMenuView,
 };
@@ -96,18 +96,18 @@ use crate::ASSETS;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 
+use crate::ai::ambient_agents::AttachmentInput;
 use crate::ai::attachment_utils::MAX_ATTACHMENT_SIZE_BYTES;
 use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::AttachmentType;
 use crate::ai::mcp::TemplatableMCPServerManager;
-use crate::server::server_api::ai::{AttachmentFileInfo, AttachmentInput};
 use crate::{
     ai::{
         agent::{AIAgentContext, EntrypointType},
         blocklist::{
-            prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
-            render_ai_agent_mode_icon, render_ai_follow_up_icon,
-            telemetry_banner::should_collect_ai_ugc_telemetry,
+            drive_object_attachment_for_reference, plan_attachment_for_reference,
+            prompt::prompt_alert::PromptAlertView, render_ai_agent_mode_icon,
+            render_ai_follow_up_icon, telemetry_banner::should_collect_ai_ugc_telemetry,
             BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIController,
             BlocklistAIControllerEvent, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
             BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
@@ -125,8 +125,11 @@ use crate::{
     appearance::{Appearance, AppearanceEvent},
     channel::{Channel, ChannelState},
     cloud_object::{
-        model::{actions::ObjectActionType, persistence::CloudModel, view::CloudViewModel},
-        CloudObject, Space,
+        model::{
+            actions::ObjectActionType, persistence::ObjectStoreModel, view::ObjectStoreViewModel,
+        },
+        update_manager::UpdateManager,
+        Space, StoredObject,
     },
     cmd_or_ctrl_shift,
     code_review::diff_state::DiffMode,
@@ -169,13 +172,11 @@ use crate::{
     },
     send_telemetry_from_ctx,
     server::{
-        cloud_objects::update_manager::UpdateManager,
         ids::SyncId,
-        server_api::ServerApi,
         telemetry::{
             AICommandSearchEntrypoint, AgentModeAutoDetectionFalsePositivePayload,
-            AgentModeAutoDetectionSettingOrigin, AnonymousUserSignupEntrypoint, CommandXRayTrigger,
-            EnvVarTelemetryMetadata, TelemetryEvent, WorkflowTelemetryMetadata,
+            AgentModeAutoDetectionSettingOrigin, CommandXRayTrigger, EnvVarTelemetryMetadata,
+            TelemetryEvent, TelemetrySpace, WorkflowTelemetryMetadata,
         },
     },
     session_management::SessionNavigationPromptElements,
@@ -185,7 +186,7 @@ use crate::{
         MAX_TIMES_TO_SHOW_AUTOSUGGESTION_HINT,
     },
     settings_view::{flags, SettingsSection},
-    terminal::view::inline_banner::{PromptSuggestionsEvent, PromptSuggestionsView},
+    terminal::view::inline_banner::PromptSuggestionsView,
     ui_components::{blended_colors, icons::Icon},
     user_config::WarpConfig,
     util::bindings::{self, CustomAction},
@@ -215,10 +216,10 @@ use crate::{
         ForkedConversationDestination, InitContent, RestoreConversationLayout, ToastStack,
         WorkspaceAction,
     },
-    workspaces::user_workspaces::UserWorkspaces,
-    AgentModeEntrypoint, ServerApiProvider,
+    AgentModeEntrypoint,
 };
 
+use crate::terminal::shared_session::protocol::ParticipantId;
 use ai::skills::SkillReference;
 use base64::Engine as _;
 #[cfg(feature = "local_fs")]
@@ -228,7 +229,6 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use ordered_float::Float;
 use regex::Regex;
-use session_sharing_protocol::common::{AgentAttachment, ParticipantId, ServerConversationToken};
 use settings::{Setting as _, ToggleableSetting};
 use std::{
     any::Any,
@@ -373,8 +373,6 @@ pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_MAX_HEIGHT: f32 = 236.;
 pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_TOP_PADDING: f32 = 10.;
 pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_BOTTOM_PADDING: f32 = 8.;
 pub(super) const CLI_AGENT_RICH_INPUT_HINT_KEY: &str = "terminal-input-cli-agent-rich-input-hint";
-
-const CLOUD_MODE_V2_HINT_KEY: &str = "terminal-input-cloud-agent-hint";
 const SHORT_CIRCUIT_HIGHLIGHTING_ACTIONS: [Option<PlainTextEditorViewAction>; 7] = [
     Some(PlainTextEditorViewAction::Space),
     Some(PlainTextEditorViewAction::NonExpandingSpace),
@@ -978,23 +976,10 @@ pub enum Event {
         /// The CRDT-compliant operations.
         operations: Rc<Vec<CrdtOperation>>,
     },
-    /// A viewer in a shared session is requesting to send an agent prompt.
-    SendAgentPrompt {
-        server_conversation_token: Option<ServerConversationToken>,
-        prompt: String,
-        attachments: Vec<AgentAttachment>,
-    },
-    /// A viewer in a shared session is requesting to cancel the active agent conversation.
-    CancelSharedSessionConversation {
-        server_conversation_token: ServerConversationToken,
-    },
     InputFocusedFromMiddleClick,
     EditorFocused,
     UnhandledCmdEnter,
     CtrlEnter,
-    SignupAnonymousUser {
-        entrypoint: AnonymousUserSignupEntrypoint,
-    },
     OpenSettings(SettingsSection),
     #[cfg(feature = "local_fs")]
     OpenCodeInWarp {
@@ -1010,7 +995,6 @@ pub enum Event {
     OpenViewMCPPane,
     OpenAddMCPPane,
     OpenProjectRulesPane,
-    OpenEnvironmentManagementPane,
     OpenFilesPalette {
         source: PaletteSource,
     },
@@ -1037,24 +1021,18 @@ pub enum Event {
         origin: AgentViewEntryOrigin,
     },
     CreateDockerSandbox,
-    /// Exit cloud mode (ambient agent) and start a new *local* agent conversation in the root terminal.
+    /// Exit ambient agent and start a new *local* agent conversation in the root terminal.
     ///
     /// If `initial_prompt` is `Some`, it should prefill the local agent prompt but not auto-send.
-    ExitCloudModeAndStartLocalAgent {
+    ExitAmbientAgentAndStartLocalAgent {
         initial_prompt: Option<String>,
     },
     ScrollToExchange {
         exchange_id: AIAgentExchangeId,
     },
-    /// Trigger environment setup flow with optional repository arguments
-    TriggerEnvironmentSetup {
-        repos: Vec<String>,
-    },
     RegisterPluginListener(CLIAgent),
     #[cfg(not(target_family = "wasm"))]
     OpenPluginInstructionsPane(CLIAgent, PluginModalKind),
-    OpenShareSessionModal,
-    StartRemoteControl,
 }
 
 pub enum InputState {
@@ -1487,7 +1465,6 @@ pub struct Input {
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     tips_completed: ModelHandle<TipsCompleted>,
     editor: ViewHandle<EditorView>,
-    server_api: Arc<ServerApi>,
     input_suggestions: ViewHandle<InputSuggestions>,
     suggestions_mode_model: ModelHandle<InputSuggestionsModeModel>,
     completions_menu_resizable_width: ResizableStateHandle,
@@ -1644,8 +1621,6 @@ pub struct Input {
 
     /// Inline history menu for up-arrow with conversations and commands.
     inline_history_menu_view: ViewHandle<InlineHistoryMenuView>,
-
-    pub(super) cloud_mode_v2_history_menu_view: Option<ViewHandle<CloudModeV2HistoryMenuView>>,
 
     inline_terminal_menu_positioner: ModelHandle<InlineMenuPositioner>,
 
@@ -2026,7 +2001,6 @@ impl Input {
     pub(crate) fn new(
         model: Arc<FairMutex<TerminalModel>>,
         tips_completed: ModelHandle<TipsCompleted>,
-        server_api: Arc<ServerApi>,
         sessions: ModelHandle<Sessions>,
         size_info: SizeInfo,
         menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
@@ -2117,7 +2091,7 @@ impl Input {
                     editor.reset_height_shrink_delay(ctx);
                 });
 
-                if *origin == AgentViewEntryOrigin::CloudAgent {
+                if *origin == AgentViewEntryOrigin::AmbientAgent {
                     // By default, shared session viewers cannot edit the input - override that for composing ambient agent queries.
                     me.editor.update(ctx, |editor, ctx| {
                         editor.set_interaction_state(InteractionState::Editable, ctx);
@@ -2187,7 +2161,7 @@ impl Input {
             )
         });
 
-        let host_selector = if FeatureFlag::CloudModeInputV2.is_enabled() {
+        let host_selector = if false {
             let view = ctx.add_typed_action_view(|ctx| {
                 HostSelector::new(menu_positioning_provider.clone(), ctx)
             });
@@ -2211,10 +2185,6 @@ impl Input {
                 AgentInputFooterEvent::OpenRichInput | AgentInputFooterEvent::HideRichInput => {
                     ctx.emit(Event::Escape);
                 }
-                AgentInputFooterEvent::StartRemoteControl
-                | AgentInputFooterEvent::StopRemoteControl => {
-                    // Handled by UseAgentToolbar's subscription, not here.
-                }
                 // WriteToPty, InsertIntoCLIRichInput, ToggleCodeReviewPane, and ToggleFileExplorer
                 // are handled by UseAgentToolbar's subscription, not here.
                 AgentInputFooterEvent::WriteToPty(_)
@@ -2229,9 +2199,6 @@ impl Input {
                         &PromptDisplayEvent::TryExecuteCommand(cmd.clone()),
                         ctx,
                     );
-                }
-                AgentInputFooterEvent::PromptAlert(prompt_alert_event) => {
-                    me.handle_prompt_alert(prompt_alert_event, ctx);
                 }
                 AgentInputFooterEvent::ModelSelectorOpened => {
                     me.close_overlays(false, ctx);
@@ -2289,12 +2256,11 @@ impl Input {
                         position_offset_from_prompt: offset,
                     });
                 }
-                AgentInputFooterEvent::OpenEnvironmentManagementPane => {
-                    ctx.emit(Event::OpenEnvironmentManagementPane);
-                }
                 AgentInputFooterEvent::PluginInstalled(agent) => {
                     ctx.emit(Event::RegisterPluginListener(*agent));
                 }
+                // OpenWarp Wave 7-3:`AgentInputFooterEvent::OpenEnvironmentManagementPane` handler
+                // 随 ambient-agent UI 子系统物理删。
                 #[cfg(not(target_family = "wasm"))]
                 AgentInputFooterEvent::OpenPluginInstructionsPane(agent, kind) => {
                     ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
@@ -2363,9 +2329,8 @@ impl Input {
             ai_input_model.clone(),
         );
 
-        let next_command_model = ctx.add_model(|_| {
-            NextCommandModel::new(sessions.clone(), model.clone(), server_api.clone())
-        });
+        let next_command_model =
+            ctx.add_model(|_| NextCommandModel::new(sessions.clone(), model.clone()));
         ctx.subscribe_to_model(&next_command_model, |me, _, event, ctx| {
             me.handle_next_command_model_event(event, ctx);
         });
@@ -2598,43 +2563,10 @@ impl Input {
         });
         if FeatureFlag::InlineHistoryMenu.is_enabled() {
             ctx.subscribe_to_view(&inline_history_menu_view, |me, _, event, ctx| {
-                if me.is_cloud_mode_input_v2_composing(ctx) {
-                    return;
-                }
                 me.handle_inline_history_menu_event(event, ctx);
             });
         }
         let inline_history_model = inline_history_menu_view.as_ref(ctx).model().clone();
-
-        let cloud_mode_v2_history_menu_view = if FeatureFlag::CloudModeInputV2.is_enabled() {
-            let view = ctx.add_view({
-                let active_session = active_session.clone();
-                let buffer_model = buffer_model.clone();
-                let agent_view_controller = agent_view_controller.clone();
-                |ctx| {
-                    CloudModeV2HistoryMenuView::new(
-                        terminal_view_id,
-                        active_session,
-                        &suggestions_mode_model,
-                        agent_view_controller,
-                        &inline_terminal_menu_positioner,
-                        buffer_model,
-                        ctx,
-                    )
-                }
-            });
-            if FeatureFlag::InlineHistoryMenu.is_enabled() {
-                ctx.subscribe_to_view(&view, |me, _, event, ctx| {
-                    if !me.is_cloud_mode_input_v2_composing(ctx) {
-                        return;
-                    }
-                    me.handle_inline_history_menu_event(event, ctx);
-                });
-            }
-            Some(view)
-        } else {
-            None
-        };
 
         let terminal_input_message_bar = ctx.add_view(|ctx| {
             TerminalInputMessageBar::new(
@@ -2953,11 +2885,8 @@ impl Input {
             },
         );
 
-        let prompt_suggestions_view = ctx
-            .add_typed_action_view(|ctx| PromptSuggestionsView::new(ai_input_model.clone(), ctx));
-        ctx.subscribe_to_view(&prompt_suggestions_view, move |me, _, event, ctx| {
-            me.handle_prompt_suggestions_event(event, ctx);
-        });
+        let prompt_suggestions_view =
+            ctx.add_view(|ctx| PromptSuggestionsView::new(ai_input_model.clone(), ctx));
 
         let slash_command_data_source = ctx.add_model(|ctx| {
             SlashCommandDataSource::new(
@@ -3194,7 +3123,6 @@ impl Input {
             tips_completed,
             editor,
             model,
-            server_api,
             sessions,
             focus_handle: None,
             active_block_metadata: None,
@@ -3257,7 +3185,6 @@ impl Input {
             user_query_menu_view,
             rewind_menu_view,
             inline_history_menu_view,
-            cloud_mode_v2_history_menu_view,
             inline_terminal_menu_positioner,
             cached_agent_mode_hint_key: None,
             is_editor_empty_on_last_edit: is_editor_empty,
@@ -3427,12 +3354,6 @@ impl Input {
         if let Some(ai_context_menu) = self.editor.as_ref(app).render_ai_context_menu() {
             let position = position_id_for_cursor(self.editor.id());
 
-            let y_anchor = if self.is_cloud_mode_input_v2_composing(app) {
-                AnchorPair::new(YAxisAnchor::Bottom, YAxisAnchor::Top)
-            } else {
-                menu_positioning.completion_suggestions_y_anchor()
-            };
-
             stack.add_positioned_overlay_child(
                 ai_context_menu,
                 OffsetPositioning::from_axes(
@@ -3446,7 +3367,7 @@ impl Input {
                         &position,
                         PositionedElementOffsetBounds::Unbounded,
                         OffsetType::Pixel(0.),
-                        y_anchor,
+                        menu_positioning.completion_suggestions_y_anchor(),
                     ),
                 ),
             );
@@ -3872,7 +3793,7 @@ impl Input {
     ) {
         let InlinePromptsMenuEvent::SelectedPrompt { id } = event;
 
-        let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(id).cloned() else {
+        let Some(workflow) = ObjectStoreModel::as_ref(ctx).get_workflow(id).cloned() else {
             log::warn!("Tried to open saved prompt for id {id:?} but it does not exist");
             return;
         };
@@ -4756,7 +4677,7 @@ impl Input {
             .count();
 
         // Image context is available whenever the feature flag is enabled and we're in AI input
-        // mode, including cloud mode
+        // mode, including ambient-agent mode
         let image_context_options = if FeatureFlag::ImageAsContext.is_enabled()
             && matches!(ai_input_model.input_type(), InputType::AI)
         {
@@ -5293,28 +5214,6 @@ impl Input {
         });
     }
 
-    fn handle_prompt_alert(
-        &mut self,
-        prompt_alert: &PromptAlertEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match prompt_alert {
-            PromptAlertEvent::SignupAnonymousUser => {
-                ctx.emit(Event::SignupAnonymousUser {
-                    entrypoint: AnonymousUserSignupEntrypoint::SignUpAIPrompt,
-                });
-            }
-            PromptAlertEvent::OpenPrivacyPage => {
-                ctx.emit(Event::OpenSettings(SettingsSection::Privacy));
-            }
-            PromptAlertEvent::OpenBillingPortal { team_uid } => {
-                UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
-                    user_workspaces.generate_stripe_billing_portal_link(*team_uid, ctx);
-                });
-            }
-        }
-    }
-
     fn enable_auto_detection(&mut self, ctx: &mut ViewContext<Self>) {
         // Don't allow input mode changes for read-only viewers in shared sessions
         if self.model.lock().shared_session_status().is_reader() {
@@ -5442,9 +5341,6 @@ impl Input {
             UniversalDeveloperInputButtonBarEvent::SetAIContextMenuOpen(open) => {
                 self.focus_input_box(ctx);
                 self.set_ai_context_menu_open(*open, ctx);
-            }
-            UniversalDeveloperInputButtonBarEvent::PromptAlert(prompt_alert_event) => {
-                self.handle_prompt_alert(prompt_alert_event, ctx);
             }
             UniversalDeveloperInputButtonBarEvent::ModelSelectorOpened => {
                 self.close_overlays(false, ctx);
@@ -5591,17 +5487,6 @@ impl Input {
             return;
         }
 
-        if self.is_cloud_mode_input_v2_composing(ctx) {
-            let show_hint = *InputSettings::as_ref(ctx).show_hint_text;
-            self.editor.update(ctx, |editor, ctx| {
-                if show_hint {
-                    editor.set_placeholder_text(translate_input_key(CLOUD_MODE_V2_HINT_KEY), ctx);
-                } else {
-                    editor.clear_placeholder_text(ctx);
-                }
-            });
-            return;
-        }
         // If the current input suggestions mode has a custom placeholder,
         // that takes precedence over other placeholders.
         if let Some(placeholder) = self
@@ -5841,17 +5726,6 @@ impl Input {
         self.editor.update(ctx, |editor, ctx| {
             editor.set_interaction_state(InteractionState::Editable, ctx);
         });
-    }
-
-    fn should_block_cloud_mode_setup_submission(&self, app: &AppContext) -> bool {
-        if !FeatureFlag::CloudModeSetupV2.is_enabled() {
-            return false;
-        }
-
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
-        ambient_agent_model.is_ambient_agent()
-            && !ambient_agent_model.is_configuring_ambient_agent()
-            && !ambient_agent_model.is_agent_running()
     }
 
     /// Try to execute a command in the local session that was
@@ -6214,37 +6088,18 @@ impl Input {
         let active_conversation =
             BlocklistAIHistoryModel::as_ref(ctx).active_conversation(self.terminal_view_id);
 
-        if self.model.lock().shared_session_status().is_viewer() {
-            let server_conversation_token = active_conversation
-                .and_then(|conversation| conversation.server_conversation_token().cloned())
-                .and_then(|server_token| {
-                    server_token
-                        .as_str()
-                        .parse()
-                        .ok()
-                        .map(ServerConversationToken::from_uuid)
-                });
+        let active_conversation_id = active_conversation
+            .filter(|conversation| conversation.status().is_in_progress())
+            .map(|conversation| conversation.id());
 
-            if let Some(server_conversation_token) = server_conversation_token {
-                ctx.emit(Event::CancelSharedSessionConversation {
-                    server_conversation_token,
-                });
-            }
-        } else if self.model.lock().shared_session_status().is_sharer() {
-            let active_conversation_id = active_conversation
-                .filter(|conversation| conversation.status().is_in_progress())
-                .map(|conversation| conversation.id());
-
-            if let Some(active_conversation_id) = active_conversation_id {
-                // First, cancel locally via the existing pipeline.
-                self.ai_controller.update(ctx, |controller, ctx| {
-                    controller.cancel_conversation_progress(
-                        active_conversation_id,
-                        cancellation_reason,
-                        ctx,
-                    );
-                });
-            }
+        if let Some(active_conversation_id) = active_conversation_id {
+            self.ai_controller.update(ctx, |controller, ctx| {
+                controller.cancel_conversation_progress(
+                    active_conversation_id,
+                    cancellation_reason,
+                    ctx,
+                );
+            });
         }
     }
 
@@ -6371,8 +6226,8 @@ impl Input {
             } => {
                 let workflow_id = workflow.server_id();
                 let workflow_source = *workflow_source;
-                let space = workflow_id.and_then(|id| {
-                    CloudViewModel::as_ref(ctx)
+                let space: Option<TelemetrySpace> = workflow_id.and_then(|id| {
+                    ObjectStoreViewModel::as_ref(ctx)
                         .object_space(&id.to_string(), ctx)
                         .map(Into::into)
                 });
@@ -6602,11 +6457,11 @@ impl Input {
                 });
 
                 // Get enum variants
-                let cloud_model = CloudModel::as_ref(ctx);
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
                 let enum_variants_map = argument_index_to_object_id_map
                     .iter()
                     .filter_map(|(index, object_id)| {
-                        cloud_model
+                        object_store_model
                             .get_workflow_enum(object_id)
                             .map(|workflow_enum| {
                                 workflow_enum.model().string_model.variants.clone()
@@ -6697,7 +6552,7 @@ impl Input {
     /// Builds a prefix for applying env vars to a command in the current session.
     fn env_vars_command_prefix(&self, env_vars_id: &SyncId, ctx: &AppContext) -> Option<String> {
         let shell_type = self.active_session(ctx)?.shell().shell_type();
-        let env_vars = &CloudModel::as_ref(ctx)
+        let env_vars = &ObjectStoreModel::as_ref(ctx)
             .get_env_var_collection(env_vars_id)?
             .model()
             .string_model;
@@ -6750,7 +6605,7 @@ impl Input {
                 // The ID may be `None` if the user is *clearing* environment variables.
                 if let Some(env_vars_id) = env_vars {
                     let env_vars_object =
-                        CloudModel::as_ref(ctx).get_env_var_collection(env_vars_id);
+                        ObjectStoreModel::as_ref(ctx).get_env_var_collection(env_vars_id);
                     let telemetry_metadata = EnvVarTelemetryMetadata {
                         object_id: env_vars_id.into_server().map(Into::into),
                         team_uid: env_vars_object
@@ -7577,17 +7432,9 @@ impl Input {
                 true
             }
             InputSuggestionsMode::InlineHistoryMenu { .. } => {
-                if self.is_cloud_mode_input_v2_composing(ctx) {
-                    if let Some(view) = self.cloud_mode_v2_history_menu_view.clone() {
-                        view.update(ctx, |view, ctx| {
-                            view.select_up(ctx);
-                        });
-                    }
-                } else {
-                    self.inline_history_menu_view.update(ctx, |view, ctx| {
-                        view.select_up(ctx);
-                    });
-                }
+                self.inline_history_menu_view.update(ctx, |view, ctx| {
+                    view.select_up(ctx);
+                });
                 true
             }
             InputSuggestionsMode::IndexedReposMenu => {
@@ -7960,17 +7807,9 @@ impl Input {
             .as_ref(ctx)
             .is_inline_history_menu()
         {
-            if self.is_cloud_mode_input_v2_composing(ctx) {
-                if let Some(view) = self.cloud_mode_v2_history_menu_view.clone() {
-                    view.update(ctx, |view, ctx| {
-                        view.select_down(ctx);
-                    });
-                }
-            } else {
-                self.inline_history_menu_view.update(ctx, |view, ctx| {
-                    view.select_down(ctx);
-                });
-            }
+            self.inline_history_menu_view.update(ctx, |view, ctx| {
+                view.select_down(ctx);
+            });
             return;
         }
 
@@ -8514,6 +8353,113 @@ impl Input {
                 });
             }
         }
+    }
+
+    fn enter_ai_mode_for_ai_context_menu_selection(&mut self, ctx: &mut ViewContext<Self>) {
+        if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+            self.ensure_agent_mode_for_ai_features(false, ctx);
+        }
+    }
+
+    fn at_context_reference_for_display_name(
+        &self,
+        display_name: &str,
+        fallback: &str,
+        ctx: &ViewContext<Self>,
+    ) -> String {
+        let normalized_name = display_name
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let name = if normalized_name.is_empty() {
+            fallback.to_string()
+        } else {
+            normalized_name
+        };
+        let base_reference = format!("@{name}");
+        let mut reference = base_reference.clone();
+        let mut suffix = 2;
+
+        while self
+            .ai_context_model
+            .as_ref(ctx)
+            .pending_at_context_attachments()
+            .contains_key(&reference)
+        {
+            reference = format!("{base_reference} ({suffix})");
+            suffix += 1;
+        }
+
+        reference
+    }
+
+    fn prune_stale_at_context_attachments(&mut self, ctx: &mut ViewContext<Self>) {
+        let mut query = self.buffer_text(ctx);
+        if let InputSuggestionsMode::AIContextMenu {
+            at_symbol_position, ..
+        } = self.suggestions_mode_model.as_ref(ctx).mode()
+        {
+            let cursor_position = self.editor.read(ctx, |editor, ctx| {
+                editor.start_byte_index_of_last_selection(ctx)
+            });
+            let at_symbol_position = *at_symbol_position;
+            let cursor_position = cursor_position.as_usize();
+            if at_symbol_position <= cursor_position && cursor_position <= query.len() {
+                query.replace_range(at_symbol_position..cursor_position, "");
+            }
+        }
+
+        self.ai_context_model.update(ctx, |model, _ctx| {
+            model.retain_at_context_attachments_in_query(&query);
+        });
+    }
+
+    fn insert_ai_context_menu_attachment_reference(
+        &mut self,
+        reference: String,
+        attachment: AIAgentAttachment,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.enter_ai_mode_for_ai_context_menu_selection(ctx);
+        self.ai_context_model.update(ctx, |model, _ctx| {
+            model.register_at_context_attachment(reference.clone(), attachment);
+        });
+        self.replace_at_symbol_with_text(&reference, ctx);
+    }
+
+    fn conversation_attachment_for_ai_context_menu(
+        &self,
+        conversation_id: &str,
+        title: &str,
+        ctx: &ViewContext<Self>,
+    ) -> AIAgentAttachment {
+        let conversation_token = ServerConversationToken::new(conversation_id.to_string());
+        let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+        if let Some(local_conversation_id) =
+            history_model.find_conversation_id_by_server_token(&conversation_token)
+        {
+            if let Some(conversation) = history_model.conversation(&local_conversation_id) {
+                let content =
+                    conversation.export_to_markdown(Some(self.ai_action_model.as_ref(ctx)));
+                if !content.trim().is_empty() {
+                    return AIAgentAttachment::PlainText(content);
+                }
+            }
+        }
+
+        if let Some(task) = AgentConversationsModel::as_ref(ctx)
+            .tasks_iter()
+            .find(|task| task.conversation_id.as_deref() == Some(conversation_id))
+        {
+            return AIAgentAttachment::PlainText(format!(
+                "Conversation: {}\n\nPrompt:\n{}",
+                task.title, task.prompt
+            ));
+        }
+
+        AIAgentAttachment::PlainText(format!(
+            "Conversation: {title}\n\nConversation token: {conversation_id}"
+        ))
     }
 
     fn handle_editor_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
@@ -9111,24 +9057,16 @@ impl Input {
                         // User query menu handles its own state
                     }
                     InputSuggestionsMode::InlineHistoryMenu { .. } => {
-                        let mismatched = if self.is_cloud_mode_input_v2_composing(ctx) {
-                            self.cloud_mode_v2_history_menu_view
-                                .as_ref()
-                                .and_then(|view| view.as_ref(ctx).selected_query_text(ctx))
-                                .is_some_and(|selected_text| {
-                                    selected_text != self.editor.as_ref(ctx).buffer_text(ctx)
-                                })
-                        } else {
-                            self.inline_history_menu_view
-                                .as_ref(ctx)
-                                .model()
-                                .as_ref(ctx)
-                                .selected_item()
-                                .and_then(|item| item.buffer_replacement_text())
-                                .is_some_and(|selected_item_text| {
-                                    *selected_item_text != self.editor.as_ref(ctx).buffer_text(ctx)
-                                })
-                        };
+                        let mismatched = self
+                            .inline_history_menu_view
+                            .as_ref(ctx)
+                            .model()
+                            .as_ref(ctx)
+                            .selected_item()
+                            .and_then(|item| item.buffer_replacement_text())
+                            .is_some_and(|selected_item_text| {
+                                *selected_item_text != self.editor.as_ref(ctx).buffer_text(ctx)
+                            });
                         if mismatched {
                             self.suggestions_mode_model.update(ctx, |model, ctx| {
                                 model.set_mode(InputSuggestionsMode::Closed, ctx);
@@ -9567,6 +9505,7 @@ impl Input {
                 }
             }
             EditorEvent::AcceptAIContextMenuItem(action) => {
+                self.prune_stale_at_context_attachments(ctx);
                 // Handle different action types
                 match action {
                     AIContextMenuSearchableAction::InsertText { text } => {
@@ -9636,19 +9575,50 @@ impl Input {
                     AIContextMenuSearchableAction::InsertDriveObject {
                         object_type,
                         object_uid,
+                        display_name,
                     } => {
-                        // For InsertDriveObject, format as <object_type:uid> and replace the "@" and any filter text
-                        let drive_object_text = format!("<{object_type}:{object_uid}>");
-                        self.replace_at_symbol_with_text(&drive_object_text, ctx);
+                        let reference = self.at_context_reference_for_display_name(
+                            display_name,
+                            object_uid,
+                            ctx,
+                        );
+                        let attachment =
+                            drive_object_attachment_for_reference(object_uid, *object_type, ctx);
+                        self.insert_ai_context_menu_attachment_reference(
+                            reference, attachment, ctx,
+                        );
                     }
-                    AIContextMenuSearchableAction::InsertPlan { ai_document_uid } => {
-                        // For InsertPlan, format as <plan:uid> and replace the "@" and any filter text
-                        let ai_document_text = format!("<plan:{ai_document_uid}>");
-                        self.replace_at_symbol_with_text(&ai_document_text, ctx);
+                    AIContextMenuSearchableAction::InsertPlan {
+                        ai_document_uid,
+                        display_name,
+                    } => {
+                        if let Some(attachment) =
+                            plan_attachment_for_reference(ai_document_uid, ctx)
+                        {
+                            let reference = self.at_context_reference_for_display_name(
+                                display_name,
+                                ai_document_uid,
+                                ctx,
+                            );
+                            self.insert_ai_context_menu_attachment_reference(
+                                reference, attachment, ctx,
+                            );
+                        }
                     }
-                    AIContextMenuSearchableAction::InsertConversation { conversation_id } => {
-                        let conversation_text = format!("<convo:{conversation_id}>");
-                        self.replace_at_symbol_with_text(&conversation_text, ctx);
+                    AIContextMenuSearchableAction::InsertConversation {
+                        conversation_id,
+                        title,
+                    } => {
+                        let reference =
+                            self.at_context_reference_for_display_name(title, conversation_id, ctx);
+                        let attachment = self.conversation_attachment_for_ai_context_menu(
+                            conversation_id,
+                            title,
+                            ctx,
+                        );
+                        self.insert_ai_context_menu_attachment_reference(
+                            reference, attachment, ctx,
+                        );
                     }
                     AIContextMenuSearchableAction::InsertDiffSet { diff_mode } => {
                         // Emit event to the TerminalView to attach the diff set
@@ -9657,6 +9627,7 @@ impl Input {
                         });
                     }
                     AIContextMenuSearchableAction::InsertSkill { name } => {
+                        self.enter_ai_mode_for_ai_context_menu_selection(ctx);
                         self.replace_at_symbol_with_text(&format!("/{name}"), ctx);
                     }
                 }
@@ -9720,11 +9691,9 @@ impl Input {
             return;
         }
 
-        // Shared session viewers cannot attach images unless in cloud mode
+        // Shared session viewers cannot attach images.
         let is_viewer = self.model.lock().shared_session_status().is_viewer();
-        let is_cloud_mode_with_images = FeatureFlag::CloudModeImageContext.is_enabled()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
-        if is_viewer && !is_cloud_mode_with_images {
+        if is_viewer {
             self.insert_clipboard_text_content(ctx, content);
             return;
         }
@@ -9779,12 +9748,9 @@ impl Input {
 
     /// Check if we can attach on filepaths paste or drag-drop
     fn can_attach_on_filepaths_paste_or_dragdrop(&self, ctx: &mut ViewContext<Self>) -> bool {
-        // Shared session viewers cannot attach images unless in cloud mode
-        // with the CloudModeImageContext feature enabled.
+        // Shared session viewers cannot attach images in OpenWarp.
         let is_viewer = self.model.lock().shared_session_status().is_viewer();
-        let is_cloud_mode_with_images = FeatureFlag::CloudModeImageContext.is_enabled()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
-        if is_viewer && !is_cloud_mode_with_images {
+        if is_viewer {
             return false;
         }
 
@@ -11106,9 +11072,6 @@ impl Input {
             // If the inline history menu is open and has multiple tabs,
             // shift + tab should cycle between them.
             InputSuggestionsMode::InlineHistoryMenu { .. } => {
-                if self.is_cloud_mode_input_v2_composing(ctx) {
-                    return;
-                }
                 if self
                     .inline_history_menu_view
                     .update(ctx, |view, ctx| view.select_next_tab(ctx))
@@ -11700,20 +11663,6 @@ impl Input {
             .suggestions_mode_model
             .as_ref(ctx)
             .is_inline_history_menu()
-            && self.is_cloud_mode_input_v2_composing(ctx)
-            && self
-                .cloud_mode_v2_history_menu_view
-                .as_ref()
-                .is_some_and(|view| view.as_ref(ctx).has_selection(ctx))
-        {
-            if let Some(view) = self.cloud_mode_v2_history_menu_view.clone() {
-                view.update(ctx, |view, ctx| view.accept_selected(ctx));
-            }
-            return;
-        } else if self
-            .suggestions_mode_model
-            .as_ref(ctx)
-            .is_inline_history_menu()
             && self
                 .inline_history_menu_view
                 .as_ref(ctx)
@@ -11758,12 +11707,9 @@ impl Input {
             self.input_suggestions.update(ctx, |suggestions, ctx| {
                 suggestions.confirm(ctx);
             });
-        } else if self.should_block_cloud_mode_setup_submission(ctx) {
-            return;
         } else if FeatureFlag::AgentMode.is_enabled()
             && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-            && (self.ai_input_model.as_ref(ctx).is_ai_input_enabled()
-                || self.is_cloud_mode_input_v2_composing(ctx))
+            && self.ai_input_model.as_ref(ctx).is_ai_input_enabled()
         {
             // If we're submitting an AI query, we want to send telemetry for the input type.
             if FeatureFlag::NldImprovements.is_enabled() {
@@ -11792,11 +11738,8 @@ impl Input {
                     return;
                 }
 
-                // Collect pending images and files, converting to AttachmentInput for the spawn request.
-                // Only include images when CloudModeImageContext is enabled.
-                let attachments: Vec<AttachmentInput> = if FeatureFlag::CloudModeImageContext
-                    .is_enabled()
-                {
+                // Collect pending files for the spawn request. Cloud mode image attachments are disabled in OpenWarp.
+                let attachments: Vec<AttachmentInput> = if false {
                     let mut inputs: Vec<AttachmentInput> = self
                         .ai_context_model
                         .as_ref(ctx)
@@ -11898,7 +11841,8 @@ impl Input {
                 command_string.truncate(command_string.trim_end().len());
 
                 if let Some(alias) = WorkflowAliases::as_ref(ctx).match_alias(&command_string) {
-                    if let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(&alias.workflow_id)
+                    if let Some(workflow) =
+                        ObjectStoreModel::as_ref(ctx).get_workflow(&alias.workflow_id)
                     {
                         let owner = workflow.clone().permissions.owner.into();
 
@@ -12030,7 +11974,7 @@ impl Input {
                 {
                     return;
                 }
-                // In cloud mode (ambient agent), Cmd+Enter should exit cloud mode entirely and start a
+                // In ambient agent, Cmd+Enter should exit ambient-agent session entirely and start a
                 // new *local* agent conversation in the root terminal. This should work whether the
                 // buffer is empty (blank convo) or non-empty (prefill draft, but don't auto-send).
                 if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
@@ -12039,7 +11983,7 @@ impl Input {
                     draft.truncate(draft.trim_end().len());
 
                     let is_empty = draft.trim().is_empty();
-                    ctx.emit(Event::ExitCloudModeAndStartLocalAgent {
+                    ctx.emit(Event::ExitAmbientAgentAndStartLocalAgent {
                         initial_prompt: (!is_empty).then_some(draft),
                     });
                     return;
@@ -12063,19 +12007,18 @@ impl Input {
                     return;
                 }
 
-                // For viewers in a shared session, send the prompt to the sharer via
-                // submit_viewer_ai_query instead of emitting UnhandledCmdEnter. This keeps
-                // all viewer AI query logic in input.rs.
-                let shared_session_status = self.model.lock().shared_session_status().clone();
-                if FeatureFlag::AgentView.is_enabled()
-                    && shared_session_status.is_viewer()
-                    && shared_session_status.is_executor()
-                {
-                    let prompt = self.editor.as_ref(ctx).buffer_text(ctx);
-                    if !prompt.trim().is_empty() {
-                        self.submit_viewer_ai_query(ctx);
-                        return;
-                    }
+                if FeatureFlag::AgentView.is_enabled() {
+                    let mut prompt = self.editor.as_ref(ctx).buffer_text(ctx);
+                    prompt.truncate(prompt.trim_end().len());
+                    let initial_prompt = (!prompt.trim().is_empty()).then_some(prompt);
+                    ctx.emit(Event::EnterAgentView {
+                        initial_prompt,
+                        conversation_id: None,
+                        origin: AgentViewEntryOrigin::Input {
+                            was_prompt_autodetected: false,
+                        },
+                    });
+                    return;
                 }
 
                 ctx.emit(Event::UnhandledCmdEnter)
@@ -12348,33 +12291,6 @@ impl Input {
             editor.abort_attached_images_future_handle(ctx);
         });
 
-        // If this is a viewer in a shared session, send the agent prompt
-        // to the sharer instead of executing locally.
-        let shared_session_status = self.model.lock().shared_session_status().clone();
-        if shared_session_status.is_viewer() {
-            if shared_session_status.is_executor() {
-                // This will return false if we should execute the given command locally instead
-                // of sending it to the sharer (which is the case for slash commands like fork
-                // and fork-and-compact).
-                if self.submit_viewer_ai_query(ctx) {
-                    return;
-                }
-            } else {
-                log::warn!("Viewer tried to submit AI query without executor role");
-                let window_id = ctx.window_id();
-                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    toast_stack.add_ephemeral_toast(
-                        DismissibleToast::error(
-                            "Cannot send queries as a read-only viewer.".to_string(),
-                        ),
-                        window_id,
-                        ctx,
-                    );
-                });
-                return;
-            }
-        }
-
         // If the agent view is inactive but the current input is detected as AI, submitting
         // this query triggers entering the agent view.
         if FeatureFlag::AgentView.is_enabled()
@@ -12403,8 +12319,6 @@ impl Input {
             return;
         }
 
-        let has_requests_remaining = AIRequestUsageModel::as_ref(ctx).has_requests_remaining();
-
         let has_any_ai = AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx);
         if !has_any_ai {
             AIRequestUsageModel::handle(ctx).update(ctx, |model, ctx| {
@@ -12413,15 +12327,6 @@ impl Input {
         }
 
         if PromptAlertView::does_alert_block_ai_requests(ctx) {
-            if !has_requests_remaining {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeUserAttemptedQueryAtRequestLimit {
-                        limit: AIRequestUsageModel::as_ref(ctx).request_limit()
-                    },
-                    ctx
-                );
-            }
-
             AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
                 // Rate limit requests to fetch the user's AI usage if triggered by enter
                 // keypress.
@@ -12445,6 +12350,7 @@ impl Input {
             });
         }
 
+        self.prune_stale_at_context_attachments(ctx);
         let ai_query = self.editor.as_ref(ctx).buffer_text(ctx);
         // We don't send AI requests with empty queries, even if the context is non-empty. We
         // also don't send a query when the input (query plus context) is over the length limit.
@@ -12503,7 +12409,7 @@ impl Input {
 
                 UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
                     update_manager.record_object_action(
-                        workflow.cloud_object_type_and_id(),
+                        workflow.object_type_and_id(),
                         ObjectActionType::Execute,
                         None,
                         ctx,
@@ -12511,262 +12417,6 @@ impl Input {
                 });
             }
         }
-    }
-
-    /// Send the given query to the session sharer for them to execute on their machine.
-    /// Returns false if the query should be run locally instead of being sent to the sharer
-    /// (which is the case for slash commands like fork and fork-and-compact).
-    fn submit_viewer_ai_query(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        let prompt = self.editor.as_ref(ctx).buffer_text(ctx);
-        if prompt.is_empty() {
-            return true;
-        }
-
-        // Fork slash commands should be run locally instead of being sent to the sharer
-        // (as the viewer running the slash command wants to fork on their local machine).
-        if prompt.starts_with(commands::FORK_AND_COMPACT.name)
-            || prompt.starts_with(commands::FORK.name)
-        {
-            return false;
-        }
-
-        // Freeze the editor and put it in a loading state
-        self.freeze_input_in_loading_state(ctx);
-
-        // Look up the conversation's server token from the conversation metadata.
-        let selected_conv_id = self
-            .ai_context_model
-            .as_ref(ctx)
-            .selected_conversation_id(ctx);
-        let server_conversation_token = selected_conv_id
-            .and_then(|id| {
-                BlocklistAIHistoryModel::as_ref(ctx)
-                    .conversation(&id)
-                    .and_then(|conv| conv.server_conversation_token().cloned())
-            })
-            .and_then(|token| {
-                token
-                    .as_str()
-                    .parse()
-                    .ok()
-                    .map(ServerConversationToken::from_uuid)
-            });
-
-        let ambient_agent_task_id = self.ambient_agent_view_model.as_ref(ctx).task_id();
-
-        // Collect attachments from ai_context_model
-        let attachments: Vec<AgentAttachment> = self
-            .ai_context_model
-            .as_ref(ctx)
-            .pending_context(ctx, true)
-            .into_iter()
-            .filter_map(|context| match context {
-                AIAgentContext::Block(block) => Some(AgentAttachment::BlockReference {
-                    block_id: block.id.into(),
-                }),
-                AIAgentContext::SelectedText(text) => {
-                    Some(AgentAttachment::PlainText { content: text })
-                }
-                // For now, only AgentAttachment context is supported.
-                // TODO: Add support for other context types.
-                _ => None,
-            })
-            .collect();
-
-        let pending_images: Vec<_> = self
-            .ai_context_model
-            .as_ref(ctx)
-            .pending_images()
-            .into_iter()
-            .cloned()
-            .collect();
-        let pending_files: Vec<_> = self
-            .ai_context_model
-            .as_ref(ctx)
-            .pending_files()
-            .into_iter()
-            .cloned()
-            .collect();
-
-        let has_uploads = (!pending_images.is_empty() || !pending_files.is_empty())
-            && FeatureFlag::CloudModeImageContext.is_enabled();
-
-        if let Some(task_id) = ambient_agent_task_id.filter(|_| has_uploads) {
-            // Upload files first, then send prompt with file references in callback
-            Self::upload_files_then_send_prompt(
-                task_id,
-                server_conversation_token,
-                prompt,
-                attachments,
-                &pending_images,
-                &pending_files,
-                ctx,
-            );
-        } else {
-            // No files to upload, send prompt immediately
-            if !pending_images.is_empty() || !pending_files.is_empty() {
-                log::warn!("Cannot upload files: no task_id available");
-            }
-            ctx.emit(Event::SendAgentPrompt {
-                server_conversation_token,
-                prompt,
-                attachments,
-            });
-        }
-
-        true
-    }
-
-    /// Uploads image and file attachments to GCS via presigned URLs, then emits `SendAgentPrompt`
-    /// with the resulting `FileReference` attachments appended.
-    fn upload_files_then_send_prompt(
-        task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
-        server_conversation_token: Option<
-            session_sharing_protocol::common::ServerConversationToken,
-        >,
-        prompt: String,
-        base_attachments: Vec<AgentAttachment>,
-        pending_images: &[crate::ai::agent::ImageContext],
-        pending_files: &[crate::ai::blocklist::PendingFile],
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let server_api = ServerApiProvider::as_ref(ctx).get();
-
-        // Decode all images upfront; drop any that fail so that file_infos
-        // and files_to_upload stay in sync (they're zipped later).
-        let mut files_to_upload: Vec<(String, String, Vec<u8>)> = pending_images
-            .iter()
-            .filter_map(|img| {
-                base64::engine::general_purpose::STANDARD
-                    .decode(&img.data)
-                    .map(|bytes| (img.file_name.clone(), img.mime_type.clone(), bytes))
-                    .map_err(|e| {
-                        log::error!("Failed to decode base64 image {}: {e}", img.file_name)
-                    })
-                    .ok()
-            })
-            .collect();
-
-        // Also read non-image files from disk and add them to the upload list.
-        for file in pending_files {
-            match std::fs::read(&file.file_path) {
-                Ok(bytes) => {
-                    if bytes.len() > MAX_ATTACHMENT_SIZE_BYTES {
-                        log::warn!(
-                            "Skipping file {} ({} bytes) — exceeds 10MB limit",
-                            file.file_name,
-                            bytes.len()
-                        );
-                        continue;
-                    }
-                    files_to_upload.push((file.file_name.clone(), file.mime_type.clone(), bytes));
-                }
-                Err(e) => {
-                    log::error!("Failed to read file {}: {e}", file.file_path.display());
-                }
-            }
-        }
-
-        let file_infos: Vec<AttachmentFileInfo> = files_to_upload
-            .iter()
-            .map(|(name, mime, _)| AttachmentFileInfo {
-                filename: name.clone(),
-                mime_type: mime.clone(),
-            })
-            .collect();
-
-        ctx.spawn(
-            async move {
-                let response = match ai_client
-                    .prepare_attachments_for_upload(&task_id, &file_infos)
-                    .await
-                {
-                    Ok(resp) => resp,
-                    Err(e) => {
-                        log::error!(
-                            "Failed to prepare attachment uploads for task {task_id}: {e:?}"
-                        );
-                        return None;
-                    }
-                };
-
-                let mut uploaded = Vec::new();
-                for ((file_name, mime_type, file_bytes), upload_info) in
-                    files_to_upload.iter().zip(response.attachments.iter())
-                {
-                    let result = server_api
-                        .http_client()
-                        .put(&upload_info.upload_url)
-                        .header("Content-Type", mime_type.as_str())
-                        .body(file_bytes.clone())
-                        .send()
-                        .await;
-
-                    match result {
-                        Ok(resp) if resp.status().is_success() => {
-                            uploaded.push(AgentAttachment::FileReference {
-                                attachment_id: upload_info.attachment_id.clone(),
-                                file_name: file_name.clone(),
-                            });
-                        }
-                        Ok(resp) => {
-                            log::error!(
-                                "Failed to upload attachment {}: HTTP {}",
-                                file_name,
-                                resp.status()
-                            );
-                        }
-                        Err(e) => {
-                            log::error!("Failed to upload attachment {file_name}: {e:?}");
-                        }
-                    }
-                }
-
-                if uploaded.len() < files_to_upload.len() {
-                    log::warn!(
-                        "Only {}/{} attachments uploaded successfully",
-                        uploaded.len(),
-                        files_to_upload.len()
-                    );
-                }
-
-                Some(uploaded)
-            },
-            move |input, maybe_uploaded, ctx| {
-                let Some(uploaded_files) = maybe_uploaded else {
-                    // Prepare request failed (e.g. attachment limit exceeded).
-                    // Keep pending attachments so the user can retry, unfreeze input,
-                    // and show an error toast.
-                    input.unfreeze_and_clear_agent_input(ctx);
-                    let window_id = ctx.window_id();
-                    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                        toast_stack.add_ephemeral_toast(
-                            DismissibleToast::error(
-                                "Too many attachments for this conversation.".to_string(),
-                            ),
-                            window_id,
-                            ctx,
-                        );
-                    });
-                    return;
-                };
-
-                // Upload succeeded — clear pending attachments now.
-                input.ai_context_model.update(ctx, |context_model, ctx| {
-                    context_model.clear_pending_attachments(ctx);
-                });
-
-                let mut all_attachments = base_attachments;
-                all_attachments.extend(uploaded_files);
-
-                ctx.emit(Event::SendAgentPrompt {
-                    server_conversation_token,
-                    prompt,
-                    attachments: all_attachments,
-                });
-            },
-        );
     }
 
     /// Returns true if toggling the input mode is disabled.
@@ -13850,26 +13500,6 @@ impl Input {
         InputSettings::as_ref(app).is_universal_developer_input_enabled(app)
     }
 
-    fn handle_prompt_suggestions_event(
-        &mut self,
-        event: &PromptSuggestionsEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            PromptSuggestionsEvent::SignupAnonymousUser => ctx.emit(Event::SignupAnonymousUser {
-                entrypoint: AnonymousUserSignupEntrypoint::SignUpAIPrompt,
-            }),
-            PromptSuggestionsEvent::OpenPrivacyPage => {
-                ctx.emit(Event::OpenSettings(SettingsSection::Privacy))
-            }
-            PromptSuggestionsEvent::OpenBillingPortal { team_uid } => {
-                UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
-                    user_workspaces.generate_stripe_billing_portal_link(*team_uid, ctx);
-                });
-            }
-        }
-    }
-
     /// Returns whether the input box is currently pinned to the top of the screen.
     fn is_input_at_top(&self, model: &TerminalModel, ctx: &AppContext) -> bool {
         match InputModeSettings::as_ref(ctx).input_mode.value() {
@@ -14289,12 +13919,8 @@ impl View for Input {
             return self.render_cli_agent_input(app);
         }
         let is_universal_input = self.should_show_universal_developer_input(app);
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
 
-        if FeatureFlag::CloudMode.is_enabled() && ambient_agent_model.should_show_status_footer() {
-            self.render_ambient_agent_status_footer(app)
-        } else if FeatureFlag::AgentView.is_enabled()
-            && self.agent_view_controller.as_ref(app).is_active()
+        if FeatureFlag::AgentView.is_enabled() && self.agent_view_controller.as_ref(app).is_active()
         {
             self.render_agent_input(app)
         } else if FeatureFlag::AgentView.is_enabled()

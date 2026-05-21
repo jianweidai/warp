@@ -9,8 +9,8 @@
 # SECTION: common (Owner: foundation)
 # =============================================================================
 
-app-name = Warp
-app-tagline = 個人とチームのためのクラウド対応ターミナル
+app-name = OpenWarp
+app-tagline = 個人とチームのためのローカルファーストなターミナル
 
 common-ok = OK
 common-cancel = キャンセル
@@ -126,7 +126,7 @@ agent-management-artifact-screenshot = スクリーンショット
 agent-management-artifact-file = ファイル
 agent-management-source-scheduled = スケジュール
 agent-management-source-local-agent = Warp (ローカルエージェント)
-agent-management-source-cloud-agent = Warp (クラウドエージェント)
+agent-management-source-cloud-agent = Warp (ローカルエージェント)
 agent-management-source-oz-web = Oz Web
 agent-management-source-github-action = GitHub Action
 agent-management-no-session-available = 利用可能なセッションがありません
@@ -137,7 +137,7 @@ agent-management-metadata-harness = ハーネス: { $harness }
 agent-management-metadata-run-time = 実行時間: { $run_time }
 agent-management-metadata-credits-used = 使用クレジット: { $usage }
 agent-management-environment-selected = 環境: { $environment }
-agent-management-loading-cloud-runs = クラウドエージェントの実行を読み込み中
+agent-management-loading-cloud-runs = エージェントの実行を読み込み中
 
 # =============================================================================
 # SECTION: workspace-runtime (Owner: agent-i18n-remaining)
@@ -165,10 +165,12 @@ workspace-toast-disabled-synchronized-inputs = すべての同期入力を無効
 workspace-toast-conversation-deleted = 会話を削除しました
 workspace-search-repos-placeholder = リポジトリを検索
 workspace-search-tabs-placeholder = タブを検索...
+terminal-onekey-search-placeholder = 保存済み SSH 認証情報を検索…
+terminal-onekey-search-no-results = 一致する SSH 認証情報がありません
 workspace-rearrange-toolbar-items = ツールバー項目を並べ替え
 workspace-new-session-agent = エージェント
 workspace-new-session-terminal = ターミナル
-workspace-new-session-cloud-oz = Cloud Oz
+workspace-new-session-cloud-oz = Ambient Agent
 workspace-new-session-local-docker-sandbox = ローカル Docker サンドボックス
 workspace-new-worktree-config = 新規 worktree 設定
 workspace-new-tab-config = 新規タブ設定
@@ -176,7 +178,6 @@ workspace-reopen-closed-session = 閉じたセッションを再度開く
 workspace-update-and-relaunch-warp = Warp を更新して再起動
 workspace-updating-to-version = ({ $version }) に更新中
 workspace-update-warp-manually = Warp を手動で更新
-workspace-view-all-cloud-runs = すべてのクラウド実行を表示
 pane-get-started-title = はじめる
 pane-new-tab-title = 新規タブ
 # =============================================================================
@@ -198,7 +199,7 @@ terminal-dont-ask-again = 次回から確認しない
 terminal-clear-upload = アップロードをクリア
 terminal-manage-defaults = デフォルトを管理
 terminal-free-credits = 無料クレジット
-terminal-cloud-agent-run = クラウドエージェント実行
+terminal-cloud-agent-run = エージェント実行
 terminal-agent-header-for-terminal = ターミナル用
 ai-document-show-version-history = 履歴を表示
 ai-document-update-agent = エージェントを更新
@@ -290,7 +291,7 @@ openwarp-launch-contribute-title = コントリビュート
 openwarp-launch-contribute-description = Warp のクライアントコードがオープンソースになりました。/feedback スキルで Issue を作成し、こちらのコントリビューションガイドラインに従ってください。
 openwarp-launch-contribute-link-text = こちら
 openwarp-launch-oad-title = Open Automated Development
-openwarp-launch-oad-description = Warp リポジトリは、クラウドエージェントオーケストレーションプラットフォーム Oz を活用したエージェントファーストワークフローで管理されています。
+openwarp-launch-oad-description = Warp リポジトリは、Oz のローカルエージェント体験を活用したエージェントファーストワークフローで管理されています。
 openwarp-launch-auto-model-title = 'auto (open-weights)' 登場
 openwarp-launch-auto-model-description = タスクに最適なオープンウェイトモデル (Kimi、MiniMax など) を選ぶ新しい auto モデルを追加しました。
 hoa-see-whats-new = 新着情報を見る
@@ -315,8 +316,8 @@ settings-startup-shell-executable-path-placeholder = 実行ファイルパス
 settings-agent-providers-base-url-placeholder = https://api.deepseek.com/v1
 drive-sharing-only-people-invited = 招待された人のみ
 drive-sharing-anyone-with-link = リンクを知っている全員
-drive-sharing-only-invited-teammates = 招待されたチームメイトのみ
-drive-sharing-teammates-with-link = リンクを知っているチームメイト
+drive-sharing-only-invited-teammates = ローカルアクセスのみ
+drive-sharing-teammates-with-link = リンクを知っているローカルアクセス
 terminal-warpify-subshell = サブシェルを Warpify
 terminal-warpify-subshell-tooltip = このセッションで Warp シェル統合を有効化
 terminal-use-agent = エージェントを使う
@@ -333,7 +334,6 @@ terminal-continue-locally = ローカルで続行
 terminal-fork-conversation-locally-tooltip = この会話をローカルでフォーク
 terminal-open-in-warp = Warp で開く
 terminal-open-conversation-in-warp-tooltip = この会話を Warp デスクトップアプリで開く
-terminal-share-session = セッションを共有...
 terminal-stop-sharing = 共有を停止
 terminal-copy-session-sharing-link = セッション共有リンクをコピー
 terminal-shared-session-make-editor = 編集者にする
@@ -343,7 +343,7 @@ terminal-choose-execution-profile-tooltip = AI 実行プロファイルを選択
 terminal-choose-agent-model-tooltip = エージェントモデルを選択
 terminal-input-cli-agent-rich-input-hint = 作りたいものをエージェントに伝える...
 terminal-input-enter-prompt-for-agent = { $agent } へのプロンプトを入力...
-terminal-input-cloud-agent-hint = クラウドエージェントを起動
+terminal-input-cloud-agent-hint = エージェントを起動
 terminal-input-a11y-label = コマンド入力。
 terminal-input-a11y-helper = シェルコマンドを入力し、Enter で実行。Cmd+↑ で過去に実行したコマンドの出力に移動。Cmd+L でコマンド入力に再フォーカス。
 terminal-input-ai-command-search-hint = '#' を入力して AI コマンド候補を表示
@@ -513,18 +513,17 @@ language-restart-required-body = Warp の UI 言語が更新されました。�
 
 # Sidebar / SettingsSection labels (Display impl)
 settings-section-about = 概要
-settings-section-account = アカウント
+# OpenWarp: settings-section-account は Account 設定ページとともに削除。
 settings-section-mcp-servers = MCP サーバー
 settings-section-billing-and-usage = 請求と使用状況
 settings-section-appearance = 外観
 settings-section-features = 機能
 settings-section-keybindings = キーボードショートカット
-settings-section-privacy = プライバシー
 settings-section-referrals = 紹介
 settings-section-shared-blocks = 共有ブロック
-settings-section-teams = チーム
 settings-section-warp-drive = Warp Drive
 settings-section-warpify = Warpify
+settings-section-network = ネットワーク
 settings-section-ai = AI
 settings-section-warp-agent = Warp エージェント
 settings-section-agent-profiles = プロファイル
@@ -535,7 +534,7 @@ settings-section-third-party-cli-agents = サードパーティ CLI エージェ
 settings-section-code = コード
 settings-section-editor-and-code-review = エディタとコードレビュー
 settings-section-cloud-environments = 環境
-settings-section-oz-cloud-api-keys = Oz Cloud API キー
+settings-section-oz-cloud-api-keys = エージェント API キー
 settings-title = 設定
 
 # Context menu items (split / close pane)
@@ -559,34 +558,13 @@ settings-debug-hide-inband-blocks = インバンドコマンドブロックを�
 settings-about-copyright = Copyright 2026 Warp
 settings-about-automatic-updates-label = 自動更新
 settings-about-automatic-updates-description = 有効にすると、OpenWarp はバックグラウンドで新バージョンを確認しダウンロードします。無効でも手動で更新を確認できます。
+settings-about-export-logs = ログをエクスポート…
+settings-about-export-logs-description = 最近のアプリログ（および存在する場合は MCP / 自動更新ログ）と診断サマリーを zip にまとめ、保存場所を選択できます。トラブルシューティングのために共有してください。
+settings-about-export-logs-success = ログを { $path } にエクスポートしました
+settings-about-export-logs-failure = ログのエクスポートに失敗しました：{ $error }
 
-# main_page.rs — referral / account
-settings-main-referral-cta = 友人や同僚に Warp を紹介して特典を獲得
-settings-main-refer-a-friend = 友人を紹介
-settings-main-sign-up = サインアップ
-settings-main-plan-free = Free
-settings-main-compare-plans = プランを比較
-settings-main-contact-support = サポートに問い合わせ
-settings-main-manage-billing = 請求を管理
-settings-main-upgrade-to-turbo = Turbo プランにアップグレード
-settings-main-upgrade-to-lightspeed = Lightspeed プランにアップグレード
+# OpenWarp: main_page.rs 関連の文字列は Account 設定ページとともに削除された。
 
-# main_page.rs — settings sync
-settings-main-settings-sync-label = 設定の同期
-
-# main_page.rs — version / autoupdate
-settings-main-version-label = バージョン
-settings-main-status-up-to-date = 最新です
-settings-main-cta-check-for-updates = 更新を確認
-settings-main-status-checking = 更新を確認中...
-settings-main-status-downloading = 更新をダウンロード中...
-settings-main-status-update-available = 更新があります
-settings-main-cta-relaunch-warp = Warp を再起動
-settings-main-status-updating = 更新中...
-settings-main-status-installed-update = 更新をインストール済み
-settings-main-status-cant-install = Warp の新バージョンがありますがインストールできません
-settings-main-status-cant-launch = Warp の新バージョンはインストール済みですが起動できません。
-settings-main-cta-update-manually = Warp を手動で更新
 
 # --- ANCHOR-SUB-MCP (agent-settings-mcp) ---
 # 此锚点下放 settings_view/mcp_servers_page.rs 字符串
@@ -600,21 +578,21 @@ settings-mcp-install-from-link-failed = このリンクから MCP サーバー '
 
 # ---- destructive_mcp_confirmation_dialog.rs ----
 settings-mcp-confirm-delete-local-title = MCP サーバーを削除しますか?
-settings-mcp-confirm-delete-local-description = この MCP サーバーをすべてのデバイスからアンインストールして削除します。
-settings-mcp-confirm-delete-shared-title = 共有 MCP サーバーを削除しますか?
-settings-mcp-confirm-delete-shared-description = 自分自身からだけでなく、Warp およびすべてのチームメイトのデバイスからこの MCP サーバーをアンインストールして削除します。
-settings-mcp-confirm-unshare-title = 共有 MCP サーバーをチームから削除しますか?
-settings-mcp-confirm-unshare-description = この MCP サーバーを Warp およびすべてのチームメイトのデバイスからアンインストールして削除します。
+settings-mcp-confirm-delete-local-description = この MCP サーバーをこのデバイスからアンインストールして削除します。
+settings-mcp-confirm-delete-shared-title = MCP サーバーを削除しますか?
+settings-mcp-confirm-delete-shared-description = 保存済みの MCP サーバーをこのデバイスから削除します。
+settings-mcp-confirm-unshare-title = 保存済みの MCP サーバーを削除しますか?
+settings-mcp-confirm-unshare-description = 保存済みの MCP サーバーをこのデバイスから削除します。
 settings-mcp-confirm-delete-button = MCP を削除
-settings-mcp-confirm-remove-from-team-button = チームから削除
+settings-mcp-confirm-remove-from-team-button = 保存済みコピーを削除
 settings-mcp-confirm-cancel-button = キャンセル
 
 # ---- edit_page.rs ----
 settings-mcp-edit-save = 保存
 settings-mcp-edit-edit-variables = 変数を編集
 settings-mcp-edit-delete = MCP を削除
-settings-mcp-edit-remove-from-team = チームから削除
-settings-mcp-edit-editing-disabled-banner = MCP サーバーを編集できるのはチーム管理者と作成者のみです。
+settings-mcp-edit-remove-from-team = 保存済みコピーを削除
+settings-mcp-edit-editing-disabled-banner = この画面ではこの MCP サーバーを編集できません。
 settings-mcp-edit-add-new-title = MCP サーバーを追加
 settings-mcp-edit-edit-named-title = { $name } MCP サーバーを編集
 settings-mcp-edit-edit-title = MCP サーバーを編集
@@ -625,14 +603,14 @@ settings-mcp-edit-multiple-servers-error = 単一サーバー編集中に複数�
 
 # ---- installation_modal.rs ----
 settings-mcp-install-modal-title = { $name } をインストール
-settings-mcp-install-modal-source-shared = チームから共有
+settings-mcp-install-modal-source-shared = 保存済みプリセット
 settings-mcp-install-modal-source-other-device = 別のデバイスから
 settings-mcp-install-modal-cancel = キャンセル
 settings-mcp-install-modal-install = インストール
 settings-mcp-install-modal-no-server = MCP サーバーが選択されていません
 
 # ---- list_page.rs ----
-settings-mcp-list-description = MCP サーバーを追加して Warp エージェントの機能を拡張します。MCP サーバーは標準化されたインターフェースを通じてデータソースやツールをエージェントに公開し、プラグインのように動作します。カスタムサーバーを追加するか、プリセットを使用して人気のサーバーから始められます。チームから共有された MCP サーバーもここで確認できます。
+settings-mcp-list-description = MCP サーバーを追加して Warp エージェントの機能を拡張します。MCP サーバーは標準化されたインターフェースを通じてデータソースやツールをエージェントに公開し、プラグインのように動作します。カスタムサーバーを追加するか、プリセットを使用して人気のサーバーから始められます。
 settings-mcp-list-learn-more = 詳細はこちら。
 settings-mcp-list-empty-state = MCP サーバーを追加するとここに表示されます。
 settings-mcp-list-no-search-results = 検索結果が見つかりませんでした
@@ -645,13 +623,13 @@ settings-mcp-list-template-available-to-install = インストール可能
 settings-mcp-list-file-based-detected = 設定ファイルから検出
 settings-mcp-list-toast-server-updated = MCP サーバーを更新しました
 settings-mcp-list-section-my-mcps = マイ MCP
-settings-mcp-list-section-shared-by-warp-and-team = Warp と { $name } から共有
+settings-mcp-list-section-shared-by-warp-and-team = Warp と { $name } から利用可能
 settings-mcp-list-section-shared-by-warp-and-other-devices = Warp および別のデバイスから共有
 settings-mcp-list-section-shared-from-warp = Warp から共有
 settings-mcp-list-section-detected-from = { $provider } から検出
 settings-mcp-list-chip-global = グローバル
 settings-mcp-list-chip-shared-by-creator = 共有者: { $creator }
-settings-mcp-list-chip-shared-by-team-member = チームメンバーから共有
+settings-mcp-list-chip-shared-by-team-member = 保存済みプリセット
 settings-mcp-list-chip-from-another-device = 別のデバイスから
 
 # ---- server_card.rs ----
@@ -675,7 +653,7 @@ settings-mcp-update-modal-default-name = サーバー
 settings-mcp-update-modal-title = { $name } を更新
 settings-mcp-update-modal-description = このサーバーには { $count } 件の更新があります。どれで進めますか?
 settings-mcp-update-modal-publisher-another-device = 別のデバイス
-settings-mcp-update-modal-publisher-team-member = チームメンバー
+settings-mcp-update-modal-publisher-team-member = ローカルソース
 settings-mcp-update-modal-update-from = { $publisher } から更新
 settings-mcp-update-modal-version = バージョン { $version }
 settings-mcp-update-modal-cancel = キャンセル
@@ -685,8 +663,8 @@ settings-mcp-update-modal-no-updates = 利用可能な更新はありません
 # --- ANCHOR-SUB-PLATFORM (agent-settings-platform) ---
 # 此锚点下放 settings_view/platform_page.rs 字符串
 # 命名前缀:settings-platform-*
-settings-platform-section-title = Oz Cloud API キー
-settings-platform-description = API キーを作成・管理して、他の Oz cloud エージェントから Warp アカウントへのアクセスを許可します。
+settings-platform-section-title = エージェント API キー
+settings-platform-description = API キーを作成・管理して、ローカルエージェントから Warp アカウントへのアクセスを許可します。
     詳細は次を参照
 settings-platform-documentation-link = ドキュメント。
 settings-platform-create-button = + API キーを作成
@@ -732,14 +710,14 @@ settings-keybindings-press-new-shortcut = 新しいキーボードショート�
 settings-keybindings-description = 既存のアクションに独自のキーバインドを追加できます。
 settings-keybindings-use-prefix = 使用
 settings-keybindings-use-suffix = でいつでもサイドペインからこれらのキーバインドを参照できます。
-settings-keybindings-not-synced-tooltip = キーボードショートカットはクラウドに同期されません
+settings-keybindings-not-synced-tooltip = キーボードショートカットはローカルに保存されます
 settings-keybindings-subheader = キーボードショートカットを設定
 settings-keybindings-command-column = コマンド
 
 # --- ANCHOR-SUB-REFERRALS (agent-settings-referrals) ---
 settings-referrals-page-title = 友人を Warp に招待
-settings-referrals-anonymous-header = サインアップして Warp の紹介プログラムに参加
-settings-referrals-sign-up = サインアップ
+settings-referrals-anonymous-header = ローカル OpenWarp ビルドでは紹介プログラムを利用できません
+settings-referrals-sign-up = ローカルでは利用不可
 settings-referrals-link-label = リンク
 settings-referrals-email-label = メール
 settings-referrals-link-error = 紹介コードの読み込みに失敗しました。
@@ -786,6 +764,39 @@ settings-warpify-use-tmux = Tmux Warpification を使用
 settings-warpify-tmux-description = tmux ssh ラッパーは既定のラッパーが動作しない多くの状況で機能しますが、warpify するためにボタン押下が必要な場合があります。新しいタブから有効になります。
 settings-warpify-ssh-tmux-toggle-binding-label = Warpification 用 SSH セッション検出
 
+# --- ANCHOR-SUB-NETWORK (network-settings) ---
+# グローバル HTTP プロキシ設定ページ (Issue #72)。
+settings-network-page-title = ネットワーク
+settings-network-header = HTTP プロキシ
+settings-network-description = すべての送信 HTTP / WebSocket リクエストにグローバルプロキシを設定します。フィールドを編集後に Enter を押して保存。\n新規リクエスト(BYOP モデル一覧 / 接続テスト / 会話ロード など)は即時に反映されます;autoupdate / changelog など起動時に構築される長期 Client はアプリの再起動が必要です。
+settings-network-mode-label = プロキシモード
+settings-network-mode-description = System は OS / 環境変数に従う(既定);Custom は下の URL を使用;Off はプロキシを完全に無効化します。
+settings-network-mode-system = システム
+settings-network-mode-custom = カスタム
+settings-network-mode-off = オフ
+settings-network-url-label = プロキシ URL
+settings-network-url-placeholder = http://proxy.example.com:8080
+settings-network-url-description = 例: http://proxy.corp:8080
+settings-network-username-label = ユーザー名
+settings-network-username-placeholder = ユーザー名 (オプション)
+settings-network-username-description = プロキシが Basic Auth を要求する場合にユーザー名を入力します。
+settings-network-password-label = パスワード
+settings-network-password-placeholder = パスワード (送信後に OS キーチェーンに保存)
+settings-network-password-description = 送信されたパスワードは OS キーチェーンに保存されます (settings.toml には書き込まれません)。
+settings-network-no-proxy-label = 例外リスト (no_proxy)
+settings-network-no-proxy-placeholder = localhost,127.0.0.1,.internal
+settings-network-no-proxy-description = カンマ区切りのホストリスト。
+settings-network-save = 保存
+settings-network-clear = クリア
+settings-network-test-button = 接続テスト
+settings-network-test-idle-tcp = プロキシの host:port に TCP で接続して到達性を確認します。プロキシ自体の可用性のみテストし、インターネット出口はテストしません — 社内ネットワーク専用プロキシに適しています。
+settings-network-test-idle-http = 現在の設定で {$url} に GET を送信します。インターネット出口の接続性をテストします。
+settings-network-test-running = テスト中…
+settings-network-test-success-tcp = ✅ プロキシ到達可能 ({$latency} ms)
+settings-network-test-success-http = ✅ インターネット到達可能 ({$latency} ms)
+settings-network-test-failed-tcp = ❌ プロキシに到達できません: {$error}
+settings-network-test-failed-http = ❌ 接続失敗: {$error}
+
 # --- ANCHOR-SUB-AI-PAGE (agent-settings-ai-page) ---
 # Section / sub-headers
 settings-ai-warp-agent-header = Warp エージェント
@@ -810,7 +821,6 @@ settings-ai-next-command-label = 次のコマンド
 settings-ai-prompt-suggestions-label = プロンプト候補
 settings-ai-suggested-code-banners-label = コード候補バナー
 settings-ai-natural-language-autosuggestions-label = 自然言語オートサジェスト
-settings-ai-shared-block-title-generation-label = 共有ブロックのタイトル生成
 settings-ai-git-operations-autogen-label = コミット & プルリクエスト生成
 
 # Permissions dropdown options
@@ -851,9 +861,8 @@ settings-ai-agents-description = エージェントの動作範囲を設定し�
 settings-ai-profiles-description = プロファイルでは、エージェントが実行できるアクションや承認が必要なタイミング、コーディングや計画などのタスクで使用するモデルなど、エージェントの動作を定義できます。プロジェクトごとにスコープを限定することもできます。
 
 # Anonymous / org gates
-settings-ai-sign-up = サインアップ
-settings-ai-anonymous-create-account = AI 機能を使うにはアカウントを作成してください。
-settings-ai-org-disallows-remote-session = 組織の設定により、アクティブなペインにリモートセッションのコンテンツが含まれる場合は AI を利用できません
+settings-ai-sign-up = ローカル AI を有効化
+settings-ai-anonymous-create-account = ローカル AI 機能にアカウントは必要ありません。
 settings-ai-org-enforced-tooltip = この項目は組織の設定で強制されており、変更できません。
 settings-ai-restricted-billing = 請求の問題により制限中
 settings-ai-unlimited = 無制限
@@ -861,6 +870,7 @@ settings-ai-unlimited = 無制限
 # AI Input section
 settings-ai-show-input-hint-text = 入力ヒントを表示
 settings-ai-show-agent-tips = エージェントのヒントを表示
+settings-ai-show-agent-zero-state-hints = エージェントのショートカットヒントを表示
 settings-ai-include-agent-commands-in-history = エージェントが実行したコマンドを履歴に含める
 settings-ai-autodetect-agent-prompts = ターミナル入力中のエージェントプロンプトを自動検出
 settings-ai-autodetect-terminal-commands = エージェント入力中のターミナルコマンドを自動検出
@@ -911,11 +921,9 @@ settings-ai-toolbar-commands-description = マッチするコマンドでコー�
 settings-ai-coding-agent-other = その他
 settings-ai-coding-agent-select-header = コーディングエージェントを選択
 
-# Experimental / Cloud Agent
-settings-ai-cloud-agent-computer-use = Cloud Agents でのコンピュータ操作
-settings-ai-cloud-agent-computer-use-description = Warp アプリから開始した Cloud Agent 会話でコンピュータ操作を有効化します。
-settings-ai-orchestration-label = オーケストレーション
-settings-ai-orchestration-description = マルチエージェントオーケストレーションを有効化し、エージェントが並列のサブエージェントを起動・調整できるようにします。
+# Experimental / Agent
+settings-ai-cloud-agent-computer-use = エージェントでのコンピュータ操作
+settings-ai-cloud-agent-computer-use-description = Warp アプリから開始したエージェント会話でコンピュータ操作を有効化します。
 
 # AWS Bedrock
 settings-ai-aws-bedrock-toggle = AWS Bedrock の認証情報を使用
@@ -954,7 +962,7 @@ settings-features-max-rows-per-block = ブロック内の最大行数
 settings-features-ssh-wrapper = Warp SSH ラッパー
 settings-features-receive-desktop-notifications = Warp からのデスクトップ通知を受信
 settings-features-show-in-app-agent-notifications = アプリ内エージェント通知を表示
-settings-features-confirm-close-shared-session = 共有セッションを閉じる前に確認
+settings-features-confirm-close-shared-session = 読み取り専用セッションを閉じる前に確認
 settings-features-global-hotkey-label = グローバルホットキー:
 settings-features-global-hotkey-not-supported-on-wayland = Wayland では未対応です。
 settings-features-autocomplete-symbols = クォート・括弧・カッコを自動補完
@@ -1051,94 +1059,6 @@ settings-features-changes-apply-new-windows = 変更は新規ウィンドウに�
 settings-features-wayland-description = この設定を有効にするとグローバルホットキーは使えなくなります。無効の場合、Wayland コンポジタが分数スケーリング (例: 125%) を使用しているとテキストがぼやけることがあります。
 settings-features-restart-warp-to-apply = 変更を反映するには Warp を再起動してください。
 
-# --- ANCHOR-SUB-TEAMS (agent-settings-teams) ---
-# settings_view/teams_page.rs strings (P0 + P1)
-# 命名前缀:settings-teams-*
-settings-teams-page-title = チーム
-settings-teams-create-page-subtitle = チームを作成
-settings-teams-create-description = チームを作成すると、クラウドエージェントの実行・環境・自動化・成果物を共有してエージェント主導の開発で協業できます。チームメイトとエージェント双方のための共有ナレッジストアも作成できます。
-settings-teams-create-button = 作成
-settings-teams-team-name-placeholder = チーム名
-settings-teams-rename-placeholder = 新しいチーム名
-settings-teams-leave-team-button = チームを退出
-settings-teams-delete-team-button = チームを削除
-settings-teams-emails-placeholder = メールアドレス (カンマ区切り)
-settings-teams-domains-placeholder = ドメイン (カンマ区切り)
-settings-teams-set-button = 設定
-settings-teams-invite-button = 招待
-settings-teams-join-button = 参加
-settings-teams-contact-admin-button = アクセス申請のため管理者に連絡
-settings-teams-tab-link = リンク
-settings-teams-tab-email = メール
-settings-teams-section-team-members = チームメンバー
-settings-teams-section-team-members-pricing = チームメンバー
-settings-teams-section-invite-by-link = リンクで招待
-settings-teams-section-invite-by-email = メールで招待
-settings-teams-section-restrict-by-domain = ドメインで制限
-settings-teams-section-make-discoverable = チームを検索可能にする
-settings-teams-section-plan-usage-free = 無料プランの利用上限
-settings-teams-section-plan-usage = プランの利用上限
-settings-teams-shared-notebooks = 共有ノートブック
-settings-teams-shared-workflows = 共有ワークフロー
-settings-teams-reset-links = リンクをリセット
-settings-teams-compare-plans = プランを比較
-settings-teams-upgrade-build = Build にアップグレード
-settings-teams-upgrade-turbo = Turbo プランにアップグレード
-settings-teams-upgrade-lightspeed = Lightspeed プランにアップグレード
-settings-teams-contact-support = サポートに問い合わせ
-settings-teams-manage-billing = 請求を管理
-settings-teams-manage-plan = プランを管理
-settings-teams-open-admin-panel = 管理パネルを開く
-settings-teams-or-join-existing = または、社内の既存チームに参加
-settings-teams-discovery-cta = このチームに参加して、ワークフローやノートブックなどで協業を始めましょう。
-settings-teams-discovery-1-teammate = 1 名のチームメイト
-settings-teams-discovery-n-teammates = { $count } 名のチームメイト
-settings-teams-transfer-modal-title = チームの所有権を移譲しますか？
-settings-teams-action-cancel-invite = 招待をキャンセル
-settings-teams-action-transfer-ownership = 所有権を移譲
-settings-teams-action-demote-from-admin = 管理者から降格
-settings-teams-action-promote-to-admin = 管理者に昇格
-settings-teams-action-remove-from-team = チームから削除
-settings-teams-action-remove-domain = ドメインを削除
-settings-teams-state-expired = 期限切れ
-settings-teams-state-pending = 保留中
-settings-teams-state-owner = オーナー
-settings-teams-state-admin = 管理者
-settings-teams-badge-past-due = 支払い遅延
-settings-teams-badge-unpaid = 未払い
-settings-teams-offline = オフラインです。
-settings-teams-failed-load-invite-link = 招待リンクの読み込みに失敗しました。
-settings-teams-toast-link-copied = リンクをクリップボードにコピーしました！
-settings-teams-toast-invite-sent-one = 招待を送信しました！
-settings-teams-toast-invites-sent = { $count } 件の招待を送信しました！
-settings-teams-toast-domain-added = ドメイン制限を追加しました: { $count }
-settings-teams-toast-invalid-domains = 無効なドメイン: { $count }
-settings-teams-toast-invalid-emails = 無効なメールアドレス: { $count }
-settings-teams-toast-toggled-invite-links = 招待リンクを切り替えました
-settings-teams-toast-reset-invite-links = 招待リンクをリセットしました
-settings-teams-toast-deleted-invite = 招待を削除しました
-settings-teams-toast-toggled-discoverability = チームの検索可否を切り替えました
-settings-teams-toast-joined-team = チームに参加しました
-settings-teams-toast-joined-team-named = { $name } に参加しました
-settings-teams-toast-transferred-ownership = チームの所有権を移譲しました
-settings-teams-toast-updated-role = チームメンバーの役割を更新しました
-settings-teams-toast-left-team = チームから退出しました
-settings-teams-toast-renamed-team = チーム名を変更しました
-settings-teams-error-leave-team = チーム退出時のエラー
-settings-teams-error-rename-team = チーム名の変更に失敗しました
-settings-teams-error-send-invite = 招待の送信に失敗しました
-settings-teams-error-toggle-invite-links = 招待リンクの切り替えに失敗しました
-settings-teams-error-reset-invite-links = 招待リンクのリセットに失敗しました
-settings-teams-error-delete-invite = 招待の削除に失敗しました
-settings-teams-error-add-domain = ドメイン制限の追加に失敗しました
-settings-teams-error-delete-domain = ドメイン制限の削除に失敗しました
-settings-teams-error-upgrade-link = アップグレードリンクの生成に失敗しました。feedback@warp.dev までお問い合わせください
-settings-teams-error-billing-link = 請求リンクの生成に失敗しました。feedback@warp.dev までお問い合わせください
-settings-teams-error-toggle-discoverability = チームの検索可否の切り替えに失敗しました
-settings-teams-error-join-team = チームへの参加に失敗しました
-settings-teams-error-transfer-ownership = チームの所有権移譲に失敗しました
-settings-teams-error-update-role = チームメンバーの役割の更新に失敗しました
-
 # --- ANCHOR-SUB-SETTINGS-PAGE-NAV (agent-settings-page-nav) ---
 # 此锚点下放 settings_view/{settings_page,nav,delete_environment_confirmation_dialog,directory_color_add_picker,pane_manager}.rs 字符串
 # 命名前缀:settings-page-* / settings-nav-* / settings-confirm-* / settings-color-picker-*
@@ -1174,45 +1094,6 @@ settings-code-project-explorer = プロジェクトエクスプローラー
 settings-code-project-explorer-desc = 左側ツールパネルに IDE スタイルのプロジェクトエクスプローラー / ファイルツリーを追加します。
 settings-code-global-search = グローバルファイル検索
 settings-code-global-search-desc = 左側ツールパネルにグローバルファイル検索を追加します。
-
-# --- ANCHOR-SUB-PRIVACY (agent-settings-privacy) ---
-settings-privacy-page-title = プライバシー
-settings-privacy-modal-add-regex-title = 正規表現パターンを追加
-settings-privacy-safe-mode-title = シークレットの伏字化
-settings-privacy-safe-mode-description = この設定が有効な場合、Warp はブロック、Warp Drive オブジェクトの内容、Oz プロンプトに含まれる機密情報の可能性をスキャンし、サーバーへの保存・送信を防止します。正規表現でリストをカスタマイズできます。
-settings-privacy-user-secret-regex-title = カスタムシークレット伏字化
-settings-privacy-user-secret-regex-description = 正規表現で追加で伏字化したいシークレットやデータを定義します。次のコマンド実行時から反映されます。正規表現の先頭に (?i) フラグを付けると大文字小文字を無視できます。
-settings-privacy-telemetry-title = Warp の改善に協力する
-settings-privacy-telemetry-description = アプリ分析は製品改善に役立ちます。Warp の AI 機能を改善するため、特定のコンソール操作を収集する場合があります。
-settings-privacy-telemetry-description-old = アプリ分析は製品改善に役立ちます。アプリ使用メタデータのみを収集し、コンソールの入出力は収集しません。
-settings-privacy-telemetry-free-tier-note = 無料プランでは AI 機能を使用するために分析を有効にする必要があります。
-settings-privacy-telemetry-docs-link = Warp のデータ利用について詳しく見る
-settings-privacy-data-management-title = データの管理
-settings-privacy-data-management-description = いつでも Warp アカウントを完全に削除できます。削除後は Warp を使用できなくなります。
-settings-privacy-data-management-link = データ管理ページを開く
-settings-privacy-policy-title = プライバシーポリシー
-settings-privacy-policy-link = Warp のプライバシーポリシーを読む
-settings-privacy-tab-personal = 個人
-settings-privacy-tab-enterprise = エンタープライズ
-settings-privacy-enterprise-readonly = エンタープライズのシークレット伏字化は変更できません。
-settings-privacy-enterprise-empty = 組織で設定されたエンタープライズ正規表現はありません。
-settings-privacy-recommended = 推奨
-settings-privacy-add-all = すべて追加
-settings-privacy-add-regex-button = 正規表現を追加
-settings-privacy-enterprise-enabled-by-org = 組織により有効化されています。
-settings-privacy-zdr-badge = ZDR
-settings-privacy-zdr-tooltip = 管理者がチームに対しゼロデータ保持を有効にしています。ユーザー生成コンテンツは収集されません。
-settings-privacy-secret-display-mode-title = シークレットの視覚的伏字化モード
-settings-privacy-secret-display-mode-description = 検索可能性を保ちつつ、ブロック一覧でシークレットがどのように表示されるかを選択します。この設定はブロック一覧の表示のみに影響します。
-settings-privacy-crash-reports-title = クラッシュレポートを送信
-settings-privacy-crash-reports-description = クラッシュレポートはデバッグと安定性向上に役立ちます。
-settings-privacy-cloud-conv-title = AI 会話をクラウドに保存
-settings-privacy-cloud-conv-description-on = エージェント会話を他者と共有でき、別のデバイスでログインしても保持されます。このデータは製品機能のためのみに保存され、Warp は分析には使用しません。
-settings-privacy-cloud-conv-description-off = エージェント会話はマシン上にのみローカル保存され、ログアウト時に失われ、共有できません。注: アンビエントエージェントの会話データは引き続きクラウドに保存されます。
-settings-privacy-org-managed-tooltip = この設定は組織により管理されています。
-settings-privacy-network-log-title = ネットワークログコンソール
-settings-privacy-network-log-description = Warp から外部サーバーへのすべての通信を確認できるネイティブコンソールを構築しました。作業内容が常に安全に保たれていることを確認できます。
-settings-privacy-network-log-link = ネットワークログを表示
 
 # --- ANCHOR-SUB-EXEC-MODAL-BLOCKS (agent-settings-misc) ---
 # ---- execution_profile_view ----
@@ -1453,7 +1334,7 @@ settings-environments-page-description = 環境はアンビエントエージェ
 settings-environments-search-placeholder = 環境を検索...
 settings-environments-no-matches = 検索条件に一致する環境はありません。
 settings-environments-section-personal = 個人
-settings-environments-section-team-default = Warp とチームで共有
+settings-environments-section-team-default = Warp とこのデバイスから提供
 settings-environments-section-team-named = Warp と { $team } で共有
 settings-environments-env-id-prefix = 環境 ID: { $id }
 settings-environments-detail-image = イメージ: { $image }
@@ -1540,7 +1421,6 @@ settings-ai-next-command-description = コマンド履歴、出力、一般的�
 settings-ai-prompt-suggestions-description = 最近のコマンドと出力に基づき、入力欄のインラインバナーとして AI に自然言語プロンプトを提案させます。
 settings-ai-suggested-code-banners-description = 最近のコマンドと出力に基づき、ブロック一覧のインラインバナーとして AI にコード差分とクエリを提案させます。
 settings-ai-natural-language-autosuggestions = 最近のコマンドと出力に基づき、AI に自然言語の自動候補を提案させます。
-settings-ai-shared-block-title-generation-description = コマンドと出力に基づき、共有ブロックのタイトルを AI に生成させます。
 settings-ai-git-operations-autogen-description = コミットメッセージ、プルリクエストのタイトルと説明を AI に生成させます。
 # =============================================================================
 # SECTION: ai (Owner: agent-ai)
@@ -1694,16 +1574,10 @@ keybinding-desc-pane-group-navigate-next = 次のペインをアクティブ化
 
 # Mouse / Notebooks / Workflows / Folders
 keybinding-desc-workspace-toggle-mouse-reporting = マウスレポートを切り替え
-keybinding-desc-workspace-create-team-notebook = 新規チームノートブックを作成
-keybinding-desc-workspace-create-team-notebook-menu = 新規チームノートブック
 keybinding-desc-workspace-create-personal-notebook = 新規個人ノートブックを作成
 keybinding-desc-workspace-create-personal-notebook-menu = 新規個人ノートブック
-keybinding-desc-workspace-create-team-workflow = 新規チームワークフローを作成
-keybinding-desc-workspace-create-team-workflow-menu = 新規チームワークフロー
 keybinding-desc-workspace-create-personal-workflow = 新規個人ワークフローを作成
 keybinding-desc-workspace-create-personal-workflow-menu = 新規個人ワークフロー
-keybinding-desc-workspace-create-team-folder = 新規チームフォルダを作成
-keybinding-desc-workspace-create-team-folder-menu = 新規チームフォルダ
 keybinding-desc-workspace-create-personal-folder = 新規個人フォルダを作成
 keybinding-desc-workspace-create-personal-folder-menu = 新規個人フォルダ
 
@@ -1711,7 +1585,7 @@ keybinding-desc-workspace-create-personal-folder-menu = 新規個人フォルダ
 keybinding-desc-workspace-new-tab = 新規タブを作成
 keybinding-desc-workspace-new-terminal-tab = 新規ターミナルタブ
 keybinding-desc-workspace-new-agent-tab = 新規エージェントタブ
-keybinding-desc-workspace-new-cloud-agent-tab = 新規クラウドエージェントタブ
+keybinding-desc-workspace-new-cloud-agent-tab = 新規エージェントタブ
 
 # Left / right panel toggles
 keybinding-desc-workspace-toggle-left-panel = 左パネルを開く
@@ -1778,20 +1652,15 @@ keybinding-desc-workspace-uninstall-cli = Oz CLI コマンドをアンインス�
 keybinding-desc-workspace-toggle-ai-assistant = Warp AI を切り替え
 
 # Env vars / prompts
-keybinding-desc-workspace-create-team-env-vars = 新規チーム環境変数を作成
-keybinding-desc-workspace-create-team-env-vars-menu = 新規チーム環境変数
 keybinding-desc-workspace-create-personal-env-vars = 新規個人環境変数を作成
 keybinding-desc-workspace-create-personal-env-vars-menu = 新規個人環境変数
 keybinding-desc-workspace-create-personal-ai-prompt = 新規個人プロンプトを作成
 keybinding-desc-workspace-create-personal-ai-prompt-menu = 新規個人プロンプト
-keybinding-desc-workspace-create-team-ai-prompt = 新規チームプロンプトを作成
-keybinding-desc-workspace-create-team-ai-prompt-menu = 新規チームプロンプト
 
 # Focus / import
 keybinding-desc-workspace-shift-focus-left = フォーカスを左パネルに切り替え
 keybinding-desc-workspace-shift-focus-right = フォーカスを右パネルに切り替え
 keybinding-desc-workspace-import-to-personal-drive = 個人 Drive にインポート
-keybinding-desc-workspace-import-to-team-drive = チーム Drive にインポート
 
 # Drive / repository / AI rules / MCP
 keybinding-desc-workspace-open-repository = リポジトリを開く
@@ -1800,12 +1669,11 @@ keybinding-desc-workspace-open-ai-fact-collection = AI ルールを開く
 keybinding-desc-workspace-open-mcp-servers = MCP サーバーを開く
 keybinding-desc-workspace-jump-to-latest-toast = 最新のエージェントタスクへジャンプ
 keybinding-desc-workspace-toggle-notification-mailbox = 通知メールボックスを切り替え
-keybinding-desc-workspace-toggle-agent-management-view = エージェント管理ビューを切り替え
 
 # Settings pages
 keybinding-desc-workspace-show-settings = 設定を開く
 keybinding-desc-workspace-show-settings-menu = 設定
-keybinding-desc-workspace-show-settings-account = 設定を開く: アカウント
+# OpenWarp: keybinding-desc-workspace-show-settings-account は Account 設定ページとともに削除。
 keybinding-desc-workspace-show-settings-appearance = 設定を開く: 外観
 keybinding-desc-workspace-show-settings-appearance-menu = 外観...
 keybinding-desc-workspace-show-settings-features = 設定を開く: 機能
@@ -1815,9 +1683,6 @@ keybinding-desc-workspace-show-settings-keyboard-shortcuts = 設定を開く: �
 keybinding-desc-workspace-show-settings-keyboard-shortcuts-menu = キーボードショートカットを設定...
 keybinding-desc-workspace-show-settings-about = 設定を開く: バージョン情報
 keybinding-desc-workspace-show-settings-about-menu = Warp について
-keybinding-desc-workspace-show-settings-teams = 設定を開く: チーム
-keybinding-desc-workspace-show-settings-teams-menu = チーム設定を開く
-keybinding-desc-workspace-show-settings-privacy = 設定を開く: プライバシー
 keybinding-desc-workspace-show-settings-warpify = 設定を開く: Warpify
 keybinding-desc-workspace-show-settings-warpify-menu = Warpify を設定...
 keybinding-desc-workspace-show-settings-ai = 設定を開く: AI
@@ -1843,15 +1708,13 @@ keybinding-desc-terminal-attach-as-context-menu = 選択をエージェントコ
 keybinding-desc-workspace-init-project = warp 用にプロジェクトを初期化
 keybinding-desc-workspace-add-current-folder = 現在のフォルダをプロジェクトとして追加
 
-# Workspace debug / crash / sentry / heap profile bindings
-keybinding-desc-workspace-crash-macos = アプリをクラッシュさせる (sentry-cocoa テスト用)
-keybinding-desc-workspace-crash-other = アプリをクラッシュさせる (sentry-native テスト用)
+# Workspace debug / crash / heap profile bindings
+keybinding-desc-workspace-crash-macos = アプリをクラッシュさせる (ローカルクラッシュレポートのテスト用)
+keybinding-desc-workspace-crash-other = アプリをクラッシュさせる (ローカルクラッシュレポートのテスト用)
 keybinding-desc-workspace-log-review-comment-send-status = [Debug] アクティブタブのレビューコメント送信状況をログ出力
-keybinding-desc-workspace-panic = panic を発生させる (sentry-rust テスト用)
+keybinding-desc-workspace-panic = panic を発生させる (ローカル panic ログのテスト用)
 keybinding-desc-workspace-open-view-tree-debugger = ビューツリーデバッガーを開く
 keybinding-desc-workspace-view-first-time-user-experience = [Debug] 初回ユーザー体験を表示
-keybinding-desc-workspace-open-build-plan-migration-modal = [Debug] Build Plan Migration モーダルを開く
-keybinding-desc-workspace-reset-build-plan-migration-modal-state = [Debug] Build Plan Migration モーダル状態をリセット
 keybinding-desc-workspace-undismiss-aws-login-banner = [Debug] AWS ログインバナーの非表示を解除
 keybinding-desc-workspace-open-oz-launch-modal = [Debug] Oz Launch モーダルを開く
 keybinding-desc-workspace-reset-oz-launch-modal-state = [Debug] Oz Launch モーダル状態をリセット
@@ -1894,7 +1757,7 @@ keybinding-desc-terminal-find = ターミナル内を検索
 keybinding-desc-terminal-select-bookmark-up = 上の最も近いブックマークを選択
 keybinding-desc-terminal-select-bookmark-down = 下の最も近いブックマークを選択
 keybinding-desc-terminal-open-block-context-menu = ブロックコンテキストメニューを開く
-keybinding-desc-terminal-toggle-team-workflows-modal = チームワークフローモーダルを切り替え
+keybinding-desc-terminal-toggle-workflows-modal = ワークフローモーダルを切り替え
 keybinding-desc-terminal-copy-git-branch = git ブランチをコピー
 keybinding-desc-terminal-clear-blocks = ブロックをクリア
 keybinding-desc-terminal-cursor-word-left = 実行中コマンド内でカーソルを 1 単語左へ
@@ -2163,9 +2026,10 @@ rules-init-project-button = プロジェクトを初期化
 
 # --- Agent view zero-state + message bar ---
 agent-zero-state-title = 新規 Oz エージェント会話
-agent-zero-state-title-cloud = 新規 Oz クラウドエージェント会話
+agent-zero-state-title-cloud = 新規 Oz ローカルエージェント会話
 agent-zero-state-description = 下にプロンプトを送信して新規会話を開始
 agent-zero-state-description-with-location = `{ $location }` で新規会話を開始するには下にプロンプトを送信
+agent-zero-state-hide-hints-tooltip = ショートカットヒントを非表示（設定から再有効化可能）
 agent-zero-state-switch-model = モデルを切り替え
 agent-zero-state-go-back-to-terminal = ターミナルに戻る
 agent-message-bar-for-help = ヘルプ
@@ -2204,7 +2068,6 @@ agent-error-attempting-resume-conversation = 会話の再開を試みていま�
 toggle-setting-enable = { $suffix }を有効化
 toggle-setting-disable = { $suffix }を無効化
 
-toggle-suffix-ai = AI
 toggle-suffix-active-ai = アクティブ AI
 toggle-suffix-ai-input-autodetect-agent = エージェント入力でのターミナルコマンド自動検出
 toggle-suffix-ai-input-autodetect-nld = 自然言語検出
@@ -2213,7 +2076,6 @@ toggle-suffix-next-command = 次コマンド
 toggle-suffix-prompt-suggestions = プロンプトサジェスト
 toggle-suffix-code-suggestions = コードサジェスト
 toggle-suffix-nl-autosuggestions = 自然言語オートサジェスト
-toggle-suffix-shared-block-title-gen = 共有ブロックタイトル生成
 toggle-suffix-voice-input = 音声入力
 toggle-suffix-codebase-index = コードベースインデックス
 toggle-suffix-auto-indexing = 自動インデックス
@@ -2261,7 +2123,7 @@ toggle-suffix-slash-commands-terminal = ターミナルモードでのスラッ�
 toggle-suffix-integrated-gpu = 統合 GPU 描画 (低消費電力)
 toggle-suffix-wayland = ウィンドウ管理に Wayland を使用
 toggle-suffix-settings-sync = 設定同期
-toggle-suffix-app-analytics = アプリアナリティクス
+toggle-suffix-app-analytics = ローカル診断
 toggle-suffix-crash-reporting = クラッシュレポート
 toggle-suffix-secret-redaction = シークレットマスキング
 toggle-suffix-recording-mode = 記録モード
@@ -2356,7 +2218,6 @@ menu-ai-block-fork-from-query = "{ $query }" からフォーク
 
 # --- tab 右键菜单(tab.rs) ---
 menu-tab-stop-sharing = 共有を停止
-menu-tab-share-session = セッションを共有
 menu-tab-stop-sharing-all = すべての共有を停止
 menu-tab-copy-link = リンクをコピー
 menu-tab-rename = タブの名前を変更
@@ -2374,7 +2235,7 @@ menu-tab-default-no-color = デフォルト (色なし)
 
 # --- pane header 溢出菜单(terminal/view/pane_impl.rs) ---
 menu-pane-copy-link = リンクをコピー
-menu-pane-stop-sharing-session = セッション共有を停止
+menu-pane-stop-sharing-session = セッションブロードキャストを停止
 menu-pane-open-on-desktop = デスクトップで開く
 
 # --- 文件树右键菜单(code/file_tree/view.rs) ---
@@ -2433,8 +2294,6 @@ slash-cmd-model-desc = ベースエージェントモデルを切り替え
 slash-cmd-profile-desc = アクティブな実行プロファイルを切り替え
 slash-cmd-plan-desc = エージェントに調査させてタスクの計画を作成
 slash-cmd-plan-hint = <タスクを記述>
-slash-cmd-orchestrate-desc = タスクをサブタスクに分解し複数エージェントで並列実行
-slash-cmd-orchestrate-hint = <タスクを記述>
 slash-cmd-compact-desc = 会話履歴を要約してコンテキストを解放
 slash-cmd-compact-hint = <任意のカスタム要約指示>
 slash-cmd-compact-and-desc = 会話を圧縮した後に追加プロンプトを送信
@@ -2487,11 +2346,6 @@ rewind-dialog-body = 巻き戻してもよろしいですか? コードと会話
 rewind-dialog-info = 巻き戻しは手動またはシェルコマンドで編集されたファイルには影響しません。
 rewind-dialog-cancel = キャンセル
 rewind-dialog-confirm = 巻き戻し
-
-# Transfer ownership confirmation modal (app/src/settings_view/transfer_ownership_confirmation_modal.rs)
-transfer-ownership-dialog-body = チームのオーナー権限を { $name } に移譲してもよろしいですか? あなたはオーナーではなくなり、このチームに対する管理操作を行えなくなります。
-transfer-ownership-dialog-cancel = キャンセル
-transfer-ownership-dialog-confirm = 移譲
 
 # --- ANCHOR-SUB-SEARCH-PALETTES ---
 # Search palettes (app/src/search/command_palette/view.rs, app/src/search/welcome_palette/view.rs)
@@ -2603,11 +2457,6 @@ drive-import-folder-upload-error = サーバーへのフォルダアップロー
 
 # Drive main panel and workflow editor (app/src/drive/index.rs, app/src/drive/workflows/*)
 drive-title = Drive
-drive-create-team-text = チームメイトとコマンドや知識を共有しましょう。
-drive-join-team-header = Warp に参加済みの { $count } 人の{ $count ->
-        [one] チームメイト
-       *[other] チームメイト
-    }と協業。
 drive-environment-variables = 環境変数
 drive-folder = フォルダ
 drive-notebook = ノートブック
@@ -2627,15 +2476,10 @@ drive-empty-trash = ゴミ箱を空にする
 drive-trash-section-title = ゴミ箱
 drive-trash-title = ゴミ箱
 drive-trash-deletion-warning = ゴミ箱内のアイテムは 30 日後に完全に削除されます。
-drive-team-space-zero-state = 個人のワークフローまたはノートブックをここにドラッグまたは移動してチームと共有しましょう。
-drive-create-team-button = チームを作成
-drive-view-teams-to-join = 参加可能な{ $count ->
-        [one] チーム
-       *[other] チーム
-    }を表示
-drive-or = または
-drive-sign-up-storage-limit = 無料登録するとストレージ上限が拡大し、より多くの機能を利用できます。
-drive-sign-up = 登録
+drive-team-space-zero-state = ローカルビルドではチームスペースを利用できません。ワークフローとノートブックは Personal で管理してください。
+drive-sign-up-storage-limit = ローカルストレージ上限はこのデバイス上で適用されます。
+drive-local-storage-limit-description = ローカルストレージ上限はこのデバイス上で適用されます。不要な項目を削除して、新しい Warp Drive オブジェクト用の容量を空けてください。
+drive-sign-up = ローカルで管理
 drive-copy-link = リンクをコピー
 drive-collapse-all = すべて折りたたむ
 drive-revert-to-server = サーバーの状態に戻す
@@ -2672,8 +2516,8 @@ drive-object-type-ai-fact = AI ファクト
 drive-object-type-rules = ルール
 drive-object-type-mcp-server = MCP サーバー
 drive-object-type-mcp-servers = MCP サーバー
-drive-shared-object-limit-hit-banner-prefix = プランの { $object_type } 上限に達しました。
-drive-shared-object-limit-hit-banner = プランの { $object_type } 上限に達しました。アップグレードすると、より多くのノートブック、ワークフロー、共有セッション、AI クレジットを利用できます。
+drive-shared-object-limit-hit-banner-prefix = ローカルの { $object_type } 上限に達しました。
+drive-shared-object-limit-hit-banner = ローカルの { $object_type } 上限に達しました。
 drive-payment-issue-banner-prefix = サブスクリプションの支払いに問題があるため、共有オブジェクトが制限されています。
 drive-payment-issue-banner-admin = サブスクリプションの支払いに問題があるため、共有オブジェクトが制限されています。アクセスを復旧するには支払い情報を更新してください。
 drive-payment-issue-banner-admin-enterprise = サブスクリプションの支払いに問題があるため、共有オブジェクトが制限されています。アクセスを復旧するには support@warp.dev までご連絡ください。
@@ -2707,14 +2551,6 @@ workflow-ai-assist-error-rate-limited = AI クレジットが不足している�
 workflow-enum-new = 新規
 workflow-alias-name-placeholder = エイリアス名
 workflow-add-argument-tooltip = ワークフロー引数を追加
-
-# --- ANCHOR-SUB-SETTINGS-PRIVACY-ADD-REGEX ---
-# Privacy settings add regex modal (app/src/settings_view/privacy/add_regex_modal.rs)
-settings-privacy-add-regex-name-placeholder = 例: "Google API Key"
-settings-privacy-add-regex-name-label = 名前 (任意)
-settings-privacy-add-regex-pattern-label = 正規表現パターン
-settings-privacy-add-regex-invalid = 無効な正規表現
-settings-privacy-add-regex-cancel = キャンセル
 
 # Workspace panels (app/src/workspace/view/*)
 workspace-conversation-list-search = 検索
@@ -2781,7 +2617,7 @@ workspace-right-panel-close-panel = パネルを閉じる
 workspace-right-panel-code-review = コードレビュー
 workspace-right-panel-minimize = 最小化
 workspace-right-panel-maximize = 最大化
-terminal-pane-new-cloud-agent-title = 新しいクラウドエージェント
+terminal-pane-new-cloud-agent-title = 新しいエージェント
 terminal-pane-new-agent-conversation-title = 新しいエージェント会話
 vertical-tabs-no-tabs-open = 開いているタブはありません
 vertical-tabs-untitled-tab = 無題のタブ
@@ -2849,20 +2685,10 @@ wasm-nux-download-description = Warp は AI と開発チームのナレッジを
 wasm-nux-learn-more = 詳しく見る
 wasm-nux-download-confirm = ダウンロード
 wasm-nux-object-kind-drive-objects = Warp Drive オブジェクト
-wasm-nux-object-kind-shared-sessions = 共有セッション
 wasm-nux-object-kind-warp-links = Warp リンク
 wasm-nux-always-open-on-web-title = { $object_kind } を常に Web で開きますか?
 wasm-nux-always-open-on-web-detail = この設定は設定画面でいつでも変更できます。
 wasm-nux-yes = はい
-
-# Drive cloud action confirmation dialog (app/src/drive/cloud_action_confirmation_dialog.rs)
-drive-cloud-action-cancel = キャンセル
-drive-cloud-action-delete-team-title = このチームを削除しますか?
-drive-cloud-action-leave-team-title = このチームから退出しますか?
-drive-cloud-action-delete-team-body = チームを削除すると、請求情報やクレジットを含む関連コンテンツがすべて完全に削除されます。復元はできません。
-drive-cloud-action-leave-team-body = 再参加するには再度招待される必要があります。
-drive-cloud-action-delete-team-confirm = はい、削除する
-drive-cloud-action-leave-team-confirm = はい、退出する
 
 # Auth override warning (app/src/auth/auth_override_warning_body.rs)
 auth-override-warning-title = 新しいログインを検出しました
@@ -2895,9 +2721,9 @@ auth-paste-token-continue = 続行
 auth-offline-first-use-description = 現在オフラインです。Warp を初めて使用するにはインターネット接続が必要です。
 auth-offline-first-use-learn-more = 詳しく見る
 auth-offline-overlay-title = Warp をオフラインで使用
-auth-offline-overlay-paragraph-1 = Warp の非クラウド機能はすべてオフラインで動作します。
-auth-offline-overlay-paragraph-2 = ただし、Warp の AI およびクラウド機能を有効にするため、初回利用時のみオンラインである必要があります。
-auth-offline-overlay-paragraph-3 = クラウド機能はすべてのユーザーに提供しているため、AI 利用量の計測、不正利用の防止、クラウドオブジェクトとユーザーの紐付けにインターネット接続が必要です。ログアウト状態で Warp を利用することを選んだ場合、これらの機能をサポートするために匿名ユーザーアカウントに固有の ID が割り当てられます。
+auth-offline-overlay-paragraph-1 = OpenWarp のローカル機能はオフラインで動作します。
+auth-offline-overlay-paragraph-2 = BYOP AI 機能を使う場合のみ、選択したプロバイダーへの接続が必要です。
+auth-offline-overlay-paragraph-3 = OpenWarp は匿名のローカルユーザー ID で動作し、外部オブジェクトや利用量計測のためにインターネット接続を要求しません。
 auth-offline-overlay-dismiss = 閉じる
 auth-privacy-settings-title = プライバシー設定
 auth-privacy-settings-done = 完了
@@ -2914,7 +2740,7 @@ auth-logout-running-processes-warning = { $count } { $count ->
         [one] 件のプロセス
        *[other] 件のプロセス
     }が実行中です。
-auth-logout-shared-sessions-warning = 共有セッションが { $count } { $count ->
+auth-logout-shared-sessions-warning = リモートセッションが { $count } { $count ->
         [one] 件
        *[other] 件
     }あります。
@@ -3002,7 +2828,7 @@ agent-tip-drag-image = 画像をペインにドラッグするとエージェン
 agent-tip-interactive-tools = node、python、postgres、gdb、vim などのインタラクティブツールをエージェントに操作させることができます。
 agent-tip-code-review-panel = <keybinding> でコードレビューパネルを開き、エージェントの変更をレビューできます。
 agent-tip-add-mcp = `/add-mcp` でワークスペースに MCP サーバーを追加できます。
-agent-tip-open-mcp-servers = `/open-mcp-servers` で MCP サーバーを表示しチームと共有できます。
+agent-tip-open-mcp-servers = `/open-mcp-servers` でローカル MCP サーバーを表示・管理できます。
 agent-tip-create-environment = `/create-environment` でリポジトリをエージェント実行用のリモート Docker 環境に変換できます。
 agent-tip-add-prompt = `/add-prompt` で繰り返し可能なワークフロー用の再利用可能なプロンプトを作成できます。
 agent-tip-add-rule = `/add-rule` でグローバルなエージェントルールを作成できます。
@@ -3103,7 +2929,7 @@ onboarding-intention-terminal-title = ターミナルとして使う
 onboarding-intention-terminal-badge = AI 機能なし
 onboarding-intention-terminal-description = AI を使わず、速度・コンテキスト・コントロールに最適化されたモダンなターミナル。
 onboarding-ai-feature-warp-agents = Warp エージェント
-onboarding-ai-feature-oz-cloud-agents-platform = Oz クラウドエージェントプラットフォーム
+onboarding-ai-feature-oz-cloud-agents-platform = Oz ローカルエージェントプラットフォーム
 onboarding-ai-feature-next-command-predictions = 次コマンド予測
 onboarding-ai-feature-prompt-suggestions = プロンプト候補
 onboarding-ai-feature-remote-control-agents = Claude Code、Codex、その他エージェントによるリモートコントロール
@@ -3112,8 +2938,8 @@ onboarding-agent-title = Warp エージェントをカスタマイズ
 onboarding-agent-subtitle = アプリ内エージェントの既定値を選択します。
 onboarding-agent-default-model = 既定モデル
 onboarding-agent-autonomy = 自律性
-onboarding-agent-set-by-team-workspace = チームワークスペースで設定済み
-onboarding-agent-team-workspace-autonomy-description = 自律性の設定はチームワークスペースの一部として構成されています。
+onboarding-agent-set-by-team-workspace = ローカルワークスペースポリシーで管理
+onboarding-agent-team-workspace-autonomy-description = 自律性の設定はローカルワークスペースポリシーで構成されています。
 onboarding-agent-autonomy-full-title = フル
 onboarding-agent-autonomy-full-subtitle = 確認なしでコマンド実行・コード記述・ファイル読み取りを行います。
 onboarding-agent-autonomy-partial-title = パーシャル
@@ -3155,26 +2981,27 @@ onboarding-customize-tools-panel = ツールパネル
 onboarding-customize-code-review = コードレビュー
 onboarding-free-user-title = はじめましょう。
 onboarding-free-user-agent-title = Warp 内蔵エージェントによるエージェント駆動開発
-onboarding-free-user-agent-description = Warp 内蔵エージェント Oz で反復・計画・構築。ローカルでもクラウドでも利用可能。
+onboarding-free-user-agent-description = Warp 内蔵エージェント Oz でローカルに反復・計画・構築。
 onboarding-free-user-terminal-title = サードパーティエージェント対応のクラシックターミナル
 onboarding-free-user-terminal-description = サードパーティエージェント (Claude Code、Codex、Gemini CLI) と従来型ターミナルワークフローに対応するモダンターミナル。
 onboarding-free-user-subscribe-title = サブスクライブして Warp のエージェント駆動開発を利用しましょう。
 onboarding-free-user-subscribe-item-credits = 月 1,500 クレジット
 onboarding-free-user-subscribe-item-models = OpenAI、Anthropic、Google のフロンティアモデルへのアクセス
 onboarding-free-user-subscribe-item-reload = Reload クレジットおよびボリューム割引へのアクセス
-onboarding-free-user-subscribe-item-cloud-agents = 拡張クラウドエージェントアクセス
+onboarding-free-user-subscribe-item-cloud-agents = 拡張エージェントアクセス
 onboarding-free-user-subscribe-item-indexing = 最大規模のコードベースインデックス上限
 onboarding-free-user-subscribe-item-drive = 無制限の Warp Drive オブジェクトとコラボレーション
 onboarding-free-user-subscribe-item-support = プライベートメールサポート
-onboarding-free-user-subscribe-item-cloud-storage = 無制限のクラウド会話保存
+onboarding-free-user-subscribe-item-cloud-storage = ローカル会話保存
 
-auth-opt-out-line-1 = 分析と AI 機能をオプトアウトしたい場合、
+auth-opt-out-line-1 = OpenWarp はオンボーディングの選択をこのデバイスに保存します。
 auth-opt-out-line-2-prefix = 次から調整できます:{" "}
-auth-privacy-settings-prefix = 分析をオプトアウトしたい場合、次から調整できます:{" "}
-auth-privacy-settings-ai-prefix = 分析と AI 機能をオプトアウトしたい場合、次から調整できます:{" "}
+auth-privacy-settings-prefix = 次から調整できます:{" "}
+auth-privacy-settings-ai-prefix = ローカル AI 設定は次で調整できます:{" "}
 auth-privacy-settings = プライバシー設定
-auth-terms-prefix = 続行することで、Warp の以下に同意したことになります:{" "}
-auth-terms-of-service = 利用規約
+auth-local-privacy-note = OpenWarp はオンボーディングの選択をこのデバイスに保存します。
+auth-terms-prefix = 続行しても、この設定はこのデバイスに残ります。{" "}
+auth-terms-of-service = ローカル設定
 auth-log-in = ログイン
 auth-paste-token-from-browser = ここをクリックしてブラウザからトークンを貼り付け
 auth-login-slide-title-warp-drive = Warp Drive をはじめる
@@ -3193,7 +3020,7 @@ auth-disable-ai-features-confirm-title = 本当に AI 機能を無効化しま�
 auth-disable-warp-drive-confirm-body = Warp Drive はワークフローやナレッジをデバイス間で保存し、チームと共有できます。続行すると、以下の機能が利用できなくなります:
 auth-disable-ai-features-confirm-body = Warp は AI でより便利になります。続行すると、以下の機能はいずれも利用できなくなります:
 auth-feature-session-sharing = セッション共有
-auth-sign-up = サインアップ
+auth-sign-up = ローカルで続行
 auth-sign-in = サインイン
 auth-already-have-account = すでにアカウントをお持ちですか？{" "}
 auth-dont-want-sign-in-now = 今はサインインしたくない？{" "}
@@ -3202,11 +3029,11 @@ auth-skip-login-confirm-title = 本当にログインをスキップしますか
 auth-skip-login-confirm-line-1 = 後でサインアップできますが、AI など一部の機能は
 auth-skip-login-confirm-line-2-prefix = ログインユーザーのみ利用可能です。{" "}
 auth-yes-skip-login = はい、ログインをスキップ
-auth-require-login-ai-collaboration = Warp の AI 機能を使用したり他のユーザーとコラボレートするには、アカウントを作成してください。
-auth-require-login-drive-limit = Warp Drive にこれ以上オブジェクトを作成するには、アカウントを作成してください。
-auth-require-login-share = 共有するには、アカウントを作成してください。
+auth-require-login-ai-collaboration = ローカル AI 機能に Warp アカウントは必要ありません。
+auth-require-login-drive-limit = OpenWarp では Warp Drive オブジェクトをローカルに保存します。
+auth-require-login-share = ローカル OpenWarp ビルドでは共有機能を利用できません。
 auth-welcome-title = Warp へようこそ！
-auth-sign-up-for-warp = Warp にサインアップ
+auth-sign-up-for-warp = OpenWarp を続行
 auth-browser-sign-in-title = 続行するにはブラウザで\nサインインしてください
 auth-browser-not-launched-prefix = ブラウザが起動していない場合、{" "}
 auth-copy-url = URL をコピー
@@ -3487,9 +3314,8 @@ notifications-banner-allow-permissions-title = 通知のセットアップを完
 notifications-banner-configure-notifications = 通知を構成
 notifications-banner-set-permissions = 権限を設定
 ai-edit-api-keys = API キーを編集
-ai-manage-privacy-settings = プライバシー設定を管理
 ai-block-manage-agent-permissions = エージェント権限を管理
-agent-zero-state-cloud-agents-description = クラウドエージェントを使い、エージェントを並列実行し、自律的に動作するエージェントを構築し、どこからでもエージェントの状況を確認できます。{" "}
+agent-zero-state-cloud-agents-description = ローカルエージェントを使い、エージェントを並列実行し、自律的に動作するエージェントを構築し、このマシン上で状況を確認できます。{" "}
 agent-zero-state-visit-docs = ドキュメントを見る
 ai-execution-profile-agent-decides = エージェントが判断
 ai-execution-profile-always-ask = 常に確認
@@ -3526,7 +3352,7 @@ notebook-apply-link = リンクを適用
 notebook-sync-conflict-resolution-message = 編集中に変更が加えられたため、このノートブックを保存できませんでした。作業内容をコピーして再読み込みしてください。
 notebook-sync-feature-not-available-message = この機能が一時的に利用できないため、ノートブックをサーバーに保存できませんでした。変更はローカルに保存されています。後でやり直してください。
 notebook-link-copied-toast = リンクをコピーしました
-settings-share-with-team = チームと共有
+settings-share-with-team = ローカルに保存
 tooltip-secrets-not-sent-to-warp-server = *シークレットは Warp のサーバーに送信されません。
 editor-voice-limit-hit-toast = 音声リクエストの上限に達しました。次のサイクルの一部として上限が更新されます。
 editor-voice-error-toast = 音声入力の処理中にエラーが発生しました。

@@ -152,37 +152,21 @@ impl PreinstallCheckResult {
 fn parse_status(
     status: Option<&str>,
     reason: Option<&str>,
-    libc: &RemoteLibc,
-    required_glibc: Option<&str>,
+    _libc: &RemoteLibc,
+    _required_glibc: Option<&str>,
 ) -> PreinstallStatus {
+    // remote-server 现在是静态 musl 二进制(见 `preinstall_check.sh` 顶部
+    // 注释),不链接宿主的动态 libc。因此 `glibc_too_old` / `non_glibc`
+    // 已不再是「不支持」的理由 —— 任意 glibc 版本与 musl/uclibc 宿主都能
+    // 运行该二进制。新版脚本不会再发出这两个 reason;但旧版 remote 端可能
+    // 仍缓存着老脚本,所以这里把这些 libc 门禁理由一并当作 `Supported`,
+    // 而不是 `Unsupported`,保持新旧脚本的判定一致。
     match status {
         Some("supported") => PreinstallStatus::Supported,
         Some("unsupported") => match reason {
-            Some("glibc_too_old") => {
-                let detected = match libc {
-                    RemoteLibc::Glibc(v) => Some(*v),
-                    _ => None,
-                };
-                let required = required_glibc.and_then(GlibcVersion::parse);
-                match (detected, required) {
-                    (Some(detected), Some(required)) => PreinstallStatus::Unsupported {
-                        reason: UnsupportedReason::GlibcTooOld { detected, required },
-                    },
-                    // The script said `unsupported` + `glibc_too_old` but we
-                    // can't recover the numbers — fail open rather than
-                    // surface a malformed reason.
-                    _ => PreinstallStatus::Unknown,
-                }
-            }
-            Some("non_glibc") => {
-                let name = match libc {
-                    RemoteLibc::NonGlibc { name } => name.clone(),
-                    _ => "unknown".to_string(),
-                };
-                PreinstallStatus::Unsupported {
-                    reason: UnsupportedReason::NonGlibc { name },
-                }
-            }
+            // 旧脚本残留的 libc 门禁理由:静态二进制下已失效,视为支持。
+            Some("glibc_too_old") | Some("non_glibc") => PreinstallStatus::Supported,
+            // 其他无法识别的 unsupported 理由:保守起见 fail open。
             _ => PreinstallStatus::Unknown,
         },
         // status=unknown, missing, or anything else → fail open.
@@ -270,38 +254,29 @@ pub fn parse_uname_output(output: &str) -> Result<RemotePlatform> {
     Ok(RemotePlatform { os, arch })
 }
 
-/// Returns the remote directory where the binary is installed, keyed by channel.
+/// 返回远端二进制安装目录,按 channel 隔离。
 ///
 /// - stable:      `~/.warp/remote-server`
 /// - preview:     `~/.warp-preview/remote-server`
 /// - dev:         `~/.warp-dev/remote-server`
 /// - local:       `~/.warp-local/remote-server`
 /// - integration: `~/.warp-dev/remote-server`
-/// - warp-oss:    `~/.warp-dev/remote-server`(临时复用官方 dev 通道)
-//
-// TODO(openwarp): OpenWarp 暂未发布自己的 remote-server 二进制,远端
-// 安装链路临时复用官方 `https://app.warp.dev/download/cli?channel=dev`
-// 的 latest dev 产物。等 OpenWarp 自己 release 后,这里改回 `.warp-oss`,
-// 并把下载源切到 OpenWarp 的 GitHub Release 资产。
+/// - warp-oss:    `~/.openwarp/remote-server`
 pub fn remote_server_dir() -> String {
     let warp_dir = match ChannelState::channel() {
         Channel::Stable => ".warp",
         Channel::Preview => ".warp-preview",
         Channel::Dev | Channel::Integration => ".warp-dev",
         Channel::Local => ".warp-local",
-        Channel::Oss => {
-            // TODO(openwarp): 临时复用官方 dev 通道路径,见上方 TODO。
-            ".warp-dev"
-        }
+        Channel::Oss => ".openwarp",
     };
     format!("~/{warp_dir}/remote-server")
 }
 
-/// Returns a filesystem-safe directory name for a remote-server identity key.
+/// 返回可安全放入路径的 remote-server identity key 目录名。
 ///
-/// The identity key is not secret, but it can contain bytes that are unsafe or
-/// ambiguous in paths. Keep ASCII alphanumeric characters plus `-` and `_`;
-/// percent-encode all other UTF-8 bytes.
+/// identity key 不是密钥,但可能包含路径中不安全或有歧义的字节。
+/// 保留 ASCII 字母数字以及 `-` / `_`,其他 UTF-8 字节做百分号编码。
 pub fn remote_server_identity_dir_name(identity_key: &str) -> String {
     if identity_key.is_empty() {
         return "empty".to_string();
@@ -319,8 +294,7 @@ pub fn remote_server_identity_dir_name(identity_key: &str) -> String {
     encoded
 }
 
-/// Returns the identity-scoped remote directory used for the daemon socket
-/// and PID file.
+/// 返回按 identity 隔离的远端目录,用于 daemon socket 和 PID 文件。
 pub fn remote_server_daemon_dir(identity_key: &str) -> String {
     format!(
         "{}/{}",
@@ -329,161 +303,145 @@ pub fn remote_server_daemon_dir(identity_key: &str) -> String {
     )
 }
 
-/// Returns the binary name, keyed by channel.
-///
-/// Matches the CLI command names: `oz` (stable), `oz-preview`, `oz-dev`.
-///
-/// 注意:这是远端 remote-server 二进制的文件名,不是本地 CLI 的安装名。
-/// 在 [`Channel::Oss`] 下需要跟 tarball 里实际打包的二进制对得上,
-/// 因此**临时**返回 `oz-dev` —— OpenWarp 自己还没发布远端二进制,我们
-/// 复用官方 dev channel 的 `/download/cli` 产物,而该 tarball 内的
-/// 二进制就是 `oz-dev`。本地 CLI 的安装名仍然由
-/// [`Channel::cli_command_name`] 返回的 `warp-oss` 决定,两者解耦。
-//
-// TODO(openwarp): 待 OpenWarp 发布自己的 remote-server 二进制后,这里
-// 改回 `Channel::cli_command_name()`(即 `warp-oss`),并把 tarball 里的
-// 二进制名一起对齐。
+/// 返回远端 remote-server 二进制文件名。
 pub fn binary_name() -> &'static str {
-    match ChannelState::channel() {
-        Channel::Oss => "oz-dev",
-        _ => ChannelState::channel().cli_command_name(),
-    }
+    ChannelState::channel().cli_command_name()
 }
 
-/// Returns the full remote binary path for the current channel and client
-/// version.
+/// 返回当前 channel 和客户端版本对应的远端二进制完整路径。
 ///
-/// The path-versioning rule is keyed strictly off [`Channel`]:
-///
-/// - [`Channel::Local`] and [`Channel::Oss`] always use the bare
-///   `{binary_name}` path. For `Local` this is the slot
-///   `script/deploy_remote_server` writes to. [`Channel::Oss`] **临时**
-///   也走无版本后缀路径,因为下载链路临时复用官方
-///   `/download/cli?channel=dev` 的 latest 产物,客户端不持有官方 dev
-///   tag,无法拼出 `&version=...`,所以远端文件名只能落到 `oz-dev`
-///   (无版本后缀)。这意味着官方更新 dev 构建后,我们这边的
-///   `binary_check_command` 仍会命中旧文件,**不会自动更新**;直到用户
-///   手动删除 `~/.warp-dev/remote-server/oz-dev` 才会重新下载。这是
-///   临时方案的已知缺陷,等 OpenWarp 自己 release 后会一并修复
-///   (届时回到版本号路径)。
-/// - Every other channel always uses `{binary_name}-{version}`, where
-///   `version` is the baked-in `GIT_RELEASE_TAG` when present and falls
-///   back to `CARGO_PKG_VERSION` otherwise. The fallback keeps the path
-///   deterministic for misconfigured `cargo run --bin {dev,preview,...}`
-///   builds; the resulting `&version=...` query is expected to 404 against
-///   `/download/cli` and surface a clean `SetupFailed` rather than silently
-///   writing to a path that doesn't follow the rule.
+/// Local 构建保留无版本后缀路径,以便 `script/deploy_remote_server`
+/// 覆盖同一个开发 slot。OpenWarp release 构建带 `GIT_RELEASE_TAG`
+/// 时使用版本后缀,这样新版本会自然触发重新安装;源码本地构建没有
+/// release tag,仍使用无后缀路径。
 pub fn remote_server_binary() -> String {
     let dir = remote_server_dir();
     let name = binary_name();
     match ChannelState::channel() {
-        Channel::Local | Channel::Oss => format!("{dir}/{name}"),
+        Channel::Local => format!("{dir}/{name}"),
+        Channel::Oss if ChannelState::app_version().is_none() => format!("{dir}/{name}"),
+        Channel::Oss => format!("{dir}/{name}-{}", pinned_version()),
         Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
             format!("{dir}/{name}-{}", pinned_version())
         }
     }
 }
 
-/// Returns the shell command to check if the remote server binary exists and
-/// is executable.
+/// 返回检查远端 remote-server 二进制存在且可执行的 shell 命令。
+///
+/// 与上游一致,这里实际运行 `--version`,而不只是 `test -x`;
+/// 这样可以把损坏或无法解析参数的二进制提前识别出来。
 pub fn binary_check_command() -> String {
-    format!("test -x {}", remote_server_binary())
+    format!("{} --version", remote_server_binary())
 }
 
-/// Returns the version string used to pin remote-server installs on
-/// channels that take the versioned path (i.e. everything except
-/// [`Channel::Local`] and [`Channel::Oss`]). Prefers the baked-in
-/// `GIT_RELEASE_TAG` from [`ChannelState::app_version`]; falls back to
-/// `CARGO_PKG_VERSION` so the path / install URL is deterministic even on
-/// dev `cargo run` builds without a release tag. The `CARGO_PKG_VERSION`
-/// fallback is not expected to map to a real `/download/cli` artifact —
-/// it exists to produce a clean install-time failure rather than silently
-/// fall through to the unversioned (Local/Oss-only) path.
+/// 返回用于版本化安装路径的版本号。优先使用编译时注入的
+/// `GIT_RELEASE_TAG`;没有 release tag 时回退到 `CARGO_PKG_VERSION`,
+/// 让需要版本化路径的 channel 保持确定性,并在缺少对应 release 资产时
+/// 清晰失败,而不是误用无版本路径。
 fn pinned_version() -> &'static str {
     ChannelState::app_version().unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
-/// The install script template, loaded from a standalone `.sh` file for
-/// readability. Placeholders like `{download_base_url}` are substituted by
-/// [`install_script`].
+/// 安装脚本模板独立放在 `.sh` 文件里方便维护。
+/// `{download_base_url}` 等占位符由 [`install_script`] 替换。
 const INSTALL_SCRIPT_TEMPLATE: &str = include_str!("install_remote_server.sh");
 
-/// Returns the install script that downloads and installs the CLI binary
-/// at the current client version.
-///
-/// The script detects the remote architecture via `uname -m`, downloads
-/// the correct Oz CLI tarball from the download URL, and installs it at
-/// the path returned by [`remote_server_binary`] so repeat invocations
-/// are idempotent. The `version_query` / `version_suffix` substitutions
-/// follow the same rule as [`remote_server_binary`]: empty on
-/// [`Channel::Local`] and [`Channel::Oss`] (so the install lands at
-/// the unversioned path used by `script/deploy_remote_server`); pinned to
-/// `&version={v}` / `-{v}` on every other channel, where `v` falls back
-/// to `CARGO_PKG_VERSION` when no release tag is baked in.
-pub fn install_script() -> String {
-    let (version_query, version_suffix) = match ChannelState::channel() {
-        Channel::Local | Channel::Oss => (String::new(), String::new()),
-        Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
-            let v = pinned_version();
-            (format!("&version={v}"), format!("-{v}"))
-        }
-    };
+/// 返回安装脚本。`staging_tarball_path` 非空时,脚本跳过远端下载,
+/// 改为解压客户端通过 SCP 预上传的 tarball。
+pub fn install_script(staging_tarball_path: Option<&str>) -> String {
+    let version_suffix = version_suffix();
     INSTALL_SCRIPT_TEMPLATE
         .replace("{download_base_url}", &download_url())
-        .replace("{channel}", download_channel())
         .replace("{install_dir}", &remote_server_dir())
         .replace("{binary_name}", binary_name())
-        .replace("{version_query}", &version_query)
         .replace("{version_suffix}", &version_suffix)
+        .replace("{staging_tarball_path}", staging_tarball_path.unwrap_or(""))
 }
 
-/// Construct the download URL from the server root URL.
-///
-/// For example, given `https://app.warp.dev`, returns
-/// `https://app.warp.dev/download/cli`.
-///
-/// OpenWarp 临时例外:[`Channel::Oss`] 下 `ChannelState::server_root_url()`
-/// 是 cloud-removal sentinel `http://192.0.2.0:9`(见
-/// `WarpServerConfig::disabled`),不能拿去拼下载 URL,否则远端
-/// curl 会一路 timeout(RFC 5737 TEST-NET-1)。这里硬编码官方
-/// `https://app.warp.dev`,让 SSH Extension 下载临时走官方 dev
-/// channel。
+/// 构造 OpenWarp CLI release 资产下载基址。
 fn download_url() -> String {
-    // TODO(openwarp): 等 OpenWarp 发布自己的 remote-server 二进制
-    // 后,这里改为指向 OpenWarp 的 GitHub Release 下载源
-    // (如 `https://github.com/zerx-lab/warp/releases/download/{tag}/`),
-    // 同时不再依赖官方 `?package=tar&channel=...&version=...` 的
-    // query 参数格式,改成 GitHub Release 的路径式资产 URL。
-    if matches!(ChannelState::channel(), Channel::Oss) {
-        return "https://app.warp.dev/download/cli".to_string();
-    }
-    let base = ChannelState::server_root_url();
-    let base = base.trim_end_matches('/');
-    format!("{base}/download/cli")
+    let release_path = match ChannelState::app_version() {
+        Some(tag) => format!("download/{tag}"),
+        None => "latest/download".to_string(),
+    };
+    format!("https://github.com/zerx-lab/warp/releases/{release_path}")
 }
 
-/// Maps the client's [`Channel`] to the server's download channel parameter.
-///
-/// The server recognises `"stable"`, `"preview"`, and `"dev"`.  Local and
-/// Integration builds map to `"dev"` so they fetch dogfood artifacts.
-fn download_channel() -> &'static str {
+fn version_suffix() -> String {
     match ChannelState::channel() {
-        Channel::Stable => "stable",
-        Channel::Preview => "preview",
-        Channel::Dev | Channel::Local | Channel::Integration => "dev",
-        // TODO(openwarp): OpenWarp 暂未发布自己的 remote-server 二进制,
-        // 临时复用官方 dev channel 产物。等 OpenWarp 自己 release 后,
-        // 把这条整体替换成走 GitHub Release 的下载源(届时
-        // `download_url` / `install_remote_server.sh` 也要一起调整)。
-        Channel::Oss => "dev",
+        Channel::Local => String::new(),
+        Channel::Oss if ChannelState::app_version().is_none() => String::new(),
+        Channel::Oss | Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
+            format!("-{}", pinned_version())
+        }
     }
 }
 
-/// Timeout for the binary existence check.
+/// 返回指定远端平台对应的 OpenWarp CLI tarball URL。
+pub fn download_tarball_url(platform: &RemotePlatform) -> String {
+    format!(
+        "{}/openwarp-{}-{}.tar.gz",
+        download_url(),
+        platform.os.as_str(),
+        platform.arch.as_str(),
+    )
+}
+
+/// OpenWarp fork:开发模式(DEBUG 源码构建,无 release tag)下,
+/// SSH transport 不再从 GitHub 下载陈旧的发行版,而是本地交叉编译
+/// 当前 `warp` 二进制并上传。下面这些常量集中描述该交叉编译产物,
+/// 与 `script/deploy_remote_server` 保持一致(同 profile / 同 features /
+/// 同 target),避免两处分叉。
+///
+/// 交叉编译目标三元组。
+pub const DEV_MUSL_TARGET: &str = "x86_64-unknown-linux-musl";
+
+/// 交叉编译使用的 cargo profile。对应 `Cargo.toml` 的 `[profile.dev-remote]`,
+/// 它继承 `dev` 并 strip 符号以减小体积、加快上传。
+pub const DEV_REMOTE_PROFILE: &str = "dev-remote";
+
+/// 交叉编译启用的 features,与 `script/deploy_remote_server` 一致。
+pub const DEV_REMOTE_FEATURES: &str = "release_bundle,crash_reporting,standalone,agent_mode_debug";
+
+/// 判断当前是否处于「开发模式 remote-server 安装」路径。
+///
+/// 默认条件:DEBUG 构建(`debug_assertions`)且没有注入 `GIT_RELEASE_TAG`
+/// (`app_version().is_none()`,即源码本地构建,非发行版)。这与
+/// `remote_server_binary()` / `download_url()` 中对「无 release tag」的
+/// 判定保持同一标准。release 构建恒为 `false`,行为完全不变。
+///
+/// 显式覆盖:设置 `WARP_REMOTE_SERVER_FROM_LOCAL=1` 强制走本地交叉编译路径
+/// (`0`/未设视为关闭)。用于 release 构建里临时联调本地 remote-server。
+pub fn is_dev_source_build() -> bool {
+    if let Some(raw) = std::env::var_os("WARP_REMOTE_SERVER_FROM_LOCAL") {
+        let lossy = raw.to_string_lossy();
+        let trimmed = lossy.trim();
+        let disabled =
+            trimmed.is_empty() || trimmed == "0" || trimmed.eq_ignore_ascii_case("false");
+        if !disabled {
+            return true;
+        }
+    }
+    cfg!(debug_assertions) && ChannelState::app_version().is_none()
+}
+
+/// 检查二进制是否存在的超时。
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Timeout for the install script.
+/// 常规远端安装脚本超时。
 pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// SCP fallback 包含本地下载、上传和远端解压,给它更宽松的超时。
+pub const SCP_INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// 开发模式交叉编译可能要从头编译整个 crate 图,给它一个很宽松的超时。
+pub const DEV_CROSS_COMPILE_TIMEOUT: Duration = Duration::from_secs(900);
+
+/// 开发模式上传本地交叉编译产物的超时。dev 二进制(未优化 + 调试信息)有
+/// 数百 MB,即便 scp 开了 `-C` 压缩,跨公网上传也可能要数分钟,因此给一个
+/// 远超 `SCP_INSTALL_TIMEOUT` 的宽松上限。
+pub const DEV_UPLOAD_TIMEOUT: Duration = Duration::from_secs(1800);
 
 #[cfg(test)]
 #[path = "setup_tests.rs"]

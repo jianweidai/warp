@@ -774,13 +774,13 @@ pub struct UserProfile {
 
 #[derive(Insertable)]
 #[diesel(table_name = cloud_objects_refreshes)]
-pub struct NewCloudObjectsRefresh {
+pub struct NewObjectStoreRefresh {
     pub time_of_next_refresh: NaiveDateTime,
 }
 
 #[derive(Identifiable, Queryable)]
 #[diesel(table_name = cloud_objects_refreshes)]
-pub struct CloudObjectsRefresh {
+pub struct ObjectStoreRefresh {
     pub id: i32,
     pub time_of_next_refresh: NaiveDateTime,
 }
@@ -993,9 +993,8 @@ pub struct AgentConversationData {
     /// The local conversation ID of the parent conversation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_conversation_id: Option<String>,
-    /// The server-assigned run identifier (`ai_tasks.id`) for v2 orchestration.
-    /// For local agents this arrives via StreamInit; for cloud agents it will
-    /// come from SpawnAgentResponse once the local→cloud spawn path is wired.
+    /// The run identifier for v2 orchestration. For local agents this arrives
+    /// via StreamInit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1009,6 +1008,9 @@ pub struct AgentConversationData {
     /// `None` means no compaction has occurred.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compaction_state_json: Option<String>,
+    /// Opaque serialized BYOP repair sidecar. The app layer owns validation semantics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub byop_repair_state_json: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1315,6 +1317,7 @@ mod tests {
             autoexecute_override: None,
             last_event_sequence: Some(42),
             compaction_state_json: None,
+            byop_repair_state_json: None,
         };
         let json = serde_json::to_string(&data).expect("serialize");
         let roundtripped: AgentConversationData = serde_json::from_str(&json).expect("deserialize");
@@ -1329,6 +1332,7 @@ mod tests {
         let data: AgentConversationData =
             serde_json::from_str(legacy_json).expect("legacy rows must deserialize");
         assert_eq!(data.last_event_sequence, None);
+        assert_eq!(data.byop_repair_state_json, None);
     }
 
     #[test]
@@ -1346,11 +1350,39 @@ mod tests {
             autoexecute_override: None,
             last_event_sequence: None,
             compaction_state_json: None,
+            byop_repair_state_json: None,
         };
         let json = serde_json::to_string(&data).expect("serialize");
         assert!(
             !json.contains("last_event_sequence"),
             "None should be skipped in serialized output: {json}"
+        );
+    }
+
+    #[test]
+    fn agent_conversation_data_roundtrips_byop_repair_sidecar() {
+        let data = AgentConversationData {
+            server_conversation_token: None,
+            conversation_usage_metadata: None,
+            reverted_action_ids: None,
+            forked_from_server_conversation_token: None,
+            artifacts_json: None,
+            parent_agent_id: None,
+            agent_name: None,
+            parent_conversation_id: None,
+            run_id: None,
+            autoexecute_override: None,
+            last_event_sequence: None,
+            compaction_state_json: None,
+            byop_repair_state_json: Some(r#"{"version":1,"records":[]}"#.to_string()),
+        };
+
+        let json = serde_json::to_string(&data).expect("serialize");
+        let roundtripped: AgentConversationData = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(
+            roundtripped.byop_repair_state_json.as_deref(),
+            Some(r#"{"version":1,"records":[]}"#)
         );
     }
 }

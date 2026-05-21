@@ -36,19 +36,6 @@ pub static PR_COMMENTS: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand
     argument: None,
 });
 
-pub static CREATE_ENVIRONMENT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
-    name: "/create-environment",
-    description: t_static!("slash-cmd-create-environment-desc"),
-    icon_path: "bundled/svg/dataflow.svg",
-    availability: Availability::AI_ENABLED,
-    auto_enter_ai_mode: false,
-    argument: Some(
-        Argument::optional()
-            .with_hint_text(t_static!("slash-cmd-create-environment-hint"))
-            .with_execute_on_selection(),
-    ),
-});
-
 pub static CREATE_DOCKER_SANDBOX: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     name: "/docker-sandbox",
     description: t_static!("slash-cmd-docker-sandbox-desc"),
@@ -251,17 +238,6 @@ pub static PLAN: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     argument: Some(Argument::optional().with_hint_text(t_static!("slash-cmd-plan-hint"))),
 });
 
-pub const ORCHESTRATE_NAME: &str = "/orchestrate";
-
-pub static ORCHESTRATE: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
-    name: ORCHESTRATE_NAME,
-    description: t_static!("slash-cmd-orchestrate-desc"),
-    icon_path: "bundled/svg/oz.svg",
-    availability: Availability::LOCAL | Availability::AI_ENABLED,
-    auto_enter_ai_mode: true,
-    argument: Some(Argument::optional().with_hint_text(t_static!("slash-cmd-orchestrate-hint"))),
-});
-
 /// If `query` starts with the given command `name` followed by a space,
 /// returns the remainder of the query. Otherwise returns `None`.
 pub fn strip_command_prefix(query: &str, name: &str) -> Option<String> {
@@ -329,15 +305,6 @@ pub static FORK_FROM: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
         .union(Availability::NO_LRC_CONTROL)
         .union(Availability::AI_ENABLED),
     auto_enter_ai_mode: true,
-    argument: None,
-});
-
-pub static REMOTE_CONTROL: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
-    name: "/remote-control",
-    description: t_static!("slash-cmd-remote-control-desc"),
-    icon_path: "bundled/svg/phone-01.svg",
-    availability: Availability::AI_ENABLED,
-    auto_enter_ai_mode: false,
     argument: None,
 });
 
@@ -477,12 +444,6 @@ fn all_commands() -> Vec<StaticCommand> {
         commands.push(CREATE_DOCKER_SANDBOX.clone());
     }
 
-    if FeatureFlag::CreatingSharedSessions.is_enabled()
-        && FeatureFlag::HOARemoteControl.is_enabled()
-    {
-        commands.push(REMOTE_CONTROL.clone());
-    }
-
     if FeatureFlag::Changelog.is_enabled() {
         commands.push(CHANGELOG.clone());
     }
@@ -492,10 +453,6 @@ fn all_commands() -> Vec<StaticCommand> {
     }
 
     commands.push(OPEN_CODE_REVIEW.clone());
-
-    if FeatureFlag::CreateEnvironmentSlashCommand.is_enabled() {
-        commands.push(CREATE_ENVIRONMENT.clone());
-    }
 
     if FeatureFlag::CreateProjectFlow.is_enabled() {
         commands.push(CREATE_NEW_PROJECT.clone());
@@ -546,10 +503,6 @@ fn all_commands() -> Vec<StaticCommand> {
         commands.push(OPEN_REPO.clone());
     }
 
-    if FeatureFlag::Orchestration.is_enabled() {
-        commands.push(ORCHESTRATE.clone());
-    }
-
     if FeatureFlag::SettingsFile.is_enabled() && cfg!(feature = "local_fs") {
         commands.push(OPEN_SETTINGS_FILE.clone());
     }
@@ -587,12 +540,6 @@ mod tests {
         assert!(!argument.is_optional);
         assert!(!argument.should_execute_on_selection);
         assert_eq!(argument.hint_text, Some("<tab name>"));
-    }
-
-    #[test]
-    fn strip_command_prefix_matches_orchestrate() {
-        let result = strip_command_prefix("/orchestrate deploy services", "/orchestrate");
-        assert_eq!(result, Some("deploy services".to_string()));
     }
 
     #[test]

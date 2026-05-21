@@ -10,7 +10,7 @@ use crate::{
                 AgentViewEntryOrigin, AutoTriggerBehavior, DismissalStrategy, EnterAgentViewError,
                 EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
             },
-            history_model::CloudConversationData,
+            history_model::LoadedConversationData,
             BlocklistAIHistoryModel,
         },
     },
@@ -54,7 +54,7 @@ impl TerminalView {
         // Don't allow starting a new conversation while the agent is in control. 3p cloud
         // viewers enter agent view to wrap an existing run's content and are not starting a
         // new conversation, so they are exempt from this guard.
-        if !matches!(origin, AgentViewEntryOrigin::ThirdPartyCloudAgent)
+        if !matches!(origin, AgentViewEntryOrigin::ExternalAmbientAgent)
             && !self
                 .ai_context_model
                 .as_ref(ctx)
@@ -116,7 +116,7 @@ impl TerminalView {
             }
         } else {
             let conversation_id_copy = conversation_id;
-            let future = history_model.load_conversation_data(conversation_id_copy, ctx);
+            let future = history_model.load_conversation_data(conversation_id_copy);
             ctx.spawn(future, move |me, conversation, ctx| {
                 let Some(conversation) = conversation else {
                     me.show_error_toast(
@@ -134,7 +134,7 @@ impl TerminalView {
                 #[allow(clippy::type_complexity)]
                 let on_restored: Box<
                     dyn FnOnce(&mut Self, &mut ViewContext<Self>),
-                > = if matches!(&conversation, CloudConversationData::Oz(_)) {
+                > = if matches!(&conversation, LoadedConversationData::Oz(_)) {
                     Box::new(move |me, ctx| {
                         me.enter_agent_view_for_conversation(
                             initial_prompt,

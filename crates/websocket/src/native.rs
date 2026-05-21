@@ -17,7 +17,7 @@ use tokio_rustls::TlsConnector;
 
 use crate::WebsocketMessage;
 
-mod proxy;
+pub mod proxy;
 
 pub use async_tungstenite::tungstenite::Message;
 
@@ -63,10 +63,6 @@ impl WebSocket {
         impl Stream<Item = Result<Message, Error>>,
     ) {
         self.0.split()
-    }
-
-    pub async fn into_graphql_client_builder(self) -> graphql_ws_client::ClientBuilder {
-        graphql_ws_client::Client::build(self.0)
     }
 }
 

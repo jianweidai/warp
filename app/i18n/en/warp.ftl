@@ -10,7 +10,7 @@
 # =============================================================================
 
 app-name = Warp
-app-tagline = The cloud-backed terminal for individuals and teams
+app-tagline = The local-first agentic terminal for developers
 
 common-ok = OK
 common-cancel = Cancel
@@ -88,12 +88,10 @@ common-skip = Skip
 common-get-warping = Get Warping
 common-try-again = Try again
 common-settings = Settings
-common-premium = Premium
 common-recommended = Recommended
 common-enabled = Enabled
 common-disabled = Disabled
 common-free = Free
-common-subscribe = Subscribe
 common-list-prefix = {" - "}
 common-current-directory = the current directory
 
@@ -126,8 +124,8 @@ agent-management-artifact-screenshot = Screenshot
 agent-management-artifact-file = File
 agent-management-source-scheduled = Scheduled
 agent-management-source-local-agent = Warp (local agent)
-agent-management-source-cloud-agent = Warp (cloud agent)
-agent-management-source-oz-web = Oz Web
+agent-management-source-cloud-agent = Warp agent
+agent-management-source-oz-web = Oz
 agent-management-source-github-action = GitHub Action
 agent-management-no-session-available = No session available
 agent-management-session-expired = Session expired
@@ -137,7 +135,7 @@ agent-management-metadata-harness = Harness: { $harness }
 agent-management-metadata-run-time = Run time: { $run_time }
 agent-management-metadata-credits-used = Credits used: { $usage }
 agent-management-environment-selected = Environment: { $environment }
-agent-management-loading-cloud-runs = Loading cloud agent runs
+agent-management-loading-cloud-runs = Loading agent runs
 
 # =============================================================================
 # SECTION: workspace-runtime (Owner: agent-i18n-remaining)
@@ -165,10 +163,12 @@ workspace-toast-disabled-synchronized-inputs = Disabled all synchronized inputs.
 workspace-toast-conversation-deleted = Conversation deleted
 workspace-search-repos-placeholder = Search repos
 workspace-search-tabs-placeholder = Search tabs...
+terminal-onekey-search-placeholder = Search saved SSH credentials...
+terminal-onekey-search-no-results = No matching SSH credentials
 workspace-rearrange-toolbar-items = Re-arrange toolbar items
 workspace-new-session-agent = Agent
 workspace-new-session-terminal = Terminal
-workspace-new-session-cloud-oz = Cloud Oz
+workspace-new-session-cloud-oz = Agent tab
 workspace-new-session-local-docker-sandbox = Local Docker Sandbox
 workspace-new-worktree-config = New worktree config
 workspace-new-tab-config = New tab config
@@ -219,7 +219,6 @@ app-menu-warp-slack-community = Warp Slack Community...
 workspace-update-and-relaunch-warp = Update and relaunch Warp
 workspace-updating-to-version = Updating to ({ $version })
 workspace-update-warp-manually = Update Warp manually
-workspace-view-all-cloud-runs = View all cloud runs
 pane-get-started-title = Get started
 pane-new-tab-title = New tab
 
@@ -242,7 +241,7 @@ terminal-dont-ask-again = Don't ask me this again
 terminal-clear-upload = Clear upload
 terminal-manage-defaults = Manage defaults
 terminal-free-credits = Free credits
-terminal-cloud-agent-run = Cloud agent run
+terminal-cloud-agent-run = Agent run
 terminal-agent-header-for-terminal = for terminal
 ssh-remote-choice-title = Choose your experience for this remote session:
 ssh-remote-choice-install-extension = Install Warp's SSH extension
@@ -258,9 +257,8 @@ ai-document-save-as-markdown-file = Save as markdown file
 ai-document-attach-to-active-session = Attach to active session
 ai-document-copy-plan-id = Copy plan ID
 ai-document-plan-id-copied = Plan ID copied to clipboard
-ai-conversation-view-in-oz = View in Oz
-ai-conversation-view-in-oz-tooltip = View this run in the Oz web app
-ai-artifact-prepare-download-failed = Failed to prepare file download.
+ai-conversation-view-in-oz = View run
+ai-conversation-view-in-oz-tooltip = View this agent run
 ai-block-open-in-github = Open in GitHub
 ai-block-open-in-code-review = Open in code review
 ai-block-manage-rules = Manage rules
@@ -306,7 +304,7 @@ ai-ask-user-answered-question = Answered question
 ai-ask-user-answered-all-questions = Answered all { $total } questions
 ai-ask-user-answered-count = Answered { $answered_count } of { $total } questions
 ai-code-diff-requested-edit-title = Requested Edit
-ai-cloud-setup-visit-oz = Visit Oz
+ai-cloud-setup-visit-oz = Open agent setup
 ai-inline-code-diff-review-changes = Review changes
 ai-execution-profile-name-placeholder = e.g. "YOLO code"
 ai-execution-profile-delete-profile = Delete profile
@@ -319,6 +317,8 @@ code-replace-all = Replace all
 code-goto-line-placeholder = Line number:Column
 code-open-file-unavailable-remote-tooltip = Opening files is unavailable for remote sessions
 code-view-markdown-preview = View Markdown preview
+markdown-display-mode-rendered = Rendered
+markdown-display-mode-raw = Raw
 code-review-commit-and-create-pr = Commit and create PR
 notebook-link-text-placeholder = Text
 notebook-link-url-placeholder = Link (web or file)
@@ -340,7 +340,7 @@ openwarp-launch-contribute-title = Contribute
 openwarp-launch-contribute-description = Warp's client code is now open source. Get started by using the /feedback skill to open an issue, and follow the contribution guidelines here.
 openwarp-launch-contribute-link-text = here
 openwarp-launch-oad-title = Open Automated Development
-openwarp-launch-oad-description = The Warp repo is managed by an agent-first workflow powered by Oz, our cloud agent orchestration platform.
+openwarp-launch-oad-description = The Warp repo is managed by an agent-first local workflow powered by Oz.
 openwarp-launch-auto-model-title = Introducing 'auto (open-weights)'
 openwarp-launch-auto-model-description = We've added a new auto model that picks the best open weight model for a task, like Kimi or MiniMax.
 hoa-see-whats-new = See what's new
@@ -365,8 +365,8 @@ settings-startup-shell-executable-path-placeholder = Executable path
 settings-agent-providers-base-url-placeholder = https://api.deepseek.com/v1
 drive-sharing-only-people-invited = Only people invited
 drive-sharing-anyone-with-link = Anyone with the link
-drive-sharing-only-invited-teammates = Only invited teammates
-drive-sharing-teammates-with-link = Teammates with the link
+drive-sharing-only-invited-teammates = Local access only
+drive-sharing-teammates-with-link = Local access with link
 terminal-warpify-subshell = Warpify subshell
 terminal-warpify-subshell-tooltip = Enable Warp shell integration in this session
 terminal-use-agent = Use agent
@@ -383,7 +383,6 @@ terminal-continue-locally = Continue locally
 terminal-fork-conversation-locally-tooltip = Fork this conversation locally
 terminal-open-in-warp = Open in Warp
 terminal-open-conversation-in-warp-tooltip = Open this conversation in the Warp desktop app
-terminal-share-session = Share session...
 terminal-stop-sharing = Stop sharing
 terminal-copy-session-sharing-link = Copy session sharing link
 terminal-shared-session-make-editor = Make editor
@@ -393,7 +392,7 @@ terminal-choose-execution-profile-tooltip = Choose an AI execution profile
 terminal-choose-agent-model-tooltip = Choose an agent model
 terminal-input-cli-agent-rich-input-hint = Tell the agent what to build...
 terminal-input-enter-prompt-for-agent = Enter prompt for { $agent }...
-terminal-input-cloud-agent-hint = Kick off a cloud agent
+terminal-input-cloud-agent-hint = Kick off an agent
 terminal-input-a11y-label = Command Input.
 terminal-input-a11y-helper = Input your shell command, press enter to execute. Press cmd-up to navigate to output of previously executed commands. Press cmd-l to re-focus command input.
 terminal-input-ai-command-search-hint = Type '#' for AI command suggestions
@@ -565,18 +564,17 @@ language-restart-required-body = Warp's UI language has been updated. Some text 
 
 # Sidebar / SettingsSection labels (Display impl)
 settings-section-about = About
-settings-section-account = Account
+# OpenWarp: settings-section-account removed alongside the Account settings page.
 settings-section-mcp-servers = MCP Servers
 settings-section-billing-and-usage = Billing and usage
 settings-section-appearance = Appearance
 settings-section-features = Features
 settings-section-keybindings = Keyboard shortcuts
-settings-section-privacy = Privacy
 settings-section-referrals = Referrals
 settings-section-shared-blocks = Shared blocks
-settings-section-teams = Teams
 settings-section-warp-drive = Warp Drive
 settings-section-warpify = Warpify
+settings-section-network = Network
 settings-section-ai = AI
 settings-section-warp-agent = Warp Agent
 settings-section-agent-profiles = Profiles
@@ -587,7 +585,7 @@ settings-section-third-party-cli-agents = Third party CLI agents
 settings-section-code = Code
 settings-section-editor-and-code-review = Editor and Code Review
 settings-section-cloud-environments = Environments
-settings-section-oz-cloud-api-keys = Oz Cloud API Keys
+settings-section-oz-cloud-api-keys = Agent API Keys
 settings-title = Settings
 
 # Context menu items (split / close pane)
@@ -616,34 +614,14 @@ settings-about-update-up-to-date = OpenWarp is up to date.
 settings-about-update-available = New version { $version } is available.
 settings-about-update-check-now = Check for updates
 settings-about-update-open-release = Download from GitHub
+settings-about-export-logs = Export logs…
+settings-about-export-logs-description = Bundles recent app logs (and MCP / update logs when present) plus a diagnostic summary into a zip you choose where to save, so you can share it for troubleshooting.
+settings-about-export-logs-success = Logs exported to { $path }
+settings-about-export-logs-failure = Failed to export logs: { $error }
 
-# main_page.rs — referral / account
-settings-main-referral-cta = Earn rewards by sharing Warp with friends & colleagues
-settings-main-refer-a-friend = Refer a friend
-settings-main-sign-up = Sign up
-settings-main-plan-free = Free
-settings-main-compare-plans = Compare plans
-settings-main-contact-support = Contact support
-settings-main-manage-billing = Manage billing
-settings-main-upgrade-to-turbo = Upgrade to Turbo plan
-settings-main-upgrade-to-lightspeed = Upgrade to Lightspeed plan
+# OpenWarp: main_page.rs (Account / version / autoupdate) strings removed alongside
+# the Account settings page. The About page now owns version / update CTAs.
 
-# main_page.rs — settings sync
-settings-main-settings-sync-label = Settings sync
-
-# main_page.rs — version / autoupdate
-settings-main-version-label = Version
-settings-main-status-up-to-date = Up to date
-settings-main-cta-check-for-updates = Check for updates
-settings-main-status-checking = checking for update...
-settings-main-status-downloading = downloading update...
-settings-main-status-update-available = Update available
-settings-main-cta-relaunch-warp = Relaunch Warp
-settings-main-status-updating = Updating...
-settings-main-status-installed-update = Installed update
-settings-main-status-cant-install = A new version of Warp is available but can't be installed
-settings-main-status-cant-launch = A new version of Warp is installed but can't be launched.
-settings-main-cta-update-manually = Update Warp manually
 
 # --- ANCHOR-SUB-MCP (agent-settings-mcp) ---
 # 此锚点下放 settings_view/mcp_servers_page.rs 字符串
@@ -657,21 +635,21 @@ settings-mcp-install-from-link-failed = MCP server '{$name}' cannot be installed
 
 # ---- destructive_mcp_confirmation_dialog.rs ----
 settings-mcp-confirm-delete-local-title = Delete MCP server?
-settings-mcp-confirm-delete-local-description = This will uninstall and remove this MCP server from all your devices.
-settings-mcp-confirm-delete-shared-title = Delete shared MCP server?
-settings-mcp-confirm-delete-shared-description = This will not only delete this MCP server for yourself, but also uninstall and remove this MCP server from Warp and across all of your teammates' devices.
-settings-mcp-confirm-unshare-title = Remove shared MCP server from team?
-settings-mcp-confirm-unshare-description = This will uninstall and remove this MCP server from Warp and across all of your teammates' devices.
+settings-mcp-confirm-delete-local-description = This will uninstall and remove this MCP server from this device.
+settings-mcp-confirm-delete-shared-title = Delete MCP server?
+settings-mcp-confirm-delete-shared-description = This removes the saved MCP server from this device.
+settings-mcp-confirm-unshare-title = Remove saved MCP server?
+settings-mcp-confirm-unshare-description = This removes the saved MCP server from this device.
 settings-mcp-confirm-delete-button = Delete MCP
-settings-mcp-confirm-remove-from-team-button = Remove from team
+settings-mcp-confirm-remove-from-team-button = Remove saved copy
 settings-mcp-confirm-cancel-button = Cancel
 
 # ---- edit_page.rs ----
 settings-mcp-edit-save = Save
 settings-mcp-edit-edit-variables = Edit Variables
 settings-mcp-edit-delete = Delete MCP
-settings-mcp-edit-remove-from-team = Remove from team
-settings-mcp-edit-editing-disabled-banner = Only team admins and the creator of the MCP server can edit the MCP server.
+settings-mcp-edit-remove-from-team = Remove saved copy
+settings-mcp-edit-editing-disabled-banner = This MCP server cannot be edited from this view.
 settings-mcp-edit-add-new-title = Add New MCP Server
 settings-mcp-edit-edit-named-title = Edit { $name } MCP Server
 settings-mcp-edit-edit-title = Edit MCP Server
@@ -682,14 +660,14 @@ settings-mcp-edit-multiple-servers-error = Cannot add multiple MCP servers while
 
 # ---- installation_modal.rs ----
 settings-mcp-install-modal-title = Install { $name }
-settings-mcp-install-modal-source-shared = Shared from team
+settings-mcp-install-modal-source-shared = Saved preset
 settings-mcp-install-modal-source-other-device = From another device
 settings-mcp-install-modal-cancel = Cancel
 settings-mcp-install-modal-install = Install
 settings-mcp-install-modal-no-server = No MCP server selected
 
 # ---- list_page.rs ----
-settings-mcp-list-description = Add MCP servers to extend the Warp Agent's capabilities. MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. Add a custom server, or use the presets to get started with popular servers. You can also find team servers that have been shared with you here.
+settings-mcp-list-description = Add MCP servers to extend the Warp Agent's capabilities. MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. Add a custom server, or use the presets to get started with popular servers.
 settings-mcp-list-learn-more = Learn more.
 settings-mcp-list-empty-state = Once you add a MCP server, it will be shown here.
 settings-mcp-list-no-search-results = No search results found
@@ -702,13 +680,13 @@ settings-mcp-list-template-available-to-install = Available to install
 settings-mcp-list-file-based-detected = Detected from config file
 settings-mcp-list-toast-server-updated = MCP server updated
 settings-mcp-list-section-my-mcps = My MCPs
-settings-mcp-list-section-shared-by-warp-and-team = Shared by Warp and { $name }
+settings-mcp-list-section-shared-by-warp-and-team = Available from Warp and { $name }
 settings-mcp-list-section-shared-by-warp-and-other-devices = Shared by Warp and from other devices
 settings-mcp-list-section-shared-from-warp = Shared from Warp
 settings-mcp-list-section-detected-from = Detected from { $provider }
 settings-mcp-list-chip-global = global
 settings-mcp-list-chip-shared-by-creator = Shared by: { $creator }
-settings-mcp-list-chip-shared-by-team-member = Shared by a team member
+settings-mcp-list-chip-shared-by-team-member = Saved preset
 settings-mcp-list-chip-from-another-device = From another device
 
 # ---- server_card.rs ----
@@ -732,7 +710,7 @@ settings-mcp-update-modal-default-name = Server
 settings-mcp-update-modal-title = Update { $name }
 settings-mcp-update-modal-description = This server has { $count } updates available, which would you like to proceed with?
 settings-mcp-update-modal-publisher-another-device = another device
-settings-mcp-update-modal-publisher-team-member = a team member
+settings-mcp-update-modal-publisher-team-member = a local source
 settings-mcp-update-modal-update-from = Update from { $publisher }
 settings-mcp-update-modal-version = Version { $version }
 settings-mcp-update-modal-cancel = Cancel
@@ -742,8 +720,8 @@ settings-mcp-update-modal-no-updates = No updates available
 # --- ANCHOR-SUB-PLATFORM (agent-settings-platform) ---
 # 此锚点下放 settings_view/platform_page.rs 字符串
 # 命名前缀:settings-platform-*
-settings-platform-section-title = Oz Cloud API Keys
-settings-platform-description = Create and manage API keys to allow other Oz cloud agents to access your Warp account.
+settings-platform-section-title = Agent API Keys
+settings-platform-description = Create and manage API keys to allow local agents to access your Warp account.
     For more information, visit the
 settings-platform-documentation-link = Documentation.
 settings-platform-create-button = + Create API Key
@@ -789,14 +767,14 @@ settings-keybindings-press-new-shortcut = Press new keyboard shortcut
 settings-keybindings-description = Add your own custom keybindings to existing actions below.
 settings-keybindings-use-prefix = Use
 settings-keybindings-use-suffix = to reference these keybindings in a side pane at anytime.
-settings-keybindings-not-synced-tooltip = Keyboard shortcuts are not synced to the cloud
+settings-keybindings-not-synced-tooltip = Keyboard shortcuts are stored locally on this machine
 settings-keybindings-subheader = Configure keyboard shortcuts
 settings-keybindings-command-column = Command
 
 # --- ANCHOR-SUB-REFERRALS (agent-settings-referrals) ---
 settings-referrals-page-title = Invite a friend to Warp
-settings-referrals-anonymous-header = Sign up to participate in Warp's referral program
-settings-referrals-sign-up = Sign up
+settings-referrals-anonymous-header = Referral program is unavailable in local OpenWarp builds
+settings-referrals-sign-up = Unavailable locally
 settings-referrals-link-label = Link
 settings-referrals-email-label = Email
 settings-referrals-link-error = Failed to load referral code.
@@ -843,6 +821,39 @@ settings-warpify-use-tmux = Use Tmux Warpification
 settings-warpify-tmux-description = The tmux ssh wrapper works in many situations where the default one does not, but may require you to hit a button to warpify. Takes effect in new tabs.
 settings-warpify-ssh-tmux-toggle-binding-label = SSH session detection for Warpification
 
+# --- ANCHOR-SUB-NETWORK (network-settings) ---
+# Global HTTP proxy settings page (see Issue #72).
+settings-network-page-title = Network
+settings-network-header = HTTP proxy
+settings-network-description = Configure a global proxy for all outbound HTTP / WebSocket requests. Press Enter after editing a field to save.\nNew requests (BYOP model list, test connection, conversation loading, etc.) take effect immediately; long-lived clients constructed at startup (autoupdate, changelog) require an app restart.
+settings-network-mode-label = Proxy mode
+settings-network-mode-description = System follows OS / env vars (default); Custom uses the URL below; Off disables all proxying.
+settings-network-mode-system = System
+settings-network-mode-custom = Custom
+settings-network-mode-off = Off
+settings-network-url-label = Proxy URL
+settings-network-url-placeholder = http://proxy.example.com:8080
+settings-network-url-description = e.g. http://proxy.corp:8080
+settings-network-username-label = Username
+settings-network-username-placeholder = Username (optional)
+settings-network-username-description = If the proxy requires Basic Auth, fill in the username here.
+settings-network-password-label = Password
+settings-network-password-placeholder = Password (saved to the OS keyring on submit)
+settings-network-password-description = Submitted password is stored in the OS keyring (not in settings.toml).
+settings-network-no-proxy-label = No-proxy list
+settings-network-no-proxy-placeholder = localhost,127.0.0.1,.internal
+settings-network-no-proxy-description = Comma-separated hosts.
+settings-network-save = Save
+settings-network-clear = Clear
+settings-network-test-button = Test connection
+settings-network-test-idle-tcp = Probes the proxy host:port via TCP. Tests reachability of the proxy itself, not internet egress — suitable for intranet-only proxies.
+settings-network-test-idle-http = Sends a GET to {$url} through the current configuration. Tests internet egress.
+settings-network-test-running = Testing…
+settings-network-test-success-tcp = ✅ Proxy reachable ({$latency} ms)
+settings-network-test-success-http = ✅ Internet reachable ({$latency} ms)
+settings-network-test-failed-tcp = ❌ Cannot reach proxy: {$error}
+settings-network-test-failed-http = ❌ Connection failed: {$error}
+
 # --- ANCHOR-SUB-AI-PAGE (agent-settings-ai-page) ---
 # Section / sub-headers
 settings-ai-warp-agent-header = Warp Agent
@@ -867,7 +878,6 @@ settings-ai-next-command-label = Next Command
 settings-ai-prompt-suggestions-label = Prompt Suggestions
 settings-ai-suggested-code-banners-label = Suggested Code Banners
 settings-ai-natural-language-autosuggestions-label = Natural Language Autosuggestions
-settings-ai-shared-block-title-generation-label = Shared Block Title Generation
 settings-ai-git-operations-autogen-label = Commit & Pull Request Generation
 
 # Permissions dropdown options
@@ -908,9 +918,8 @@ settings-ai-agents-description = Set the boundaries for how your Agent operates.
 settings-ai-profiles-description = Profiles let you define how your Agent operates — from the actions it can take and when it needs approval, to the models it uses for tasks like coding and planning. You can also scope them to individual projects.
 
 # Anonymous / org gates
-settings-ai-sign-up = Sign up
-settings-ai-anonymous-create-account = To use AI features, please create an account.
-settings-ai-org-disallows-remote-session = Your organization disallows AI when the active pane contains content from a remote session
+settings-ai-sign-up = Enable local AI
+settings-ai-anonymous-create-account = Local AI features do not require an account.
 settings-ai-org-enforced-tooltip = This option is enforced by your organization's settings and cannot be customized.
 settings-ai-restricted-billing = Restricted due to billing issue
 settings-ai-unlimited = Unlimited
@@ -918,6 +927,7 @@ settings-ai-unlimited = Unlimited
 # AI Input section
 settings-ai-show-input-hint-text = Show input hint text
 settings-ai-show-agent-tips = Show agent tips
+settings-ai-show-agent-zero-state-hints = Show Agent shortcut hints
 settings-ai-include-agent-commands-in-history = Include agent-executed commands in history
 settings-ai-autodetect-agent-prompts = Autodetect agent prompts in terminal input
 settings-ai-autodetect-terminal-commands = Autodetect terminal commands in agent input
@@ -968,11 +978,9 @@ settings-ai-toolbar-commands-description = Add regex patterns to show the coding
 settings-ai-coding-agent-other = Other
 settings-ai-coding-agent-select-header = Select coding agent
 
-# Experimental / Cloud Agent
-settings-ai-cloud-agent-computer-use = Computer use in Cloud Agents
-settings-ai-cloud-agent-computer-use-description = Enable computer use in cloud agent conversations started from the Warp app.
-settings-ai-orchestration-label = Orchestration
-settings-ai-orchestration-description = Enable multi-agent orchestration, allowing the agent to spawn and coordinate parallel sub-agents.
+# Experimental / Agent
+settings-ai-cloud-agent-computer-use = Computer use in agents
+settings-ai-cloud-agent-computer-use-description = Enable computer use in agent conversations started from the Warp app.
 
 # AWS Bedrock
 settings-ai-aws-bedrock-toggle = Use AWS Bedrock credentials
@@ -1011,7 +1019,7 @@ settings-features-max-rows-per-block = Maximum rows in a block
 settings-features-ssh-wrapper = Warp SSH Wrapper
 settings-features-receive-desktop-notifications = Receive desktop notifications from Warp
 settings-features-show-in-app-agent-notifications = Show in-app agent notifications
-settings-features-confirm-close-shared-session = Confirm before closing shared session
+settings-features-confirm-close-shared-session = Confirm before closing read-only session
 settings-features-global-hotkey-label = Global hotkey:
 settings-features-global-hotkey-not-supported-on-wayland = Not supported on Wayland.
 settings-features-autocomplete-symbols = Autocomplete quotes, parentheses, and brackets
@@ -1108,94 +1116,6 @@ settings-features-changes-apply-new-windows = Changes will apply to new windows.
 settings-features-wayland-description = Enabling this setting disables global hotkey support. When disabled, text may be blurry if your Wayland compositor is using fraction scaling (ex: 125%).
 settings-features-restart-warp-to-apply = Restart Warp for changes to take effect.
 
-# --- ANCHOR-SUB-TEAMS (agent-settings-teams) ---
-# settings_view/teams_page.rs strings (P0 + P1)
-# 命名前缀:settings-teams-*
-settings-teams-page-title = Teams
-settings-teams-create-page-subtitle = Create a team
-settings-teams-create-description = When you create a team, you can collaborate on agent-driven development by sharing cloud agent runs, environments, automations, and artifacts. You can also create a shared knowledge store for teammates and agents alike.
-settings-teams-create-button = Create
-settings-teams-team-name-placeholder = Team name
-settings-teams-rename-placeholder = Your new team name
-settings-teams-leave-team-button = Leave team
-settings-teams-delete-team-button = Delete team
-settings-teams-emails-placeholder = Emails, comma separated
-settings-teams-domains-placeholder = Domains, comma separated
-settings-teams-set-button = Set
-settings-teams-invite-button = Invite
-settings-teams-join-button = Join
-settings-teams-contact-admin-button = Contact Admin to request access
-settings-teams-tab-link = Link
-settings-teams-tab-email = Email
-settings-teams-section-team-members = Team Members
-settings-teams-section-team-members-pricing = Team members
-settings-teams-section-invite-by-link = Invite by Link
-settings-teams-section-invite-by-email = Invite by Email
-settings-teams-section-restrict-by-domain = Restrict by domain
-settings-teams-section-make-discoverable = Make team discoverable
-settings-teams-section-plan-usage-free = Free plan usage limits
-settings-teams-section-plan-usage = Plan usage limits
-settings-teams-shared-notebooks = Shared Notebooks
-settings-teams-shared-workflows = Shared Workflows
-settings-teams-reset-links = Reset links
-settings-teams-compare-plans = Compare plans
-settings-teams-upgrade-build = Upgrade to Build
-settings-teams-upgrade-turbo = Upgrade to Turbo plan
-settings-teams-upgrade-lightspeed = Upgrade to Lightspeed plan
-settings-teams-contact-support = Contact support
-settings-teams-manage-billing = Manage billing
-settings-teams-manage-plan = Manage plan
-settings-teams-open-admin-panel = Open admin panel
-settings-teams-or-join-existing = Or, join an existing team within your company
-settings-teams-discovery-cta = Join this team and start collaborating on workflows, notebooks, and more.
-settings-teams-discovery-1-teammate = 1 teammate
-settings-teams-discovery-n-teammates = { $count } teammates
-settings-teams-transfer-modal-title = Transfer team ownership?
-settings-teams-action-cancel-invite = Cancel invite
-settings-teams-action-transfer-ownership = Transfer ownership
-settings-teams-action-demote-from-admin = Demote from admin
-settings-teams-action-promote-to-admin = Promote to admin
-settings-teams-action-remove-from-team = Remove from team
-settings-teams-action-remove-domain = Remove domain
-settings-teams-state-expired = EXPIRED
-settings-teams-state-pending = PENDING
-settings-teams-state-owner = OWNER
-settings-teams-state-admin = ADMIN
-settings-teams-badge-past-due = PAST DUE
-settings-teams-badge-unpaid = UNPAID
-settings-teams-offline = You are offline.
-settings-teams-failed-load-invite-link = Failed to load invite link.
-settings-teams-toast-link-copied = Link copied to clipboard!
-settings-teams-toast-invite-sent-one = Your invite is on the way!
-settings-teams-toast-invites-sent = Your { $count } invites are on the way!
-settings-teams-toast-domain-added = Domain restrictions added: { $count }
-settings-teams-toast-invalid-domains = Invalid domains: { $count }
-settings-teams-toast-invalid-emails = Invalid emails: { $count }
-settings-teams-toast-toggled-invite-links = Toggled invite links
-settings-teams-toast-reset-invite-links = Reset invite links
-settings-teams-toast-deleted-invite = Deleted invite
-settings-teams-toast-toggled-discoverability = Toggled team discoverability
-settings-teams-toast-joined-team = Successfully joined team
-settings-teams-toast-joined-team-named = Successfully joined { $name }
-settings-teams-toast-transferred-ownership = Successfully transferred team ownership
-settings-teams-toast-updated-role = Successfully updated team member role
-settings-teams-toast-left-team = Successfully left team
-settings-teams-toast-renamed-team = Successfully renamed team
-settings-teams-error-leave-team = Error leaving team
-settings-teams-error-rename-team = Failed to rename team
-settings-teams-error-send-invite = Failed to send invite
-settings-teams-error-toggle-invite-links = Failed to toggle invite links
-settings-teams-error-reset-invite-links = Failed to reset invite links
-settings-teams-error-delete-invite = Failed to delete invite
-settings-teams-error-add-domain = Failed to add domain restriction
-settings-teams-error-delete-domain = Failed to delete domain restriction
-settings-teams-error-upgrade-link = Failed to generate upgrade link. Please contact us at feedback@warp.dev
-settings-teams-error-billing-link = Failed to generate billing link. Please contact us at feedback@warp.dev
-settings-teams-error-toggle-discoverability = Failed to toggle team discoverability
-settings-teams-error-join-team = Failed to join team
-settings-teams-error-transfer-ownership = Failed to transfer team ownership
-settings-teams-error-update-role = Failed to update team member role
-
 # --- ANCHOR-SUB-SETTINGS-PAGE-NAV (agent-settings-page-nav) ---
 # 此锚点下放 settings_view/{settings_page,nav,delete_environment_confirmation_dialog,directory_color_add_picker,pane_manager}.rs 字符串
 # 命名前缀:settings-page-* / settings-nav-* / settings-confirm-* / settings-color-picker-*
@@ -1231,45 +1151,6 @@ settings-code-project-explorer = Project explorer
 settings-code-project-explorer-desc = Adds an IDE-style project explorer / file tree to the left side tools panel.
 settings-code-global-search = Global file search
 settings-code-global-search-desc = Adds global file search to the left side tools panel.
-
-# --- ANCHOR-SUB-PRIVACY (agent-settings-privacy) ---
-settings-privacy-page-title = Privacy
-settings-privacy-modal-add-regex-title = Add regex pattern
-settings-privacy-safe-mode-title = Secret redaction
-settings-privacy-safe-mode-description = When this setting is enabled, Warp will scan blocks, the contents of Warp Drive objects, and Oz prompts for potential sensitive information and prevent saving or sending this data to any servers. You can customize this list via regexes.
-settings-privacy-user-secret-regex-title = Custom secret redaction
-settings-privacy-user-secret-regex-description = Use regex to define additional secrets or data you'd like to redact. This will take effect when the next command runs. You can use the inline (?i) flag as a prefix to your regex to make it case-insensitive.
-settings-privacy-telemetry-title = Help improve Warp
-settings-privacy-telemetry-description = App analytics help us make the product better for you. We may collect certain console interactions to improve Warp's AI capabilities.
-settings-privacy-telemetry-description-old = App analytics help us make the product better for you. We only collect app usage metadata, never console input or output.
-settings-privacy-telemetry-free-tier-note = On the free tier, analytics must be enabled to use AI features.
-settings-privacy-telemetry-docs-link = Read more about Warp's use of data
-settings-privacy-data-management-title = Manage your data
-settings-privacy-data-management-description = At any time, you may choose to delete your Warp account permanently. You will no longer be able to use Warp.
-settings-privacy-data-management-link = Visit the data management page
-settings-privacy-policy-title = Privacy policy
-settings-privacy-policy-link = Read Warp's privacy policy
-settings-privacy-tab-personal = Personal
-settings-privacy-tab-enterprise = Enterprise
-settings-privacy-enterprise-readonly = Enterprise secret redaction cannot be modified.
-settings-privacy-enterprise-empty = No enterprise regexes have been configured by your organization.
-settings-privacy-recommended = Recommended
-settings-privacy-add-all = Add all
-settings-privacy-add-regex-button = Add regex
-settings-privacy-enterprise-enabled-by-org = Enabled by your organization.
-settings-privacy-zdr-badge = ZDR
-settings-privacy-zdr-tooltip = Your administrator has enabled zero data retention for your team. User generated content will never be collected.
-settings-privacy-secret-display-mode-title = Secret visual redaction mode
-settings-privacy-secret-display-mode-description = Choose how secrets are visually presented in the block list while keeping them searchable. This setting only affects what you see in the block list.
-settings-privacy-crash-reports-title = Send crash reports
-settings-privacy-crash-reports-description = Crash reports assist with debugging and stability improvements.
-settings-privacy-cloud-conv-title = Store AI conversations in the cloud
-settings-privacy-cloud-conv-description-on = Agent conversations can be shared with others and are retained when you log in on different devices. This data is only stored for product functionality, and Warp will not use it for analytics.
-settings-privacy-cloud-conv-description-off = Agent conversations are only stored locally on your machine, are lost upon logout, and cannot be shared. Note: conversation data for ambient agents are still stored in the cloud.
-settings-privacy-org-managed-tooltip = This setting is managed by your organization.
-settings-privacy-network-log-title = Network log console
-settings-privacy-network-log-description = We've built a native console that allows you to view all communications from Warp to external servers to ensure you feel comfortable that your work is always kept safe.
-settings-privacy-network-log-link = View network logging
 
 # --- ANCHOR-SUB-EXEC-MODAL-BLOCKS (agent-settings-misc) ---
 # ---- execution_profile_view ----
@@ -1511,7 +1392,7 @@ settings-environments-page-description = Environments define where your ambient 
 settings-environments-search-placeholder = Search environments...
 settings-environments-no-matches = No environments match your search.
 settings-environments-section-personal = Personal
-settings-environments-section-team-default = Shared by Warp and your team
+settings-environments-section-team-default = Provided by Warp and this device
 settings-environments-section-team-named = Shared by Warp and { $team }
 settings-environments-env-id-prefix = Env ID: { $id }
 settings-environments-detail-image = Image: { $image }
@@ -1600,7 +1481,6 @@ settings-ai-next-command-description = Let AI suggest the next command to run ba
 settings-ai-prompt-suggestions-description = Let AI suggest natural language prompts, as inline banners in the input, based on recent commands and their outputs.
 settings-ai-suggested-code-banners-description = Let AI suggest code diffs and queries as inline banners in the blocklist, based on recent commands and their outputs.
 settings-ai-natural-language-autosuggestions = Let AI suggest natural language autosuggestions, based on recent commands and their outputs.
-settings-ai-shared-block-title-generation-description = Let AI generate a title for your shared block based on the command and output.
 settings-ai-git-operations-autogen-description = Let AI generate commit messages and pull request titles and descriptions.
 
 # =============================================================================
@@ -1754,16 +1634,10 @@ keybinding-desc-pane-group-navigate-next = Activate next pane
 
 # Mouse / Notebooks / Workflows / Folders
 keybinding-desc-workspace-toggle-mouse-reporting = Toggle Mouse Reporting
-keybinding-desc-workspace-create-team-notebook = Create a new team notebook
-keybinding-desc-workspace-create-team-notebook-menu = New Team Notebook
 keybinding-desc-workspace-create-personal-notebook = Create a new personal notebook
 keybinding-desc-workspace-create-personal-notebook-menu = New Personal Notebook
-keybinding-desc-workspace-create-team-workflow = Create a new team workflow
-keybinding-desc-workspace-create-team-workflow-menu = New Team Workflow
 keybinding-desc-workspace-create-personal-workflow = Create a new personal workflow
 keybinding-desc-workspace-create-personal-workflow-menu = New Personal Workflow
-keybinding-desc-workspace-create-team-folder = Create a new team folder
-keybinding-desc-workspace-create-team-folder-menu = New Team Folder
 keybinding-desc-workspace-create-personal-folder = Create a new personal folder
 keybinding-desc-workspace-create-personal-folder-menu = New Personal Folder
 
@@ -1771,7 +1645,7 @@ keybinding-desc-workspace-create-personal-folder-menu = New Personal Folder
 keybinding-desc-workspace-new-tab = Create new tab
 keybinding-desc-workspace-new-terminal-tab = New Terminal Tab
 keybinding-desc-workspace-new-agent-tab = New Agent Tab
-keybinding-desc-workspace-new-cloud-agent-tab = New Cloud Agent Tab
+keybinding-desc-workspace-new-cloud-agent-tab = New Agent Tab
 new-session-create-new-tab = Create New Tab
 new-session-create-new-window = Create New Window
 new-session-split-pane-down = Split Pane Down
@@ -1797,6 +1671,7 @@ keybinding-desc-workspace-left-panel-project-explorer = Left Panel: Project expl
 keybinding-desc-workspace-left-panel-global-search = Left Panel: Global search
 keybinding-desc-workspace-left-panel-warp-drive = Left Panel: Warp Drive
 keybinding-desc-workspace-left-panel-ssh-manager = Left Panel: SSH Manager
+keybinding-desc-workspace-left-panel-skill-manager = Left Panel: Skill Manager
 keybinding-desc-workspace-open-global-search = Open global search
 keybinding-desc-workspace-open-global-search-menu = Global Search
 keybinding-desc-workspace-toggle-warp-drive = Toggle Warp Drive
@@ -1851,20 +1726,15 @@ keybinding-desc-workspace-uninstall-cli = Uninstall Oz CLI command
 keybinding-desc-workspace-toggle-ai-assistant = Toggle Warp AI
 
 # Env vars / prompts
-keybinding-desc-workspace-create-team-env-vars = Create new team environment variables
-keybinding-desc-workspace-create-team-env-vars-menu = New Team Environment Variables
 keybinding-desc-workspace-create-personal-env-vars = Create new personal environment variables
 keybinding-desc-workspace-create-personal-env-vars-menu = New Personal Environment Variables
 keybinding-desc-workspace-create-personal-ai-prompt = Create a new personal prompt
 keybinding-desc-workspace-create-personal-ai-prompt-menu = New Personal Prompt
-keybinding-desc-workspace-create-team-ai-prompt = Create a new team prompt
-keybinding-desc-workspace-create-team-ai-prompt-menu = New Team Prompt
 
 # Focus / import
 keybinding-desc-workspace-shift-focus-left = Switch Focus to Left Panel
 keybinding-desc-workspace-shift-focus-right = Switch Focus to Right Panel
 keybinding-desc-workspace-import-to-personal-drive = Import To Personal Drive
-keybinding-desc-workspace-import-to-team-drive = Import To Team Drive
 
 # Drive / repository / AI rules / MCP
 keybinding-desc-workspace-open-repository = Open repository
@@ -1873,12 +1743,12 @@ keybinding-desc-workspace-open-ai-fact-collection = Open AI Rules
 keybinding-desc-workspace-open-mcp-servers = Open MCP Servers
 keybinding-desc-workspace-jump-to-latest-toast = Jump to latest agent task
 keybinding-desc-workspace-toggle-notification-mailbox = Toggle notification mailbox
-keybinding-desc-workspace-toggle-agent-management-view = Toggle the agent management view
 
 # Settings pages
 keybinding-desc-workspace-show-settings = Open Settings
 keybinding-desc-workspace-show-settings-menu = Settings
-keybinding-desc-workspace-show-settings-account = Open Settings: Account
+# OpenWarp: keybinding-desc-workspace-show-settings-account removed alongside the
+# Account settings page.
 keybinding-desc-workspace-show-settings-appearance = Open Settings: Appearance
 keybinding-desc-workspace-show-settings-appearance-menu = Appearance...
 keybinding-desc-workspace-show-settings-features = Open Settings: Features
@@ -1888,9 +1758,6 @@ keybinding-desc-workspace-show-settings-keyboard-shortcuts = Open Settings: Keyb
 keybinding-desc-workspace-show-settings-keyboard-shortcuts-menu = Configure Keyboard Shortcuts...
 keybinding-desc-workspace-show-settings-about = Open Settings: About
 keybinding-desc-workspace-show-settings-about-menu = About Warp
-keybinding-desc-workspace-show-settings-teams = Open Settings: Teams
-keybinding-desc-workspace-show-settings-teams-menu = Open Team Settings
-keybinding-desc-workspace-show-settings-privacy = Open Settings: Privacy
 keybinding-desc-workspace-show-settings-warpify = Open Settings: Warpify
 keybinding-desc-workspace-show-settings-warpify-menu = Configure Warpify...
 keybinding-desc-workspace-show-settings-ai = Open Settings: AI
@@ -1916,15 +1783,13 @@ keybinding-desc-terminal-attach-as-context-menu = Attach Selection as Agent Cont
 keybinding-desc-workspace-init-project = Initiate project for warp
 keybinding-desc-workspace-add-current-folder = Add current folder as project
 
-# Workspace debug / crash / sentry / heap profile bindings
-keybinding-desc-workspace-crash-macos = Crash the app (for testing sentry-cocoa)
-keybinding-desc-workspace-crash-other = Crash the app (for testing sentry-native)
+# Workspace debug / crash / heap profile bindings
+keybinding-desc-workspace-crash-macos = Crash the app (for testing local crash reporting)
+keybinding-desc-workspace-crash-other = Crash the app (for testing local crash reporting)
 keybinding-desc-workspace-log-review-comment-send-status = [Debug] Log review comment send status for active tab
-keybinding-desc-workspace-panic = Trigger a panic (for testing sentry-rust)
+keybinding-desc-workspace-panic = Trigger a panic (for testing local panic logging)
 keybinding-desc-workspace-open-view-tree-debugger = Open view tree debugger
 keybinding-desc-workspace-view-first-time-user-experience = [Debug] View first-time user experience
-keybinding-desc-workspace-open-build-plan-migration-modal = [Debug] Open Build Plan Migration Modal
-keybinding-desc-workspace-reset-build-plan-migration-modal-state = [Debug] Reset Build Plan Migration Modal State
 keybinding-desc-workspace-undismiss-aws-login-banner = [Debug] Un-dismiss AWS login banner
 keybinding-desc-workspace-open-oz-launch-modal = [Debug] Open Oz Launch Modal
 keybinding-desc-workspace-reset-oz-launch-modal-state = [Debug] Reset Oz Launch Modal State
@@ -1967,7 +1832,7 @@ keybinding-desc-terminal-find = Find in Terminal
 keybinding-desc-terminal-select-bookmark-up = Select the closest bookmark up
 keybinding-desc-terminal-select-bookmark-down = Select the closest bookmark down
 keybinding-desc-terminal-open-block-context-menu = Open block context menu
-keybinding-desc-terminal-toggle-team-workflows-modal = Toggle team workflows modal
+keybinding-desc-terminal-toggle-workflows-modal = Toggle workflows modal
 keybinding-desc-terminal-copy-git-branch = Copy git branch
 keybinding-desc-terminal-clear-blocks = Clear Blocks
 keybinding-desc-terminal-cursor-word-left = Move cursor one word to the left within an executing command
@@ -2238,10 +2103,10 @@ rules-init-project-button = Initialize Project
 
 # --- Agent view zero-state + message bar ---
 agent-zero-state-title = New Oz agent conversation
-agent-zero-state-title-cloud = New Oz cloud agent conversation
 agent-zero-state-description = Send a prompt below to start a new conversation
 agent-zero-state-description-with-location = Send a prompt below to start a new conversation in `{ $location }`
 agent-zero-state-recent-activity = RECENT ACTIVITY
+agent-zero-state-hide-hints-tooltip = Hide shortcut hints (re-enable in Settings)
 inline-agent-header-prompt-to-interact-command = Prompt agent to interact with `{ $command }`
 inline-agent-header-prompt-to-interact-running-command = Prompt agent to interact with the running command
 inline-agent-header-waiting-on-instructions = Agent is waiting for instructions
@@ -2255,8 +2120,6 @@ agent-toolbar-available-chips = Available chips
 agent-message-bar-get-figma-mcp = Get Figma MCP
 agent-message-bar-enable-figma-mcp = Enable Figma MCP
 agent-message-bar-enabling = Enabling...
-orchestration-parent-conversation = Parent conversation
-orchestration-back-to-parent-conversation = Back to parent conversation
 child-agent-default-name = Agent
 agent-zero-state-switch-model = switch model
 agent-zero-state-go-back-to-terminal = go back to terminal
@@ -2296,7 +2159,6 @@ agent-error-attempting-resume-conversation = Attempting to resume conversation..
 toggle-setting-enable = Enable { $suffix }
 toggle-setting-disable = Disable { $suffix }
 
-toggle-suffix-ai = AI
 toggle-suffix-active-ai = Active AI
 toggle-suffix-ai-input-autodetect-agent = terminal command autodetection in agent input
 toggle-suffix-ai-input-autodetect-nld = natural language detection
@@ -2305,7 +2167,6 @@ toggle-suffix-next-command = Next Command
 toggle-suffix-prompt-suggestions = prompt suggestions
 toggle-suffix-code-suggestions = code suggestions
 toggle-suffix-nl-autosuggestions = natural language autosuggestions
-toggle-suffix-shared-block-title-gen = shared block title generation
 toggle-suffix-voice-input = voice input
 toggle-suffix-codebase-index = codebase index
 toggle-suffix-auto-indexing = auto-indexing
@@ -2352,8 +2213,7 @@ toggle-suffix-input-message-line = terminal input message line
 toggle-suffix-slash-commands-terminal = slash commands in terminal mode
 toggle-suffix-integrated-gpu = integrated GPU rendering (low power)
 toggle-suffix-wayland = Wayland for window management
-toggle-suffix-settings-sync = settings sync
-toggle-suffix-app-analytics = app analytics
+toggle-suffix-app-analytics = local diagnostics
 toggle-suffix-crash-reporting = crash reporting
 toggle-suffix-secret-redaction = secret redaction
 toggle-suffix-recording-mode = recording mode
@@ -2447,7 +2307,6 @@ menu-ai-block-fork-from-query = Fork from "{ $query }"
 
 # --- tab 右键菜单(tab.rs) ---
 menu-tab-stop-sharing = Stop sharing
-menu-tab-share-session = Share session
 menu-tab-stop-sharing-all = Stop sharing all
 menu-tab-copy-link = Copy link
 menu-tab-rename = Rename tab
@@ -2465,7 +2324,7 @@ menu-tab-default-no-color = Default (no color)
 
 # --- pane header 溢出菜单(terminal/view/pane_impl.rs) ---
 menu-pane-copy-link = Copy link
-menu-pane-stop-sharing-session = Stop sharing session
+menu-pane-stop-sharing-session = Stop session broadcast
 menu-pane-open-on-desktop = Open on Desktop
 
 # --- 文件树右键菜单(code/file_tree/view.rs) ---
@@ -2524,8 +2383,6 @@ slash-cmd-model-desc = Switch the base agent model
 slash-cmd-profile-desc = Switch the active execution profile
 slash-cmd-plan-desc = Prompt the agent to do some research and create a plan for a task
 slash-cmd-plan-hint = <describe your task>
-slash-cmd-orchestrate-desc = Break a task into subtasks and run them in parallel with multiple agents
-slash-cmd-orchestrate-hint = <describe your task>
 slash-cmd-compact-desc = Free up context by summarizing convo history
 slash-cmd-compact-hint = <optional custom summarization instructions>
 slash-cmd-compact-and-desc = Compact conversation and then send a follow-up prompt
@@ -2578,11 +2435,6 @@ rewind-dialog-body = Are you sure you want to rewind? This will restore your cod
 rewind-dialog-info = Rewinding does not affect files edited manually or via shell commands.
 rewind-dialog-cancel = Cancel
 rewind-dialog-confirm = Rewind
-
-# Transfer ownership confirmation modal (app/src/settings_view/transfer_ownership_confirmation_modal.rs)
-transfer-ownership-dialog-body = Are you sure you want to transfer team ownership to { $name }? You will no longer be the owner and will not be able to take any administrative actions for this team.
-transfer-ownership-dialog-cancel = Cancel
-transfer-ownership-dialog-confirm = Transfer
 
 # --- ANCHOR-SUB-SEARCH-PALETTES ---
 # Search palettes (app/src/search/command_palette/view.rs, app/src/search/welcome_palette/view.rs)
@@ -2694,11 +2546,6 @@ drive-import-folder-upload-error = Failed to upload folder to server
 
 # Drive main panel and workflow editor (app/src/drive/index.rs, app/src/drive/workflows/*)
 drive-title = Drive
-drive-create-team-text = Share commands and knowledge with your teammates.
-drive-join-team-header = Collaborate with { $count } of your { $count ->
-        [one] teammate
-       *[other] teammates
-    } already on Warp.
 drive-environment-variables = Environment variables
 drive-folder = Folder
 drive-notebook = Notebook
@@ -2718,15 +2565,10 @@ drive-empty-trash = Empty trash
 drive-trash-section-title = TRASH
 drive-trash-title = Trash
 drive-trash-deletion-warning = Items in the trash will be deleted forever after 30 days.
-drive-team-space-zero-state = Drag or move a personal workflow or notebook here to share it with your team.
-drive-create-team-button = Create team
-drive-view-teams-to-join = View { $count ->
-        [one] team
-       *[other] teams
-    } to join
-drive-or = Or
-drive-sign-up-storage-limit = Sign up for free to increase your storage limit and unlock more features.
-drive-sign-up = Sign up
+drive-team-space-zero-state = Team spaces are unavailable in local builds. Manage workflows and notebooks in Personal.
+drive-sign-up-storage-limit = Local storage limits are enforced on this device.
+drive-local-storage-limit-description = Local storage limits are enforced on this device. Remove unused items to create space for new Warp Drive objects.
+drive-sign-up = Manage locally
 drive-copy-link = Copy link
 drive-collapse-all = Collapse all
 drive-revert-to-server = Revert to server
@@ -2763,8 +2605,8 @@ drive-object-type-ai-fact = AI Fact
 drive-object-type-rules = Rules
 drive-object-type-mcp-server = MCP Server
 drive-object-type-mcp-servers = MCP Servers
-drive-shared-object-limit-hit-banner-prefix = You've run out of { $object_type }s on your plan.
-drive-shared-object-limit-hit-banner = You've run out of { $object_type }s on your plan. Upgrade for access to more notebooks, workflows, shared sessions, and AI credits.
+drive-shared-object-limit-hit-banner-prefix = You've reached the local { $object_type } limit.
+drive-shared-object-limit-hit-banner = You've reached the local { $object_type } limit.
 drive-payment-issue-banner-prefix = Shared objects have been restricted due to a subscription payment issue.
 drive-payment-issue-banner-admin = Shared objects have been restricted due to a subscription payment issue. Please update your payment information to restore access.
 drive-payment-issue-banner-admin-enterprise = Shared objects have been restricted due to a subscription payment issue. Please contact support@warp.dev to restore access.
@@ -2798,14 +2640,6 @@ workflow-ai-assist-error-rate-limited = Looks like you're out of AI credits. Ple
 workflow-enum-new = New
 workflow-alias-name-placeholder = alias name
 workflow-add-argument-tooltip = Add a workflow argument
-
-# --- ANCHOR-SUB-SETTINGS-PRIVACY-ADD-REGEX ---
-# Privacy settings add regex modal (app/src/settings_view/privacy/add_regex_modal.rs)
-settings-privacy-add-regex-name-placeholder = e.g. "Google API Key"
-settings-privacy-add-regex-name-label = Name (optional)
-settings-privacy-add-regex-pattern-label = Regex pattern
-settings-privacy-add-regex-invalid = Invalid regex
-settings-privacy-add-regex-cancel = Cancel
 
 # Workspace panels (app/src/workspace/view/*)
 workspace-conversation-list-search = Search
@@ -2842,6 +2676,14 @@ workspace-left-panel-global-search = Global search
 workspace-left-panel-warp-drive = Warp Drive
 workspace-left-panel-agent-conversations = Agent conversations
 workspace-left-panel-ssh-manager = SSH Manager
+workspace-left-panel-skill-manager = Skill Manager
+skill-manager-search-placeholder = Search skills
+skill-manager-filter-all = All
+skill-manager-filter-provider = Source
+skill-manager-meta-default = Default
+skill-manager-meta-duplicate = Duplicate
+skill-manager-empty = No skills match the current filters.
+skill-manager-preview-empty = Select a skill to preview SKILL.md.
 workspace-left-panel-ssh-manager-placeholder = SSH Manager — coming soon
 workspace-left-panel-ssh-manager-detail-empty = Select a server to see its details.
 workspace-left-panel-ssh-manager-detail-host = Host
@@ -2886,7 +2728,6 @@ workspace-right-panel-close-panel = Close panel
 workspace-right-panel-code-review = Code review
 workspace-right-panel-minimize = Minimize
 workspace-right-panel-maximize = Maximize
-terminal-pane-new-cloud-agent-title = New cloud agent
 terminal-pane-new-agent-conversation-title = New agent conversation
 vertical-tabs-no-tabs-open = No tabs open
 vertical-tabs-untitled-tab = Untitled tab
@@ -2954,20 +2795,10 @@ wasm-nux-download-description = Warp is the intelligent terminal with AI and you
 wasm-nux-learn-more = Learn more
 wasm-nux-download-confirm = Download
 wasm-nux-object-kind-drive-objects = Warp Drive objects
-wasm-nux-object-kind-shared-sessions = shared sessions
 wasm-nux-object-kind-warp-links = Warp links
 wasm-nux-always-open-on-web-title = Always open { $object_kind } on the web?
 wasm-nux-always-open-on-web-detail = You can change this at any time in settings.
 wasm-nux-yes = Yes
-
-# Drive cloud action confirmation dialog (app/src/drive/cloud_action_confirmation_dialog.rs)
-drive-cloud-action-cancel = Cancel
-drive-cloud-action-delete-team-title = Are you sure you want to delete this team?
-drive-cloud-action-leave-team-title = Are you sure you want to leave this team?
-drive-cloud-action-delete-team-body = Deleting this team will permanently delete it and all of its related content, including billing information or credits. You will not be able to restore them.
-drive-cloud-action-leave-team-body = You will need to be reinvited in order to rejoin.
-drive-cloud-action-delete-team-confirm = Yes, delete
-drive-cloud-action-leave-team-confirm = Yes, leave
 
 # Auth override warning (app/src/auth/auth_override_warning_body.rs)
 auth-override-warning-title = New login detected
@@ -3000,9 +2831,9 @@ auth-paste-token-continue = Continue
 auth-offline-first-use-description = You are currently offline. An internet connection is required to use Warp for the first time.
 auth-offline-first-use-learn-more = Learn more
 auth-offline-overlay-title = Using Warp Offline
-auth-offline-overlay-paragraph-1 = All of Warp's non-cloud features work offline.
-auth-offline-overlay-paragraph-2 = However, we require users to be online when using Warp for the first time in order to enable Warp's AI and cloud features.
-auth-offline-overlay-paragraph-3 = We offer cloud features to all users, and so we need an internet connection to meter AI usage, prevent abuse, and associate cloud objects with users. If you opt to use Warp logged-out, a unique ID will be attached to an anonymous user account in order to support these features.
+auth-offline-overlay-paragraph-1 = Warp can be used offline for local terminal and agent workflows.
+auth-offline-overlay-paragraph-2 = Some setup flows may still need an internet connection when they depend on external providers.
+auth-offline-overlay-paragraph-3 = Logged-out usage keeps local workflows on this machine.
 auth-offline-overlay-dismiss = Dismiss
 auth-privacy-settings-title = Privacy Settings
 auth-privacy-settings-done = Done
@@ -3019,7 +2850,7 @@ auth-logout-running-processes-warning = You have { $count } { $count ->
         [one] process
        *[other] processes
     } running.
-auth-logout-shared-sessions-warning = You have { $count } shared { $count ->
+auth-logout-shared-sessions-warning = You have { $count } remote { $count ->
         [one] session
        *[other] sessions
     }.
@@ -3107,8 +2938,7 @@ agent-tip-drag-image = Drag an image into the pane to attach it as agent context
 agent-tip-interactive-tools = Prompt the agent to control interactive tools like node, python, postgres, gdb, or vim.
 agent-tip-code-review-panel = <keybinding> to open the code review panel and review the agent's changes.
 agent-tip-add-mcp = `/add-mcp` to add an MCP server to your workspace.
-agent-tip-open-mcp-servers = `/open-mcp-servers` to view and share MCP servers with your team.
-agent-tip-create-environment = `/create-environment` to turn a repo into a remote docker environment an agent can run in.
+agent-tip-open-mcp-servers = `/open-mcp-servers` to view and manage local MCP servers.
 agent-tip-add-prompt = `/add-prompt` to create a reusable prompt for repeatable workflows.
 agent-tip-add-rule = `/add-rule` to create a global agent rule.
 agent-tip-fork = `/fork` to create a fresh copy of the current conversation, optionally with a new prompt.
@@ -3209,7 +3039,7 @@ onboarding-intention-terminal-title = Just use the terminal
 onboarding-intention-terminal-badge = No AI features
 onboarding-intention-terminal-description = A modern terminal optimized for speed, context, and control without AI.
 onboarding-ai-feature-warp-agents = Warp agents
-onboarding-ai-feature-oz-cloud-agents-platform = Oz cloud agents platform
+onboarding-ai-feature-oz-cloud-agents-platform = Oz local agents platform
 onboarding-ai-feature-next-command-predictions = Next command predictions
 onboarding-ai-feature-prompt-suggestions = Prompt suggestions
 onboarding-ai-feature-remote-control-agents = Remote control with Claude Code, Codex, and other agents
@@ -3218,8 +3048,8 @@ onboarding-agent-title = Customize your Warp Agent
 onboarding-agent-subtitle = Select your in-app agent's defaults.
 onboarding-agent-default-model = Default model
 onboarding-agent-autonomy = Autonomy
-onboarding-agent-set-by-team-workspace = Set by Team Workspace
-onboarding-agent-team-workspace-autonomy-description = Autonomy settings are configured as part of your team workspace.
+onboarding-agent-set-by-team-workspace = Managed by local workspace policy
+onboarding-agent-team-workspace-autonomy-description = Autonomy settings are configured by the local workspace policy.
 onboarding-agent-autonomy-full-title = Full
 onboarding-agent-autonomy-full-subtitle = Runs commands, writes code, and reads files without asking.
 onboarding-agent-autonomy-partial-title = Partial
@@ -3227,12 +3057,6 @@ onboarding-agent-autonomy-partial-subtitle = Can plan, read files, and execute l
 onboarding-agent-autonomy-none-title = None
 onboarding-agent-autonomy-none-subtitle = Takes no actions without your approval.
 onboarding-agent-disable-warp-agent = Disable Warp Agent
-onboarding-agent-upgrade-title = Upgrade for access to premium models.
-onboarding-agent-upgrade-subtitle = State-of-the-art models require paid plans.
-onboarding-agent-paste-token-link = Click here
-onboarding-agent-open-page-manually = {" "}and open the page manually.{" "}
-onboarding-agent-paste-token-suffix = {" "}to paste your token from the browser.
-onboarding-agent-plan-activated = Plan successfully activated. All premium models are available.
 onboarding-project-title = Open a project
 onboarding-project-subtitle = Set up a project to optimize it for coding in Warp.
 onboarding-project-open-local-folder = Open local folder
@@ -3259,28 +3083,15 @@ onboarding-customize-global-file-search = Global file search
 onboarding-customize-warp-drive = Warp Drive
 onboarding-customize-tools-panel = Tools panel
 onboarding-customize-code-review = Code review
-onboarding-free-user-title = Let's get started.
-onboarding-free-user-agent-title = Agent driven development with Warp's built-in agent
-onboarding-free-user-agent-description = Iterate, plan, and build with Oz: Warp's built-in agent. Available locally or in the cloud.
-onboarding-free-user-terminal-title = Classic terminal with third-party agents
-onboarding-free-user-terminal-description = A modern terminal that supports third-party agents (Claude Code, Codex, Gemini CLI) and classic terminal workflows.
-onboarding-free-user-subscribe-title = Subscribe to access agent driven development in Warp.
-onboarding-free-user-subscribe-item-credits = 1,500 credits per month
-onboarding-free-user-subscribe-item-models = Access to frontier OpenAI, Anthropic, and Google models
-onboarding-free-user-subscribe-item-reload = Access to Reload credits and volume-based discounts
-onboarding-free-user-subscribe-item-cloud-agents = Extended cloud agents access
-onboarding-free-user-subscribe-item-indexing = Highest codebase indexing limits
-onboarding-free-user-subscribe-item-drive = Unlimited Warp Drive objects and collaboration
-onboarding-free-user-subscribe-item-support = Private email support
-onboarding-free-user-subscribe-item-cloud-storage = Unlimited cloud conversation storage
 
-auth-opt-out-line-1 = If you'd like to opt out of analytics and AI features,
-auth-opt-out-line-2-prefix = you can adjust your{" "}
-auth-privacy-settings-prefix = If you'd like to opt out of analytics, you can adjust your{" "}
-auth-privacy-settings-ai-prefix = If you'd like to opt out of analytics and AI features, you can adjust your{" "}
+auth-opt-out-line-1 = OpenWarp stores onboarding choices locally.
+auth-opt-out-line-2-prefix = You can adjust your{" "}
+auth-privacy-settings-prefix = You can adjust your{" "}
+auth-privacy-settings-ai-prefix = You can adjust your local AI preferences in{" "}
 auth-privacy-settings = Privacy Settings
-auth-terms-prefix = By continuing, you agree to Warp's{" "}
-auth-terms-of-service = Terms of Service
+auth-local-privacy-note = OpenWarp stores onboarding choices locally on this device.
+auth-terms-prefix = Continuing keeps this setup on your device.{" "}
+auth-terms-of-service = Local setup
 auth-log-in = Log in
 auth-paste-token-from-browser = Click here to paste your token from the browser
 auth-login-slide-title-warp-drive = Get started with Warp Drive
@@ -3299,7 +3110,7 @@ auth-disable-ai-features-confirm-title = Are you sure you want to disable AI fea
 auth-disable-warp-drive-confirm-body = Warp Drive lets you save workflows and knowledge across devices and share them with your team. By continuing, you won't have access to the following features:
 auth-disable-ai-features-confirm-body = Warp is better with AI. By continuing, you won't have access to any of the following features:
 auth-feature-session-sharing = Session Sharing
-auth-sign-up = Sign up
+auth-sign-up = Continue locally
 auth-sign-in = Sign in
 auth-already-have-account = Already have an account?{" "}
 auth-dont-want-sign-in-now = Don't want to sign in right now?{" "}
@@ -3308,14 +3119,12 @@ auth-skip-login-confirm-title = Are you sure you want to skip login?
 auth-skip-login-confirm-line-1 = You can sign up later, but some features, such as AI,
 auth-skip-login-confirm-line-2-prefix = are only available to logged-in users.{" "}
 auth-yes-skip-login = Yes, skip login
-auth-require-login-ai-collaboration = In order to use Warp's AI features or collaborate with others, please create an account.
-auth-require-login-drive-limit = In order to create more objects in Warp Drive, please create an account.
-auth-require-login-share = In order to share, please create an account.
+auth-require-login-ai-collaboration = Local AI features do not require a Warp account.
+auth-require-login-drive-limit = Warp Drive objects are stored locally in OpenWarp.
+auth-require-login-share = Sharing is unavailable in local OpenWarp builds.
 auth-welcome-title = Welcome to Warp!
-auth-sign-up-for-warp = Sign up for Warp
+auth-sign-up-for-warp = Continue in OpenWarp
 auth-browser-sign-in-title = Sign in on your browser\nto continue
-auth-browser-not-launched-prefix = If your browser hasn't launched,{" "}
-auth-copy-url = copy the URL
 auth-open-page-manually-suffix = and open the page manually.
 
 voice-try-input = Try Voice Input
@@ -3593,9 +3402,7 @@ notifications-banner-allow-permissions-title = Don't forget to 'Allow' the permi
 notifications-banner-configure-notifications = Configure notifications
 notifications-banner-set-permissions = Set permissions
 ai-edit-api-keys = Edit API Keys
-ai-manage-privacy-settings = Manage privacy settings
 ai-block-manage-agent-permissions = Manage Agent permissions
-agent-zero-state-cloud-agents-description = Use cloud agents to run parallel agents, build agents that run autonomously, and check in on your agents from anywhere.{" "}
 agent-zero-state-visit-docs = Visit docs
 ai-execution-profile-agent-decides = Agent decides
 ai-execution-profile-always-ask = Always ask
@@ -3632,7 +3439,7 @@ notebook-apply-link = Apply link
 notebook-sync-conflict-resolution-message = This notebook could not be saved because changes were made while you were editing. Please copy your work and refresh.
 notebook-sync-feature-not-available-message = This notebook could not be saved to the server because the feature is temporarily unavailable. The changes are saved locally. Please retry later.
 notebook-link-copied-toast = Link copied
-settings-share-with-team = Share with team
+settings-share-with-team = Save locally
 tooltip-secrets-not-sent-to-warp-server = *Secrets are not sent to Warp's server.
 editor-voice-limit-hit-toast = You have hit the limit for Voice requests. Your limit will be refreshed as a part of your next cycle.
 editor-voice-error-toast = An error occurred while processing your voice input.
