@@ -106,7 +106,7 @@ pub fn render_static_item(props: StaticItemProps<'_>, app: &AppContext) -> Box<d
     let title_text = Text::new_inline(
         crate::t!("workspace-conversation-list-new-conversation"),
         appearance.ui_font_family(),
-        appearance.ui_font_size() + 2.,
+        appearance.ui_font_subheading(),
     )
     .with_color(theme.main_text_color(theme.background()).into())
     .finish();
@@ -379,7 +379,7 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
         )
         .finish();
 
-    // OpenWarp Phase 2a: sharing dialog overlay removed.
+    // Zap Phase 2a: sharing dialog overlay removed.
     let position_id = conversation_item_position_id(&conversation_id);
     let item_stack = Stack::new().with_child(event_handler);
 

@@ -642,15 +642,15 @@ const BOOTSTRAP_FAILED_DURATION: Duration = Duration::from_secs(7);
 /// during the bootstrap period.
 const ENV_VAR_BOOTSTRAP_FAILED_DURATION: Duration = Duration::from_secs(60);
 const KNOWN_ISSUES_URL: &str =
-    "https://docs.warp.dev/support-and-community/troubleshooting-and-support/known-issues";
+    "";
 
 /// Link to supported custom prompts.
 const PROMPT_COMPATIBILITY_URL: &str =
-    "https://docs.warp.dev/terminal/appearance/prompt#custom-prompt-compatibility-table";
+    "";
 
 /// Link to troubleshooting steps for ControlMaster errors.
 const CONTROLMASTER_ISSUES_URL: &str =
-    "https://docs.warp.dev/terminal/warpify/ssh-legacy#troubleshooting";
+    "";
 
 /// Link to instructions on how to update p10k.
 const P10K_UPDATE_INSTRUCTIONS_URL: &str =
@@ -677,9 +677,9 @@ const MIN_DELTA_FOR_TEXT_SELECTION: f32 = 0.5;
 /// Notifications-specific info
 /// TODO (suraj): add documentation for notifications in gitbook
 const NOTIFICATIONS_LEARN_MORE_URL: &str =
-    "https://docs.warp.dev/terminal/more-features/notifications";
+    "";
 pub const NOTIFICATIONS_TROUBLESHOOT_URL: &str =
-    "https://docs.warp.dev/terminal/more-features/notifications#troubleshooting-notifications";
+    "";
 
 const DEBOUNCE_PERIOD: Duration = Duration::from_millis(40);
 
@@ -791,16 +791,16 @@ impl NotificationsTrigger {
     pub fn discovery_banner_copy(&self) -> &'static str {
         match self {
             NotificationsTrigger::LongRunningCommand(..) => {
-                "Warp can notify you when long-running commands finish."
+                "Zap can notify you when long-running commands finish."
             }
             NotificationsTrigger::AgentTaskCompleted(..) => {
-                "Warp can notify you when an agent finishes responding."
+                "Zap can notify you when an agent finishes responding."
             }
             NotificationsTrigger::NeedsAttention => {
-                "Warp can notify you when a command or agent needs your attention."
+                "Zap can notify you when a command or agent needs your attention."
             }
             NotificationsTrigger::PasswordPrompt => {
-                "Warp can notify you when you're prompted to enter a password."
+                "Zap can notify you when you're prompted to enter a password."
             }
         }
     }
@@ -1624,7 +1624,7 @@ pub enum Event {
     OpenWorkflowModalWithWorkflowObject(SyncId),
     // Tell the pane group to open the workflow modal with an unsaved workflow.
     OpenWorkflowModalWithTemporary(Box<Workflow>),
-    OpenWarpDriveObjectInPane(ObjectUid),
+    ZapDriveObjectInPane(ObjectUid),
     OpenSuggestedAgentModeWorkflowModal {
         workflow_and_id: SuggestedAgentModeWorkflowAndId,
     },
@@ -1673,7 +1673,7 @@ pub enum Event {
     BlockStarted {
         is_for_in_band_command: bool,
     },
-    /// Tell the pane group to open a file within Warp.
+    /// Tell the pane group to open a file within Zap.
     OpenFileInWarp {
         path: PathBuf,
         /// The session that the file belongs to.
@@ -1804,7 +1804,7 @@ pub enum Event {
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
     },
-    /// OpenWarp:终端里 Ctrl/Cmd+点击远端 SSH 会话输出中的文件路径时发出。
+    /// Zap:终端里 Ctrl/Cmd+点击远端 SSH 会话输出中的文件路径时发出。
     /// 走 buffer-sync 协议在编辑器里打开远端文件,而不是本地 `OpenFileWithTarget`。
     #[cfg(all(feature = "local_tty", feature = "local_fs"))]
     OpenRemoteFileFromTerminal {
@@ -1864,7 +1864,7 @@ pub enum LongRunningCommandAgentInteractionState {
 #[derive(Clone, Copy, Debug)]
 pub enum LeftPanelTargetView {
     FileTree,
-    WarpDrive,
+    ZapDrive,
 }
 
 #[derive(Clone)]
@@ -1914,6 +1914,8 @@ pub enum ContextMenuType {
     Input { position: Vector2F },
     /// 检测到 PTY 输出密码提示后自动打开。
     OneKeyPrompt,
+    /// 检测到 su root + 密码提示后弹出确认菜单。
+    SuRootPasswordConfirm,
 
     /// Lists the block(s) or text attached as context to the query represented in the AI block
     /// whose view id is the given [`EntityId`]. The menu is opened by clicking on the attached
@@ -1951,7 +1953,7 @@ impl ContextMenuType {
             ContextMenuType::AltScreen { position } => Some(*position),
             ContextMenuType::Prompt { position } => Some(*position),
             ContextMenuType::Input { position } => Some(*position),
-            ContextMenuType::OneKeyPrompt => None,
+            ContextMenuType::OneKeyPrompt | ContextMenuType::SuRootPasswordConfirm => None,
             ContextMenuType::AIBlockAttachedContext { .. } => None,
             ContextMenuType::AIBlockOverflowMenu { .. } => None,
         }
@@ -1970,7 +1972,7 @@ impl ContextMenuInfo {
             ContextMenuType::BlockList { .. } => "Block",
             ContextMenuType::Prompt { .. } => "Prompt",
             ContextMenuType::Input { .. } => "Input",
-            ContextMenuType::OneKeyPrompt => "OneKeyPrompt",
+            ContextMenuType::OneKeyPrompt | ContextMenuType::SuRootPasswordConfirm => "OneKeyPrompt",
             ContextMenuType::AltScreen { .. } => "AltScreen",
             ContextMenuType::AIBlockAttachedContext { .. } => "AIBlockContextList",
             ContextMenuType::AIBlockOverflowMenu { .. } => "AIBlockOverflowMenu",
@@ -1991,7 +1993,7 @@ impl ContextMenuInfo {
             },
             ContextMenuType::Prompt { .. } => "RightClick",
             ContextMenuType::Input { .. } => "RightClick",
-            ContextMenuType::OneKeyPrompt => "PasswordPrompt",
+            ContextMenuType::OneKeyPrompt | ContextMenuType::SuRootPasswordConfirm => "PasswordPrompt",
             ContextMenuType::AltScreen { .. } => "AltScreen",
             ContextMenuType::AIBlockAttachedContext { .. } => "AIBlockAttachedBlockChipLeftClick",
             ContextMenuType::AIBlockOverflowMenu { .. } => "AIBlockOverflowMenuClick",
@@ -2230,7 +2232,7 @@ impl Default for TerminalViewStateChange {
 }
 
 /// Whether or not this is the active terminal session. The active session for a pane group
-/// is the one used for executing workflows, Warp AI suggestions, etc.
+/// is the one used for executing workflows, Zap AI suggestions, etc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveSessionState {
     Active,
@@ -2329,6 +2331,8 @@ pub struct TerminalView {
     /// `secret_injector` 起飞后到完成/超时之间为 true。OneKey listener 看到
     /// true 直接跳过,避免与自动注入同时弹菜单。
     ssh_secret_auto_injection_in_flight: bool,
+    /// 检测到 su root 密码提示时暂存 root 密码,等待用户确认后注入。
+    pub(crate) su_root_password: Option<zeroize::Zeroizing<String>>,
 
     /// The search bar at the top of the terminal view.
     find_bar: ViewHandle<Find<TerminalFindModel>>,
@@ -2406,7 +2410,7 @@ pub struct TerminalView {
     control_master_error_banner_state: ControlMasterErrorBannerState,
 
     /// Banner to show if we detect a configuration in the user's rc files that
-    /// is incompatible with Warp.
+    /// is incompatible with Zap.
     incompatible_configuration_banner: ViewHandle<Banner<TerminalAction>>,
     is_incompatible_configuration_banner_open: bool,
 
@@ -2434,7 +2438,7 @@ pub struct TerminalView {
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     file_link_scanning_join_handle: Option<JoinHandle<()>>,
 
-    /// OpenWarp:远端 SSH 会话的 cwd 目录列表缓存,用于精确校验终端文件链接。
+    /// Zap:远端 SSH 会话的 cwd 目录列表缓存,用于精确校验终端文件链接。
     ///
     /// 键是 `(session_id, cwd 绝对路径)`,值为该目录的真实子项列表;`None`
     /// 表示该 cwd 的列表正在异步拉取中(daemon `ListDirectory` RPC)。
@@ -3276,7 +3280,8 @@ impl TerminalView {
                 | AppearanceEvent::LineHeightRatioChanged { .. }
                 | AppearanceEvent::MonospaceFontFamilyChanged { .. }
                 | AppearanceEvent::MonospaceFontWeightChanged { .. }
-                | AppearanceEvent::UiFontFamilyChanged { .. } => {
+                | AppearanceEvent::UiFontFamilyChanged { .. }
+                | AppearanceEvent::UiFontSizeChanged { .. } => {
                     me.refresh_size(ctx);
                 }
             },
@@ -3475,7 +3480,7 @@ impl TerminalView {
             &ai_action_model.as_ref(ctx).shell_command_executor(ctx),
             Self::handle_shell_command_executor_event,
         );
-        // OpenWarp BYOP:订阅 suggest_prompt 工具的 chip event,把模型主动建议的 prompt
+        // Zap BYOP:订阅 suggest_prompt 工具的 chip event,把模型主动建议的 prompt
         // 渲染成 input 上方的 chip。原版 emit 被 PromptSuggestionsViaMAA cargo feature
         // gate(`action_model/execute/suggest_prompt.rs:56`),OSS 默认无人订阅 → chip
         // 永远不显示 → oneshot channel 永挂 → conversation 卡死。已去掉 emit gate,
@@ -3826,6 +3831,7 @@ impl TerminalView {
             onekey_search_editor,
             onekey_query: String::new(),
             ssh_secret_auto_injection_in_flight: false,
+            su_root_password: None,
             context_menu,
             hovered_secret: None,
             open_secret_tool_tip: None,
@@ -4332,7 +4338,7 @@ impl TerminalView {
     /// Returns whether this terminal view should subscribe to git status
     /// updates. We subscribe when:
     /// 1. Agent mode is active and its chip list includes `GitDiffStats`, or
-    /// 2. Terminal mode with the Warp prompt enabled and the git stats chip
+    /// 2. Terminal mode with the Zap prompt enabled and the git stats chip
     ///    configured.
     #[cfg(feature = "local_fs")]
     fn should_subscribe_to_git_status(&self, ctx: &AppContext) -> bool {
@@ -4344,7 +4350,7 @@ impl TerminalView {
                 .contains(&ContextChipKind::GitDiffStats);
         }
 
-        // Terminal prompt path: the Warp prompt is active when honor_ps1 is
+        // Terminal prompt path: the Zap prompt is active when honor_ps1 is
         // off, or when UDI overrides PS1. GitDiffStats must also be in the
         // configured chip list.
         let is_using_warp_prompt = !*SessionSettings::as_ref(ctx).honor_ps1
@@ -8165,7 +8171,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            WarpifySuccessBlockEvent::OpenWarpifySettings => {
+            WarpifySuccessBlockEvent::ZapifySettings => {
                 ctx.emit(Event::OpenSettings(SettingsSection::Warpify));
             }
         }
@@ -8230,11 +8236,11 @@ impl TerminalView {
 
         let a11y_message = match &warpify_keybinding {
             Some(keystroke) => format!(
-                "You can press {} to Warpify this {} for more Warp features.",
+                "You can press {} to Warpify this {} for more Zap features.",
                 keystroke.displayed(),
                 lowercase_title
             ),
-            None => format!("You can Warpify this {lowercase_title} for more Warp features."),
+            None => format!("You can Warpify this {lowercase_title} for more Zap features."),
         };
 
         model
@@ -8397,7 +8403,7 @@ impl TerminalView {
 
         let a11y_content = AccessibilityContent::new(
             banner_title,
-            "Make sure you have enabled access for Warp notifications in System Preferences.",
+            "Make sure you have enabled access for Zap notifications in System Preferences.",
             WarpA11yRole::TextRole,
         );
         ctx.emit_a11y_content(a11y_content);
@@ -8473,7 +8479,7 @@ impl TerminalView {
         let should_start_new_conversation = suggestion.should_start_new_conversation;
         let conversation_id = banner_state.conversation_id;
         let trigger_block_id = trigger.as_ref().and_then(|t| t.block_id());
-        // OpenWarp BYOP:克隆 byop_action_id + prompt,用于 accept 末尾通知 executor
+        // Zap BYOP:克隆 byop_action_id + prompt,用于 accept 末尾通知 executor
         // (`complete_suggest_prompt_action(Accepted { query })` 关 oneshot channel)。
         let byop_banner_for_completion = banner_state
             .byop_action_id
@@ -8572,7 +8578,7 @@ impl TerminalView {
             );
         }
 
-        // OpenWarp BYOP:模型主动建议的 chip 被用户接受 → 通知 executor 关
+        // Zap BYOP:模型主动建议的 chip 被用户接受 → 通知 executor 关
         // oneshot channel,让 BYOP loop 拿到 `Accepted{query}` result,模型下一轮
         // 可见到"用户已采纳并提交了那条 prompt"的 tool_result。
         if let Some(banner) = byop_banner_for_completion.as_ref() {
@@ -9119,7 +9125,7 @@ impl TerminalView {
         reset_focus
     }
 
-    /// Recomputes the chip values for the Warp prompt (i.e. _not_ PS1).
+    /// Recomputes the chip values for the Zap prompt (i.e. _not_ PS1).
     fn refresh_warp_prompt(&mut self, ctx: &mut ViewContext<Self>) {
         // Ask the per-repo sub-model to re-fetch metadata so the chip values
         // reflect the latest git state (branch, diff stats, etc.).
@@ -9955,7 +9961,7 @@ impl TerminalView {
                         );
 
                         // On dogfood only, we're interested in the block commands, durations,
-                        // and exit codes to trial Warp Analytics.
+                        // and exit codes to trial Zap Analytics.
                         if ChannelState::channel().is_dogfood() {
                             send_telemetry_from_ctx!(
                                 TelemetryEvent::BlockCompletedOnDogfoodOnly {
@@ -10773,7 +10779,7 @@ impl TerminalView {
                 me.remove_ssh_remote_server_choice_block(session_id, ctx);
                 ctx.emit(Event::RemoteServerSkipRequested { session_id });
             }
-            SshRemoteServerChoiceViewEvent::OpenWarpifySettings => {
+            SshRemoteServerChoiceViewEvent::ZapifySettings => {
                 ctx.emit(Event::OpenSettings(SettingsSection::Warpify));
             }
         });
@@ -11230,7 +11236,7 @@ impl TerminalView {
 
         // Desktop notifications for CLI agents use the user's notification settings
         // directly. CLI agent notifications are explicit agent lifecycle events,
-        // so they should still notify when Warp is focused.
+        // so they should still notify when Zap is focused.
         if matches!(status, CLIAgentSessionStatus::InProgress) {
             return;
         }
@@ -11398,7 +11404,7 @@ impl TerminalView {
         let should_show_onboarding = FeatureFlag::AgentOnboarding.is_enabled()
             && !is_onboarded
             && !is_anonymous_or_logged_out;
-        let is_launch_modal_open = OneTimeModalModel::as_ref(ctx).is_openwarp_launch_modal_open();
+        let is_launch_modal_open = OneTimeModalModel::as_ref(ctx).is_zap_launch_modal_open();
 
         let has_plugin_instructions_block = self.rich_content_views.iter().any(|rc| {
             matches!(
@@ -11436,7 +11442,7 @@ impl TerminalView {
 
         // Now that the session is bootstrapped, update any restored AI blocks that were
         // created before bootstrapping with the shell launch data. This enables file link
-        // detection and the "Open in Warp" button on code blocks in restored conversations.
+        // detection and the "Open in Zap" button on code blocks in restored conversations.
         if let Some(shell_launch_data) = self.active_session.as_ref(ctx).shell_launch_data(ctx) {
             let ai_block_handles: Vec<_> = self
                 .rich_content_views
@@ -12395,7 +12401,7 @@ impl TerminalView {
 
     fn clear_prompt_suggestions(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(banner) = self.inline_banners_state.prompt_suggestions_banner.take() {
-            // OpenWarp BYOP:若该 chip 来自 suggest_prompt 工具,需要 cancel 掉
+            // Zap BYOP:若该 chip 来自 suggest_prompt 工具,需要 cancel 掉
             // 对应 oneshot channel,否则 BYOP loop 永挂等 result。
             self.complete_byop_suggest_prompt_if_needed(&banner, None, ctx);
             self.input.update(ctx, |input, ctx| {
@@ -12565,7 +12571,7 @@ impl TerminalView {
         self.update_scroll_position_locking(ScrollPositionUpdate::AfterEnd, ctx);
     }
 
-    /// OpenWarp BYOP:模型主动调 `suggest_prompt` 工具时,executor emit 此事件携带
+    /// Zap BYOP:模型主动调 `suggest_prompt` 工具时,executor emit 此事件携带
     /// prompt + label + action_id。
     ///
     /// **设计语义**:`suggest_prompt` 是 fire-and-forget(对齐 opencode agentic 工具行为)
@@ -13244,7 +13250,7 @@ impl TerminalView {
     }
 
     /// Shared logic for sending a desktop notification (or showing a discovery banner)
-    /// for any agent status change (both Warp's agent and any CLI agent).
+    /// for any agent status change (both Zap's agent and any CLI agent).
     fn send_agent_desktop_notification_or_show_banner(
         &mut self,
         trigger: NotificationsTrigger,
@@ -13963,7 +13969,7 @@ impl TerminalView {
                                         .with_on_select_action(TerminalAction::OpenFileInWarp(path))
                                         .into_item(),
                                 );
-                                // Because the default for cmd-click is to open in Warp, we also
+                                // Because the default for cmd-click is to open in Zap, we also
                                 // have an open-in-editor option.
                                 items.push(
                                     MenuItemFields::new(crate::t!("menu-block-open-in-editor"))
@@ -14084,7 +14090,7 @@ impl TerminalView {
                 let is_copy_both_disabled =
                     is_copy_commands_disabled && tail_block.output_to_string().trim().is_empty();
 
-                // OpenWarp:删除 "Share block..." / "Share session..." 入口(云端依赖)
+                // Zap:删除 "Share block..." / "Share session..." 入口(云端依赖)
                 let _ = is_share_disabled;
 
                 let mut items = vec![
@@ -14266,7 +14272,7 @@ impl TerminalView {
             ) => {
                 // If selection is empty, only show non-block related options
                 let items: Vec<MenuItem<TerminalAction>> = Vec::new();
-                // OpenWarp:删除 session_sharing_context_menu_items(云端 shared session 入口)
+                // Zap:删除 session_sharing_context_menu_items(云端 shared session 入口)
                 items
             }
             _ => vec![],
@@ -14661,9 +14667,9 @@ impl TerminalView {
                 .into_item(),
         );
 
-        // OpenWarp:删除 session_sharing_context_menu_items(云端 shared session 入口)
+        // Zap:删除 session_sharing_context_menu_items(云端 shared session 入口)
 
-        // Section 2: AI Command Search, Ask Warp AI
+        // Section 2: AI Command Search, Ask Zap AI
         items.extend([
             MenuItem::Separator,
             MenuItemFields::new(crate::t!("menu-input-command-search"))
@@ -14895,7 +14901,7 @@ impl TerminalView {
             }
         }
 
-        // OpenWarp:删除 session_sharing_context_menu_items(云端 shared session 入口)
+        // Zap:删除 session_sharing_context_menu_items(云端 shared session 入口)
         let current_shell = model.shell_launch_state().available_shell();
         let mut pane_context_menu_items = self.pane_context_menu_items(current_shell, ctx);
         if !menu_items.is_empty() && !pane_context_menu_items.is_empty() {
@@ -15160,7 +15166,7 @@ impl TerminalView {
         );
         items.push(MenuItem::Separator);
 
-        // Remote conversation sharing was removed in OpenWarp; share-conversation menu item omitted.
+        // Remote conversation sharing was removed in Zap; share-conversation menu item omitted.
         let _ = ai_conversation_id;
 
         items.push(
@@ -15267,7 +15273,7 @@ impl TerminalView {
         ctx.update_view(&self.context_menu, |context_menu, view_ctx| {
             context_menu.set_origin(menu_state.menu_type.origin());
             let width = match menu_state.menu_type {
-                ContextMenuType::OneKeyPrompt => ONEKEY_CONTEXT_MENU_WIDTH,
+                ContextMenuType::OneKeyPrompt | ContextMenuType::SuRootPasswordConfirm => ONEKEY_CONTEXT_MENU_WIDTH,
                 ContextMenuType::BlockList { .. }
                 | ContextMenuType::AltScreen { .. }
                 | ContextMenuType::Prompt { .. }
@@ -15555,6 +15561,43 @@ impl TerminalView {
     /// 仅由 `secret_injector` 在起飞/结束时调用。详见字段文档。
     pub(crate) fn set_ssh_secret_auto_injection_in_flight(&mut self, in_flight: bool) {
         self.ssh_secret_auto_injection_in_flight = in_flight;
+    }
+
+    /// 检测到 su root 密码提示后弹出确认菜单。
+    pub(crate) fn show_su_root_confirm_menu(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.context_menu_state.is_some() {
+            return;
+        }
+        let items = vec![
+            MenuItemFields::new_with_stacked_label(
+                crate::t!("terminal-su-root-password-confirm"),
+                crate::t!("terminal-su-root-password-confirm-subtitle"),
+            )
+            .with_icon(icons::Icon::Key)
+            .with_on_select_action(TerminalAction::SuRootFillRootPassword)
+            .into_item(),
+            MenuItemFields::new(crate::t!("terminal-su-root-password-cancel"))
+                .with_on_select_action(TerminalAction::CloseContextMenu)
+                .into_item(),
+        ];
+        self.show_context_menu(
+            ContextMenuState {
+                menu_type: ContextMenuType::SuRootPasswordConfirm,
+            },
+            items,
+            ctx,
+        );
+    }
+
+    /// 用户确认后注入暂存的 root 密码。
+    fn fill_su_root_password(&mut self, ctx: &mut ViewContext<Self>) {
+        if let Some(password) = self.su_root_password.take() {
+            let mut bytes: zeroize::Zeroizing<Vec<u8>> =
+                zeroize::Zeroizing::new(password.as_bytes().to_vec());
+            bytes.push(b'\n');
+            self.write_to_pty(bytes.to_vec(), ctx);
+        }
+        self.close_context_menu(ctx, true);
     }
 
     fn alt_mouse_action(&mut self, mouse_state: &MouseState, ctx: &mut ViewContext<Self>) {
@@ -16052,7 +16095,7 @@ impl TerminalView {
         }
     }
 
-    /// OpenWarp:若当前活动 block 所属会话是 remote-server 会话,返回其 `HostId`。
+    /// Zap:若当前活动 block 所属会话是 remote-server 会话,返回其 `HostId`。
     ///
     /// 用于在终端里 Ctrl/Cmd+点击文件路径时,判断应当走本地还是远端 buffer-sync
     /// 打开流程。非 remote-server 会话返回 `None`(保持本地行为不变)。
@@ -16074,7 +16117,7 @@ impl TerminalView {
         }
     }
 
-    /// OpenWarp:把终端文件链接里已解析出的绝对路径当作远端路径,构造 `RemotePath`。
+    /// Zap:把终端文件链接里已解析出的绝对路径当作远端路径,构造 `RemotePath`。
     /// 远端 SSH 主机均为 Unix,路径字符串由 shell-integration 上报的远端 cwd 拼接而来。
     #[cfg(all(feature = "local_tty", feature = "local_fs"))]
     fn remote_path_from_terminal_path(
@@ -16093,7 +16136,7 @@ impl TerminalView {
         ))
     }
 
-    /// OpenWarp:判断终端文件链接里的远端路径是否指向目录。
+    /// Zap:判断终端文件链接里的远端路径是否指向目录。
     ///
     /// 依据是缓存下来的远端 cwd 目录列表(由 `link_detection.rs` 拉取并写入)。
     /// 未缓存或非目录返回 `false`(按文件处理)。
@@ -16115,7 +16158,7 @@ impl TerminalView {
         })
     }
 
-    /// OpenWarp:在当前(远端)终端会话里 `cd` 进指定目录。
+    /// Zap:在当前(远端)终端会话里 `cd` 进指定目录。
     ///
     /// 与本地点击目录链接的行为对齐 —— 远端目录无法在编辑器里打开,改为
     /// 在该远端 shell 会话中执行 `cd <dir>`。
@@ -16137,7 +16180,7 @@ impl TerminalView {
     ) {
         ctx.notify();
 
-        // OpenWarp:远端 SSH 会话走 buffer-sync 协议打开远端文件。
+        // Zap:远端 SSH 会话走 buffer-sync 协议打开远端文件。
         #[cfg(all(feature = "local_tty", feature = "local_fs"))]
         if let Some(host_id) = self.active_session_remote_host_id(ctx) {
             // 远端目录点击:不在编辑器里打开,改为在该远端会话里 `cd` 进去。
@@ -16177,7 +16220,7 @@ impl TerminalView {
     ) {
         ctx.notify();
 
-        // OpenWarp:远端 SSH 会话走 buffer-sync 协议打开远端文件。
+        // Zap:远端 SSH 会话走 buffer-sync 协议打开远端文件。
         // 远端文件统一在内嵌代码编辑器打开,忽略 `target`(外部编辑器无法访问远端文件)。
         #[cfg(all(feature = "local_tty", feature = "local_fs"))]
         if let Some(host_id) = self.active_session_remote_host_id(ctx) {
@@ -16265,7 +16308,7 @@ impl TerminalView {
         self.paste(true, ctx);
     }
 
-    /// Tell the pane group to open a file within Warp.
+    /// Tell the pane group to open a file within Zap.
     fn open_file_in_warp(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
         if let Some(session) = self
             .active_block_session_id()
@@ -17995,10 +18038,11 @@ impl TerminalView {
             }
             AIBlockEvent::OpenCitation(citation) => match citation {
                 AIAgentCitation::WarpDriveObject { uid } => {
-                    ctx.emit(Event::OpenWarpDriveObjectInPane(uid.clone()));
+                    ctx.emit(Event::ZapDriveObjectInPane(uid.clone()));
                 }
-                AIAgentCitation::WarpDocumentation { path } => {
-                    ctx.open_url(&format!("https://docs.warp.dev/{path}"));
+                AIAgentCitation::WarpDocumentation { path: _ } => {
+                    // Zap fork 不继承上游 docs.warp.dev 文档站,
+                    // 点击该类型引用暂不跳转。
                 }
                 AIAgentCitation::WebPage { url } => {
                     ctx.open_url(url);
@@ -18009,7 +18053,7 @@ impl TerminalView {
             }
             AIBlockEvent::OpenWorkflow { sync_id } => {
                 if let Some(object) = ObjectStoreModel::as_ref(ctx).get_workflow(sync_id) {
-                    ctx.emit(Event::OpenWarpDriveObjectInPane(object.uid()));
+                    ctx.emit(Event::ZapDriveObjectInPane(object.uid()));
                 }
             }
             AIBlockEvent::OpenSuggestedAgentModeWorkflowModal { workflow_and_id } => {
@@ -18454,6 +18498,9 @@ impl TerminalView {
                     context_menu.set_menu_variant(MenuVariant::Fixed);
                     context_menu.clear_pinned_header_builder();
                 });
+            }
+            if matches!(state.menu_type, ContextMenuType::SuRootPasswordConfirm) {
+                self.su_root_password = None;
             }
             ctx.notify();
             if should_redetermine_focus {
@@ -20254,7 +20301,7 @@ impl TerminalView {
                     self.update_incompatible_configuration_banner(session.shell().plugins(), ctx)
                 }
 
-                // honor_ps1 affects whether the Warp prompt is active, which
+                // honor_ps1 affects whether the Zap prompt is active, which
                 // determines if we need git status updates.
                 self.update_git_status_subscription(ctx);
             }
@@ -20932,10 +20979,10 @@ impl TerminalView {
         let render_context = self.get_terminal_view_render_context(model, app);
 
         let enforce_minimum_contrast = *FontSettings::as_ref(app).enforce_minimum_contrast;
-        // OpenWarp:alt-screen 渲染 cli subagent 浮窗的判定从原 `is_agent_in_control()`
+        // Zap:alt-screen 渲染 cli subagent 浮窗的判定从原 `is_agent_in_control()`
         // 放宽到 `is_agent_in_control_or_tagged_in()`。原来的判定只考虑 handoff 路径
         // (agent 拿走 LRC 控制权),漏掉了用户主动 tag-in 路径(`SetInputModeAgent` →
-        // `tag_in_agent_for_user_long_running_command`)。后者是 OpenWarp BYOP 链路下
+        // `tag_in_agent_for_user_long_running_command`)。后者是 Zap BYOP 链路下
         // 浮窗的主要入口(controller `send_request_input` 检测 tagged-in → 注入
         // `lrc_command_id` → chat_stream 合成虚拟 subagent → spawn CLISubagentView),
         // 不放宽就算 view 已建,alt-screen 仍不挂载,模型回复永远看不到。
@@ -22227,7 +22274,7 @@ impl TerminalView {
 
         match action {
             LearnMore => {
-                ctx.open_url("https://docs.warp.dev/terminal/warpify/ssh-legacy#implementation");
+                ctx.open_url("");
             }
             Settings => {
                 if FeatureFlag::SSHTmuxWrapper.is_enabled() {
@@ -23321,6 +23368,7 @@ impl TypedActionView for TerminalView {
             | RevealChildAgent { .. }
             | OpenCLIAgentRichInput
             | ToggleSessionRecording => Empty,
+            SuRootFillRootPassword => Empty,
         }
     }
 
@@ -23460,6 +23508,7 @@ impl TypedActionView for TerminalView {
             }
             CloseContextMenu => self.close_context_menu(ctx, true),
             OneKeyFillSecret { index } => self.fill_onekey_secret(*index, ctx),
+            SuRootFillRootPassword => self.fill_su_root_password(ctx),
             Paste => self.paste(false, ctx),
             Copy => self.copy(ctx),
             CopyOutputs => self.copy_outputs(ctx),
@@ -24499,7 +24548,7 @@ impl View for TerminalView {
                     }
                 },
             ),
-            Some(ContextMenuType::OneKeyPrompt) => stack.add_positioned_overlay_child(
+            Some(ContextMenuType::OneKeyPrompt) | Some(ContextMenuType::SuRootPasswordConfirm) => stack.add_positioned_overlay_child(
                 ChildView::new(&self.context_menu).finish(),
                 match input_mode {
                     InputMode::PinnedToBottom | InputMode::Waterfall => {

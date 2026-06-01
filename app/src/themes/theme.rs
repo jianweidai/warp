@@ -82,6 +82,8 @@ pub enum ThemeKind {
     JellyFish,
     #[schemars(description = "Leafy")]
     Leafy,
+    #[schemars(description = "WezTerm Classic")]
+    WezTermClassic,
     #[schemars(description = "Koi")]
     Koi,
     #[schemars(description = "Solarized Light")]
@@ -139,8 +141,9 @@ impl std::fmt::Display for ThemeKind {
             ThemeKind::Phenomenon => "Phenomenon",
             ThemeKind::SolarFlare => "Solar Flare",
             ThemeKind::Adeberry => "Adeberry",
-            ThemeKind::SentReferralReward => "Warp Referral",
-            ThemeKind::ReceivedReferralReward => "Referred to Warp",
+            ThemeKind::WezTermClassic => "WezTerm Classic",
+            ThemeKind::SentReferralReward => "Zap Referral",
+            ThemeKind::ReceivedReferralReward => "Referred to Zap",
             ThemeKind::Custom(custom_theme) => custom_theme.name.as_str(),
             ThemeKind::CustomBase16(custom_theme) => custom_theme.name.as_str(),
             ThemeKind::InMemory(in_memory_theme) => in_memory_theme.name.as_str(),
@@ -329,6 +332,7 @@ impl WarpThemeConfig {
             (ThemeKind::Phenomenon, phenomenon()),
             (ThemeKind::SolarFlare, solar_flare()),
             (ThemeKind::Adeberry, adeberry()),
+            (ThemeKind::WezTermClassic, wezterm_classic()),
         ]);
         WarpThemeConfig { theme_map }
     }

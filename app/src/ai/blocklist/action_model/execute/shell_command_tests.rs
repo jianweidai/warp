@@ -13,7 +13,7 @@ fn detects_interactive_session_commands_across_platforms() {
         r#"& "C:\Program Files\OpenSSH\ssh.exe" host"#,
         "warp_run_generator_command 42 'ssh host'",
         " warp_run_generator_command 42 'ssh host'",
-        "Warp-Run-GeneratorCommand 42 'ssh host' -ErrorAction Ignore",
+        "Zap-Run-GeneratorCommand 42 'ssh host' -ErrorAction Ignore",
         r#"warp_run_generator_command 42 '"C:\Windows\System32\OpenSSH\ssh.exe" host'"#,
         "gcloud compute ssh --zone us-west1-a my-instance",
         "eb ssh --profile my-profile my-env",
@@ -44,7 +44,7 @@ fn does_not_detect_unrelated_or_non_interactive_ssh_commands() {
         r#""C:\Windows\System32\OpenSSH\ssh.exe" user@host ls"#,
         r#"& "C:\Program Files\OpenSSH\ssh.exe" user@host ls"#,
         "warp_run_generator_command 42 'ssh user@host ls'",
-        "Warp-Run-GeneratorCommand 42 'git status' -ErrorAction Ignore",
+        "Zap-Run-GeneratorCommand 42 'git status' -ErrorAction Ignore",
         "rsync myfile.txt ssh://user@server.com",
         // 右引号后还粘着字符,故意拒绝 tokenize,避免被错切成 `ssh`
         // 然后通过 `ssh hello-world` 误判为交互会话。
@@ -146,4 +146,53 @@ fn preserves_explicit_or_non_interactive_read_delays() {
         effective_read_shell_command_delay("git status", None),
         ActionResultDelay::Default
     );
+}
+
+#[test]
+fn requested_command_wait_until_completion_does_not_use_snapshot_timeout() {
+    assert_eq!(
+        action_result_delay_for_requested_command(true),
+        ActionResultDelay::UntilCompletion
+    );
+    assert_eq!(
+        action_result_delay_for_requested_command(false),
+        ActionResultDelay::Default
+    );
+}
+
+#[test]
+fn preemption_logic_covers_until_completion_timeout() {
+    use ActionResultDelay::{Default, Duration as DurationDelay, OnCompletion, UntilCompletion};
+    use WakeReason::*;
+
+    // BlockFinished 从不抢占 —— 它是“命令真正完成”的信号。
+    assert!(!compute_is_preempted(BlockFinished, UntilCompletion));
+    assert!(!compute_is_preempted(BlockFinished, Default));
+    assert!(!compute_is_preempted(
+        BlockFinished,
+        OnCompletion {
+            timeout: Duration::from_secs(1)
+        }
+    ));
+
+    // ForceRefresh 总是抢占,与 delay 无关。
+    assert!(compute_is_preempted(ForceRefresh, UntilCompletion));
+    assert!(compute_is_preempted(ForceRefresh, Default));
+
+    // Timeout + OnCompletion / UntilCompletion 是抢占。
+    assert!(compute_is_preempted(
+        Timeout,
+        OnCompletion {
+            timeout: Duration::from_secs(1)
+        }
+    ));
+    // #138: pager 卡死兜底超时必须被标记为抢占,避免 server 误解为“命令完成”。
+    assert!(compute_is_preempted(Timeout, UntilCompletion));
+
+    // Timeout + Default / Duration 不是抢占 —— agent 本来就预期会拿到中间快照。
+    assert!(!compute_is_preempted(Timeout, Default));
+    assert!(!compute_is_preempted(
+        Timeout,
+        DurationDelay(Duration::from_secs(1))
+    ));
 }

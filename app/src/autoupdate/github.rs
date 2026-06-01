@@ -1,4 +1,4 @@
-// openWarp(Channel::Oss)autoupdate 走 GitHub Releases API,而非 Warp 官方
+// openWarp(Channel::Oss)autoupdate 走 GitHub Releases API,而非 Zap 官方
 // channel_versions / GCS。本模块只负责"取最新 release 元数据" + "按文件名挑资产";
 // 实际的下载落盘 + 打开目录由 windows.rs / mac.rs 完成。
 
@@ -13,7 +13,7 @@ const REPO_OWNER: &str = "zerx-lab";
 const REPO_NAME: &str = "warp";
 
 // GitHub 强制要求 User-Agent;同时显式声明 API 版本避免未来 default 漂移。
-const USER_AGENT: &str = "OpenWarp-Autoupdate";
+const USER_AGENT: &str = "Zap-Autoupdate";
 const ACCEPT: &str = "application/vnd.github+json";
 const API_VERSION: &str = "2022-11-28";
 
@@ -31,6 +31,25 @@ pub struct GithubAsset {
     pub name: String,
     pub browser_download_url: String,
     pub size: u64,
+    /// GitHub Releases API(2024.12+)在 asset 元数据里返回的资产摘要,
+    /// 形如 `"sha256:<hex>"`。老 release 没有这个字段时为 None。
+    #[serde(default)]
+    pub digest: Option<String>,
+}
+
+impl GithubAsset {
+    /// 解析 `digest` 字段,返回小写的十六进制 SHA-256(64 字符)或 None。
+    /// 当前 GitHub 返回的算法只有 sha256;其他算法直接当作 None 让上层跳过校验,
+    /// 不去做基于未知算法的"绿色通行证"。
+    pub fn sha256_hex(&self) -> Option<String> {
+        let raw = self.digest.as_ref()?;
+        let hex = raw.strip_prefix("sha256:")?;
+        if hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            Some(hex.to_ascii_lowercase())
+        } else {
+            None
+        }
+    }
 }
 
 impl GithubRelease {

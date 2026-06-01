@@ -58,6 +58,9 @@ struct ByopDispatch {
     /// 选中模型的上下文窗口(tokens)。0/None ⇒ 用户未填且 catalog 也无,
     /// chat_stream 跳过 context_window_usage 计算,UI 维持 100% 占位。
     context_window: Option<u32>,
+    /// ユーザー設定 (image/pdf/audio 三態 Override) を反映済みの attachment caps。
+    /// `resolve_for_model` で計算。UI 表示と runtime 動作が同じ caps を参照する。
+    attachment_caps: crate::ai::agent_providers::attachment_caps::AttachmentCaps,
 }
 
 /// 标题生成专用的 BYOP 配置(可能与主 base 模型同 provider 也可能不同)。
@@ -99,7 +102,7 @@ fn byop_dispatch_info(
 
     // 标题生成:只在首轮触发(避免每轮重复打标题)。
     // 解析 active title_model:可能是 base_model 自己,也可能是用户独立选的另一个 BYOP 模型。
-    // 任一模型不是 BYOP 编码(比如 fallback 到非 BYOP 默认),则跳过 — OpenWarp 主路径都是 BYOP,
+    // 任一模型不是 BYOP 编码(比如 fallback 到非 BYOP 默认),则跳过 — Zap 主路径都是 BYOP,
     // 实际 fallback 到 base 时,base 自己就是 BYOP。
     let llm_prefs = crate::ai::llms::LLMPreferences::as_ref(ctx);
     let title_gen = if needs_create_task {
@@ -122,6 +125,24 @@ fn byop_dispatch_info(
     };
 
     let reasoning_effort = llm_prefs.get_reasoning_effort(None, provider.api_type, &model_id);
+    let attachment_caps = provider
+        .models
+        .iter()
+        .find(|m| m.id == model_id)
+        .map(|m| {
+            crate::ai::agent_providers::attachment_caps::resolve_for_model(
+                &provider.id,
+                provider.api_type,
+                m,
+            )
+        })
+        .unwrap_or_else(|| {
+            log::warn!(
+                "[byop] model '{}' not found in provider.models — falling back to caps_for (user overrides ignored)",
+                model_id
+            );
+            crate::ai::agent_providers::attachment_caps::caps_for(provider.api_type, &model_id)
+        });
     Some(ByopDispatch {
         base_url: provider.base_url,
         api_key,
@@ -136,6 +157,7 @@ fn byop_dispatch_info(
         lrc_command_id: params.lrc_command_id.clone(),
         lrc_should_spawn_subagent: params.lrc_should_spawn_subagent,
         context_window,
+        attachment_caps,
     })
 }
 
@@ -269,6 +291,7 @@ impl ResponseStream {
                             lrc_should_spawn_subagent: byop.lrc_should_spawn_subagent,
                             context_window: byop.context_window,
                             cancellation_rx,
+                            attachment_caps: byop.attachment_caps,
                         },
                     )
                     .await
@@ -309,7 +332,7 @@ impl ResponseStream {
         self.params.lrc_should_spawn_subagent
     }
 
-    /// OpenWarp BYOP 本地会话压缩:返回本流是否在跑 SummarizeConversation,
+    /// Zap BYOP 本地会话压缩:返回本流是否在跑 SummarizeConversation,
     /// 以及 overflow 标记。controller 在 handle_response_stream_finished 的
     /// Done 分支据此调 commit_summarization 把摘要落到 conversation.compaction_state。
     pub fn summarization_overflow(&self) -> Option<bool> {
@@ -376,6 +399,7 @@ impl ResponseStream {
                             lrc_should_spawn_subagent: byop.lrc_should_spawn_subagent,
                             context_window: byop.context_window,
                             cancellation_rx,
+                            attachment_caps: byop.attachment_caps,
                         },
                     )
                     .await
@@ -625,10 +649,10 @@ impl Entity for ResponseStream {
 async fn byop_required_response_stream(
     cancellation_rx: oneshot::Receiver<()>,
 ) -> Result<api::ResponseStream, ConvertToAPITypeError> {
-    log::debug!("No BYOP provider selected for OpenWarp agent request");
+    log::debug!("No BYOP provider selected for Zap agent request");
     let error_stream = futures::stream::once(async {
         Err(Arc::new(AIApiError::Other(anyhow!(
-            "OpenWarp requires a configured BYOP provider in Settings"
+            "Zap requires a configured BYOP provider in Settings"
         ))))
     })
     .take_until(cancellation_rx);

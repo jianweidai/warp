@@ -137,9 +137,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-const CONTENT_FONT_SIZE: f32 = 12.;
-const PRIMARY_HEADER_FONT_SIZE: f32 = 24.;
-
 const AI_SETTINGS_DROPDOWN_WIDTH: f32 = 250.;
 const AI_SETTINGS_DROPDOWN_MAX_HEIGHT: f32 = 250.;
 // AI 设置页描述文本走 i18n,key 见 app/i18n/{en,zh-CN}/warp.ftl 的 settings-ai-* 段。
@@ -671,7 +668,7 @@ impl AISettingsPageView {
         });
         // The coding agent footer command editor is always enabled,
         // independent of the global AI toggle, because it controls
-        // third-party coding agents rather than Warp's own AI.
+        // third-party coding agents rather than Zap's own AI.
         Self::update_editor_interaction_state(
             cli_agent_footer_command_editor.as_ref(ctx).editor().clone(),
             true,
@@ -3386,11 +3383,9 @@ impl TypedActionView for AISettingsPageView {
                     let client = http_client::Client::new();
                     ctx.spawn(
                         async move { models_dev::fetch_and_cache(client).await },
-                        |view, result, ctx| {
-                            if let Err(e) = result {
-                                log::warn!("[models.dev] 拉取失败: {e}");
-                            }
-                            view.rebuild_current_page(ctx);
+                        |view, result, ctx| match result {
+                            Ok(()) => view.rebuild_current_page(ctx),
+                            Err(e) => log::warn!("[models.dev] 拉取失败: {e}"),
                         },
                     );
                 } else {
@@ -3402,11 +3397,9 @@ impl TypedActionView for AISettingsPageView {
                 let client = http_client::Client::new();
                 ctx.spawn(
                     async move { models_dev::fetch_and_cache(client).await },
-                    |view, result, ctx| {
-                        if let Err(e) = result {
-                            log::warn!("[models.dev] 刷新失败: {e}");
-                        }
-                        view.rebuild_current_page(ctx);
+                    |view, result, ctx| match result {
+                        Ok(()) => view.rebuild_current_page(ctx),
+                        Err(e) => log::warn!("[models.dev] 刷新失败: {e}"),
                     },
                 );
             }
@@ -3744,7 +3737,7 @@ fn render_toolbar_layout_editor(
             .ui_builder()
             .span(crate::t!("settings-ai-toolbar-layout"))
             .with_style(UiComponentStyles {
-                font_size: Some(CONTENT_FONT_SIZE),
+                font_size: Some(appearance.ui_font_body()),
                 ..Default::default()
             })
             .build()
@@ -3839,7 +3832,7 @@ impl SettingsWidget for WarpAgentHeaderWidget {
                 Text::new_inline(
                     crate::t!("settings-ai-warp-agent-header"),
                     appearance.ui_font_family(),
-                    PRIMARY_HEADER_FONT_SIZE,
+                    appearance.ui_font_display(),
                 )
                 .with_style(Properties::default().weight(Weight::Bold))
                 .with_color(appearance.theme().active_ui_text_color().into())
@@ -3903,7 +3896,7 @@ impl UsageWidget {
                             ))
                         }
                     },
-                    font_size: Some(16.),
+                    font_size: Some(appearance.ui_font_heading_3()),
                     margin: Some(Coords {
                         top: 0.,
                         bottom: 0.,
@@ -4544,7 +4537,7 @@ impl AgentsWidget {
             .ui_builder()
             .span(format!("{min}"))
             .with_style(UiComponentStyles {
-                font_size: Some(CONTENT_FONT_SIZE),
+                font_size: Some(appearance.ui_font_body()),
                 ..Default::default()
             })
             .build()
@@ -4554,7 +4547,7 @@ impl AgentsWidget {
             .ui_builder()
             .span(format!("{max}"))
             .with_style(UiComponentStyles {
-                font_size: Some(CONTENT_FONT_SIZE),
+                font_size: Some(appearance.ui_font_body()),
                 ..Default::default()
             })
             .build()
@@ -4594,10 +4587,10 @@ impl AgentsWidget {
                 .with_style(UiComponentStyles {
                     width: Some(CONTEXT_WINDOW_INPUT_BOX_WIDTH),
                     padding: Some(Coords {
-                        top: 6.,
-                        bottom: 6.,
-                        left: 10.,
-                        right: 10.,
+                        top: appearance.ui_font_size() / 2.,
+                        bottom: appearance.ui_font_size() / 2.,
+                        left: appearance.ui_font_size() * 5. / 6.,
+                        right: appearance.ui_font_size() * 5. / 6.,
                     }),
                     margin: Some(Coords::default().left(12.)),
                     background: Some(appearance.theme().surface_2().into()),
@@ -4977,7 +4970,7 @@ impl AgentsWidget {
                                 font_color: Some(
                                     theme.sub_text_color(theme.surface_2()).into_solid(),
                                 ),
-                                font_size: Some(12.0),
+                                font_size: Some(appearance.ui_font_body()),
                                 ..Default::default()
                             })
                             .build()
@@ -5042,7 +5035,7 @@ impl AgentsWidget {
         let subtext = {
             let subtext_fragments = vec![
                 FormattedTextFragment::plain_text(
-                    "You haven't added any MCP servers yet. Once you do, you'll be able to control how much autonomy the Warp Agent has when interacting with them. ",
+                    "You haven't added any MCP servers yet. Once you do, you'll be able to control how much autonomy the Zap Agent has when interacting with them. ",
                 ),
                 FormattedTextFragment::hyperlink_action(
                     crate::t!("settings-ai-add-server"),
@@ -5051,14 +5044,14 @@ impl AgentsWidget {
                 FormattedTextFragment::plain_text(" or "),
                 FormattedTextFragment::hyperlink(
                     "learn more about MCPs.",
-                    "https://docs.warp.dev/agent-platform/capabilities/mcp",
+                    "",
                 ),
             ];
 
             Container::new(
                 FormattedTextElement::new(
                     FormattedText::new([FormattedTextLine::Line(subtext_fragments)]),
-                    CONTENT_FONT_SIZE,
+                    appearance.ui_font_body(),
                     appearance.ui_font_family(),
                     appearance.ui_font_family(),
                     styles::description_font_color(ai_settings.is_any_ai_enabled(app), app).into(),
@@ -5340,10 +5333,10 @@ impl AIInputWidget {
             .with_style(UiComponentStyles {
                 width: Some(280.),
                 padding: Some(Coords {
-                    top: 4.,
-                    bottom: 4.,
-                    left: 6.,
-                    right: 6.,
+                    top: appearance.ui_font_size() / 3.,
+                    bottom: appearance.ui_font_size() / 3.,
+                    left: appearance.ui_font_size() / 2.,
+                    right: appearance.ui_font_size() / 2.,
                 }),
                 ..Default::default()
             })
@@ -5388,7 +5381,7 @@ impl AIInputWidget {
                         FormattedText::new([FormattedTextLine::Line(
                             (*AUTODETECTION_DESCRIPTION_FRAGMENTS).clone(),
                         )]),
-                        CONTENT_FONT_SIZE,
+                        appearance.ui_font_body(),
                         appearance.ui_font_family(),
                         appearance.ui_font_family(),
                         styles::description_font_color(is_toggleable, app).into(),
@@ -5438,7 +5431,7 @@ impl AIInputWidget {
                         FormattedText::new([FormattedTextLine::Line(
                             (*NATURAL_LANGUAGE_DETECTION_DESCRIPTION_FRAGMENTS).clone(),
                         )]),
-                        CONTENT_FONT_SIZE,
+                        appearance.ui_font_body(),
                         appearance.ui_font_family(),
                         appearance.ui_font_family(),
                         styles::description_font_color(is_toggleable, app).into(),
@@ -5522,19 +5515,19 @@ impl SettingsWidget for MCPServersWidget {
 
         let mcp_description = vec![
             FormattedTextFragment::plain_text(
-                "Add MCP servers to extend the Warp Agent's capabilities. \
+                "Add MCP servers to extend the Zap Agent's capabilities. \
             MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. ",
             ),
             FormattedTextFragment::hyperlink(
                 crate::t!("common-learn-more"),
-                "https://docs.warp.dev/agent-platform/capabilities/mcp",
+                "",
             ),
         ];
 
         let description = Container::new(
             FormattedTextElement::new(
                 FormattedText::new([FormattedTextLine::Line(mcp_description)]),
-                CONTENT_FONT_SIZE,
+                appearance.ui_font_body(),
                 appearance.ui_font_family(),
                 appearance.ui_font_family(),
                 styles::description_font_color(is_any_ai_enabled, app).into(),
@@ -5573,7 +5566,7 @@ impl SettingsWidget for MCPServersWidget {
                                 ),
                                 FormattedTextFragment::hyperlink(
                                     "See supported providers.",
-                                    "https://docs.warp.dev/agent-platform/capabilities/mcp#file-based-mcp-servers",
+                                    "",
                                 ),
                             ]
                         });
@@ -5582,7 +5575,7 @@ impl SettingsWidget for MCPServersWidget {
                                 FormattedText::new([FormattedTextLine::Line(
                                     (*FILE_BASED_MCP_DESCRIPTION_FRAGMENTS).clone(),
                                 )]),
-                                CONTENT_FONT_SIZE,
+                                appearance.ui_font_body(),
                                 appearance.ui_font_family(),
                                 appearance.ui_font_family(),
                                 styles::description_font_color(is_any_ai_enabled, app).into(),
@@ -5658,13 +5651,13 @@ impl AIFactWidget {
             )),
             FormattedTextFragment::hyperlink(
                 crate::t!("settings-ai-learn-more"),
-                "https://docs.warp.dev/agent-platform/capabilities/rules",
+                "",
             ),
         ];
         let description = Container::new(
             FormattedTextElement::new(
                 FormattedText::new([FormattedTextLine::Line(rules_description)]),
-                CONTENT_FONT_SIZE,
+                appearance.ui_font_body(),
                 appearance.ui_font_family(),
                 appearance.ui_font_family(),
                 styles::description_font_color(ai_settings.is_any_ai_enabled(app), app).into(),
@@ -5720,7 +5713,7 @@ impl SettingsWidget for AIFactWidget {
     type View = AISettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "agent oz ai a.i. knowledge fact memory memories rules warp drive context workflows notebooks environment variables"
+        "agent oz ai a.i. knowledge fact memory memories rules zap drive context workflows notebooks environment variables"
     }
 
     fn should_render(&self, _app: &AppContext) -> bool {
@@ -5760,7 +5753,7 @@ impl SettingsWidget for AIFactWidget {
             column.add_child(self.render_rule_suggestions_toggle(view, ai_settings, app));
         }
 
-        // 去中心化分支:不再渲染 "Warp Drive as agent context" 开关。
+        // 去中心化分支:不再渲染 "Zap Drive as agent context" 开关。
         let _ = self;
         let _ = view;
         column.with_child(button).finish()
@@ -5794,7 +5787,7 @@ impl VoiceWidget {
 
         let voice_input_description_text_fragments = vec![
             FormattedTextFragment::plain_text(
-                "Voice input allows you to control Warp by speaking directly to your terminal (powered by ",
+                "Voice input allows you to control Zap by speaking directly to your terminal (powered by ",
             ),
             FormattedTextFragment::hyperlink("Wispr Flow", WISPR_FLOW_URL),
             FormattedTextFragment::plain_text(")."),
@@ -5994,7 +5987,7 @@ impl SettingsWidget for OtherAIWidget {
         // TODO: OpenConversationLayoutPreference should not depend on local_fs, but it lives under the external editor settings
         // which does require local_fs. It was a mistake to put it there, but now we keep it there for backward compatibility.
         #[cfg(feature = "local_fs")]
-        if FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
+        if FeatureFlag::ZapNewSettingsModes.is_enabled() {
             use crate::util::file::external_editor::settings::OpenConversationLayoutPreference;
 
             column.add_child(render_dropdown_item(
@@ -6048,7 +6041,7 @@ impl SettingsWidget for CLIAgentWidget {
 
         // The Coding Agents section is always enabled, independent of the
         // global AI toggle, because these settings control third-party coding
-        // agents (Claude Code, Codex, Gemini CLI) rather than Warp's own AI.
+        // agents (Claude Code, Codex, Gemini CLI) rather than Zap's own AI.
         let cli_agent_footer_toggle = render_ai_setting_toggle::<ShouldRenderCLIAgentToolbar>(
             crate::t!("settings-ai-show-coding-agent-toolbar"),
             AISettingsPageAction::ToggleCLIAgentToolbar,
@@ -6175,7 +6168,7 @@ impl SettingsWidget for CLIAgentWidget {
                         .ui_builder()
                         .span(crate::t!("settings-ai-toolbar-commands-label"))
                         .with_style(UiComponentStyles {
-                            font_size: Some(CONTENT_FONT_SIZE),
+                            font_size: Some(appearance.ui_font_body()),
                             ..Default::default()
                         })
                         .build()
@@ -6542,11 +6535,12 @@ impl AwsBedrockWidget {
             is_enabled: bool,
             app: &AppContext,
         ) -> Box<dyn Element> {
+            let ui_font_size = appearance.ui_font_size();
             let padding = Some(Coords {
-                top: 10.,
-                bottom: 10.,
-                left: 16.,
-                right: 16.,
+                top: ui_font_size * 5. / 6.,
+                bottom: ui_font_size * 5. / 6.,
+                left: ui_font_size * 4. / 3.,
+                right: ui_font_size * 4. / 3.,
             });
             let editor_style = UiComponentStyles {
                 padding,
@@ -6554,7 +6548,7 @@ impl AwsBedrockWidget {
                 ..Default::default()
             };
 
-            let label = Text::new_inline(label, appearance.ui_font_family(), CONTENT_FONT_SIZE)
+            let label = Text::new_inline(label, appearance.ui_font_family(), appearance.ui_font_body())
                 .with_color(styles::header_font_color(is_enabled, app).into())
                 .finish();
 
@@ -6599,13 +6593,13 @@ impl AwsBedrockWidget {
                 .with_cross_axis_alignment(CrossAxisAlignment::Start)
                 .with_spacing(4.)
                 .with_child(
-                    Text::new_inline(title_text, appearance.ui_font_family(), CONTENT_FONT_SIZE)
+                    Text::new_inline(title_text, appearance.ui_font_family(), appearance.ui_font_body())
                         .with_style(Properties::default().weight(Weight::Semibold))
                         .with_color(title_color.into())
                         .finish(),
                 )
                 .with_child(
-                    Text::new(detail_text, appearance.ui_font_family(), CONTENT_FONT_SIZE)
+                    Text::new(detail_text, appearance.ui_font_family(), appearance.ui_font_body())
                         .with_color(detail_color.into())
                         .soft_wrap(true)
                         .finish(),

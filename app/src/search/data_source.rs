@@ -180,7 +180,7 @@ pub enum QueryFilter {
     /// Filter results for launch configurations.
     LaunchConfigurations,
 
-    /// Filter for objects in Warp Drive
+    /// Filter for objects in Zap Drive
     Drive,
 
     /// Filter results for environment variables.
@@ -382,7 +382,7 @@ impl QueryFilter {
                 Some("bundled/svg/conversation.svg")
             }
             QueryFilter::LaunchConfigurations => Some("bundled/svg/navigation.svg"),
-            QueryFilter::Drive => Some("bundled/svg/warp-drive.svg"),
+            QueryFilter::Drive => Some("bundled/svg/warp.svg"),
             QueryFilter::EnvironmentVariables => Some("bundled/svg/env-var-collection.svg"),
             QueryFilter::AgentModeWorkflows | QueryFilter::PromptHistory => {
                 Some(Icon::Prompt.into())

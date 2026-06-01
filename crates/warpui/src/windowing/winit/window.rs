@@ -90,7 +90,7 @@ pub(crate) struct WindowManager {
     windows: HashMap<WindowId, Rc<Window>>,
     event_loop_proxy: EventLoopProxy<CustomEvent>,
     window_ordering: Mutex<WindowOrderingState>,
-    /// We assume this won't change throughout the life of the Warp process.
+    /// We assume this won't change throughout the life of the Zap process.
     os_window_manager_name: OnceCell<Option<String>>,
     /// This is a client for talking to the Xorg server directly instead of through winit.
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -672,12 +672,12 @@ fn window_level_for_style(style: WindowStyle) -> WindowLevel {
 }
 
 /// If the selected adapter has a known rendering offset bug, enable native window decorations
-/// to work around it. See: https://github.com/warpdotdev/Warp/issues/6120
+/// to work around it. See: https://github.com/zerx-lab/warp/issues/6120
 fn enable_decorations_if_needed(window: &winit::window::Window, adapter_info: &AdapterInfo) {
     if adapter_has_rendering_offset_bug(adapter_info) {
         log::warn!(
             "Enabling native window decorations to work around a rendering offset bug in the \
-            selected GPU adapter ({}). See: https://github.com/warpdotdev/Warp/issues/6120",
+            selected GPU adapter ({}). See: https://github.com/zerx-lab/warp/issues/6120",
             adapter_info.name,
         );
         window.set_decorations(true);
@@ -693,6 +693,17 @@ struct Inner {
     window: Arc<winit::window::Window>,
     #[cfg(windows)]
     is_cloaked: bool,
+    /// X11 analogue of the Windows `is_cloaked` flag.
+    ///
+    /// On Linux/FreeBSD we create the winit window with `visible=false`, so
+    /// X11's `xcb_map_window` is not called until we explicitly request it.
+    /// This keeps the WM from seeing the surface (and starting its open-window
+    /// animation against an empty buffer) before we have content to show.
+    /// `render()` flips this to `false` and calls `set_visible(true)` after
+    /// the first successful frame. On Wayland winit's `set_visible` is a
+    /// no-op, so the flag has no effect there.
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    is_hidden_until_first_frame: bool,
     #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     gpu_power_preference: GPUPowerPreference,
     backend_preference: Option<wgpu::Backend>,
@@ -792,6 +803,8 @@ impl Window {
             window,
             #[cfg(windows)]
             is_cloaked: true,
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            is_hidden_until_first_frame: true,
             gpu_power_preference,
             backend_preference,
             rendering_resources: Some(RenderingResources {
@@ -913,6 +926,18 @@ impl Window {
                 }
             }
         }
+
+        // X11 analogue of the Windows uncloak above. The window was created
+        // with `visible=false` so winit's X11 backend did not `xcb_map_window`
+        // it. Now that a frame is on the surface, ask winit to map it — the
+        // WM only ever sees this window with content, so its open-window
+        // animation no longer plays against an empty buffer. On Wayland this
+        // is a no-op (winit's `set_visible` is unimplemented there).
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        if inner.is_hidden_until_first_frame {
+            inner.window.set_visible(true);
+            inner.is_hidden_until_first_frame = false;
+        }
         Ok(())
     }
 
@@ -924,6 +949,22 @@ impl Window {
             log::warn!("Tried to drop a window's renderer before it had been fully initialized");
             return;
         };
+
+        // Device loss before the first frame means `render()` never reached
+        // its `set_visible(true)` call, so on X11 the window is still
+        // unmapped — i.e. invisible to the WM, with no taskbar entry. Force
+        // it visible here so the user can at least see (and focus) the
+        // window while `recreate_renderer` retries. On Wayland this is a
+        // no-op.
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        if inner.is_hidden_until_first_frame {
+            inner.window.set_visible(true);
+            inner.is_hidden_until_first_frame = false;
+            log::warn!(
+                "Device lost before first frame; mapping window so the user is not left \
+                 with no taskbar entry while the renderer is rebuilt."
+            );
+        }
 
         let _ = inner.rendering_resources.take();
 
@@ -1334,7 +1375,7 @@ fn create_window(
     #[cfg(windows)]
     {
         // WARNING: Do not use [`WindowAttributes::with_no_redirection_bitmap`] as that caused:
-        // https://github.com/warpdotdev/Warp/issues/8935
+        // https://github.com/zerx-lab/warp/issues/8935
 
         use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
 
@@ -1372,6 +1413,25 @@ fn create_window(
                 window_bounds = WindowBounds::Default;
             }
         }
+    }
+
+    // X11 analogue of the Windows `cloaked` trick. On X11 the WM normally
+    // calls `xcb_map_window` as soon as the surface is created and then
+    // starts its open-window animation against an empty buffer — that
+    // animation is what users perceive as the startup "black flash" on
+    // KWin/Mutter etc. By passing `visible=false` here, winit's X11 backend
+    // skips the initial `map_window` call so the WM never sees the window
+    // until we explicitly request it. `Window::render()` flips the matching
+    // `is_hidden_until_first_frame` flag and calls `set_visible(true)` after
+    // the first frame is on the surface, so the window appears already
+    // painted.
+    //
+    // On Wayland this assignment is harmless: winit's Wayland `set_visible`
+    // is a no-op, and the Wayland protocol already gates display on a first
+    // attached buffer.
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    {
+        window_attributes.visible = false;
     }
 
     let (size, origin) = if tiling_window_manager && window_options.style != WindowStyle::Pin {

@@ -1,4 +1,4 @@
-# Warp Desktop — English (source-of-truth locale)
+# Zap Desktop — English (source-of-truth locale)
 # 本文件由多 agent 并行编辑,各自维护自己的 SECTION,key 以 surface 前缀隔离避免冲突。
 # 加 key 时 ctrl-F 找到对应 SECTION 头追加;新 surface 在文件末尾加新 SECTION。
 #
@@ -9,7 +9,7 @@
 # SECTION: common (Owner: foundation)
 # =============================================================================
 
-app-name = OpenWarp
+app-name = Zap
 app-tagline = 個人とチームのためのローカルファーストなターミナル
 
 common-ok = OK
@@ -84,7 +84,7 @@ common-new = 新規
 common-no-results = 結果なし
 common-learn-more = 詳細
 common-skip = スキップ
-common-get-warping = Warp を始める
+common-get-warping = Zap を始める
 common-try-again = もう一度試す
 common-settings = 設定
 common-premium = プレミアム
@@ -125,8 +125,8 @@ agent-management-artifact-plan = プラン
 agent-management-artifact-screenshot = スクリーンショット
 agent-management-artifact-file = ファイル
 agent-management-source-scheduled = スケジュール
-agent-management-source-local-agent = Warp (ローカルエージェント)
-agent-management-source-cloud-agent = Warp (ローカルエージェント)
+agent-management-source-local-agent = Zap (ローカルエージェント)
+agent-management-source-cloud-agent = Zap (ローカルエージェント)
 agent-management-source-oz-web = Oz Web
 agent-management-source-github-action = GitHub Action
 agent-management-no-session-available = 利用可能なセッションがありません
@@ -144,13 +144,13 @@ agent-management-loading-cloud-runs = エージェントの実行を読み込み
 # Files: app/src/workspace/view.rs
 # =============================================================================
 
-workspace-menu-update-warp-manually = Warp を手動で更新
+workspace-menu-update-warp-manually = Zap を手動で更新
 workspace-menu-whats-new = 新機能
 workspace-menu-settings = 設定
 workspace-menu-keyboard-shortcuts = キーボードショートカット
 workspace-menu-documentation = ドキュメント
 workspace-menu-feedback = フィードバック
-workspace-menu-view-warp-logs = Warp ログを表示
+workspace-menu-view-warp-logs = Zap ログを表示
 workspace-menu-slack = Slack
 workspace-toast-failed-load-conversation = 会話の読み込みに失敗しました。
 workspace-toast-failed-load-conversation-for-forking = フォーク用の会話の読み込みに失敗しました。
@@ -175,9 +175,9 @@ workspace-new-session-local-docker-sandbox = ローカル Docker サンドボッ
 workspace-new-worktree-config = 新規 worktree 設定
 workspace-new-tab-config = 新規タブ設定
 workspace-reopen-closed-session = 閉じたセッションを再度開く
-workspace-update-and-relaunch-warp = Warp を更新して再起動
+workspace-update-and-relaunch-warp = Zap を更新して再起動
 workspace-updating-to-version = ({ $version }) に更新中
-workspace-update-warp-manually = Warp を手動で更新
+workspace-update-warp-manually = Zap を手動で更新
 pane-get-started-title = はじめる
 pane-new-tab-title = 新規タブ
 # =============================================================================
@@ -191,7 +191,7 @@ terminal-banner-more-info = 詳細
 terminal-banner-completions-not-working-middle = )。{" "}
 terminal-banner-settings = 設定
 terminal-banner-completions-not-working-suffix =  で tmux warpification を有効にすると解決する場合があります。
-terminal-banner-shell-config-incompatible = シェルの設定が Warp と互換性がありません...{"  "}
+terminal-banner-shell-config-incompatible = シェルの設定が Zap と互換性がありません...{"  "}
 terminal-banner-did-you-intend = もしかして {" "}
 terminal-banner-move-cursor =  でカーソルを移動しようとしましたか?
 terminal-toast-powershell-subshells-not-supported = PowerShell サブシェルは未対応
@@ -203,8 +203,8 @@ terminal-cloud-agent-run = エージェント実行
 terminal-agent-header-for-terminal = ターミナル用
 ai-document-show-version-history = 履歴を表示
 ai-document-update-agent = エージェントを更新
-ai-document-save-and-sync-tooltip = この計画を Warp Drive に保存して自動同期
-ai-document-show-in-warp-drive = Warp Drive で表示
+ai-document-save-and-sync-tooltip = この計画を Zap Drive に保存して自動同期
+ai-document-show-in-warp-drive = Zap Drive で表示
 ai-document-save-as-markdown-file = Markdown ファイルとして保存
 ai-document-attach-to-active-session = アクティブセッションに添付
 ai-document-copy-plan-id = プランIDをコピー
@@ -236,7 +236,7 @@ ai-rule-edit-rule = ルールを編集
 ai-rule-delete-rule = ルールを削除
 ai-aws-refresh-credentials = AWS 認証情報を更新
 ai-footer-enable-notifications = 通知を有効化
-ai-footer-enable-notifications-tooltip = Warp プラグインをインストールして Warp 内のリッチなエージェント通知を有効化
+ai-footer-enable-notifications-tooltip = Warp プラグインをインストールして Zap 内のリッチなエージェント通知を有効化
 ai-footer-notifications-setup-instructions = 通知セットアップ手順
 ai-footer-install-plugin-instructions-tooltip = Warp プラグインのインストール手順を表示
 ai-footer-update-warp-plugin = Warp プラグインを更新
@@ -284,16 +284,16 @@ editor-custom-keybinding = カスタム...
 editor-change-keybinding = キーバインドを変更
 autosuggestion-ignore-this-suggestion = この提案を無視
 codex-use-latest-model = 最新の codex モデルを使用
-openwarp-launch-visit-repo = リポジトリを見る
-openwarp-launch-title = Warp がオープンソースになりました
-openwarp-launch-description = コミュニティの皆さんがエージェントファーストのワークフローで Warp の構築に参加できます。
-openwarp-launch-contribute-title = コントリビュート
-openwarp-launch-contribute-description = Warp のクライアントコードがオープンソースになりました。/feedback スキルで Issue を作成し、こちらのコントリビューションガイドラインに従ってください。
-openwarp-launch-contribute-link-text = こちら
-openwarp-launch-oad-title = Open Automated Development
-openwarp-launch-oad-description = Warp リポジトリは、Oz のローカルエージェント体験を活用したエージェントファーストワークフローで管理されています。
-openwarp-launch-auto-model-title = 'auto (open-weights)' 登場
-openwarp-launch-auto-model-description = タスクに最適なオープンウェイトモデル (Kimi、MiniMax など) を選ぶ新しい auto モデルを追加しました。
+zap-launch-visit-repo = リポジトリを見る
+zap-launch-title = Zap がオープンソースになりました
+zap-launch-description = コミュニティの皆さんがエージェントファーストのワークフローで Zap の構築に参加できます。
+zap-launch-contribute-title = コントリビュート
+zap-launch-contribute-description = Zap のクライアントコードがオープンソースになりました。/feedback スキルで Issue を作成し、こちらのコントリビューションガイドラインに従ってください。
+zap-launch-contribute-link-text = こちら
+zap-launch-oad-title = Open Automated Development
+zap-launch-oad-description = Zap リポジトリは、Oz のローカルエージェント体験を活用したエージェントファーストワークフローで管理されています。
+zap-launch-auto-model-title = 'auto (open-weights)' 登場
+zap-launch-auto-model-description = タスクに最適なオープンウェイトモデル (Kimi、MiniMax など) を選ぶ新しい auto モデルを追加しました。
 hoa-see-whats-new = 新着情報を見る
 hoa-finish = 完了
 session-config-get-warping = Warping を開始
@@ -319,11 +319,11 @@ drive-sharing-anyone-with-link = リンクを知っている全員
 drive-sharing-only-invited-teammates = ローカルアクセスのみ
 drive-sharing-teammates-with-link = リンクを知っているローカルアクセス
 terminal-warpify-subshell = サブシェルを Warpify
-terminal-warpify-subshell-tooltip = このセッションで Warp シェル統合を有効化
+terminal-warpify-subshell-tooltip = このセッションで Zap シェル統合を有効化
 terminal-use-agent = エージェントを使う
-terminal-use-agent-tooltip = Warp エージェントに支援を依頼
+terminal-use-agent-tooltip = Zap エージェントに支援を依頼
 terminal-give-control-back-to-agent = 制御をエージェントに戻す
-terminal-resume-agent-tooltip = Warp エージェントに再開を依頼
+terminal-resume-agent-tooltip = Zap エージェントに再開を依頼
 terminal-voice-input-tooltip = 音声入力
 terminal-attach-file-tooltip = ファイルを添付
 terminal-slash-commands-tooltip = スラッシュコマンド
@@ -332,8 +332,8 @@ terminal-profiles = プロファイル
 terminal-manage-profiles = プロファイルを管理
 terminal-continue-locally = ローカルで続行
 terminal-fork-conversation-locally-tooltip = この会話をローカルでフォーク
-terminal-open-in-warp = Warp で開く
-terminal-open-conversation-in-warp-tooltip = この会話を Warp デスクトップアプリで開く
+terminal-open-in-warp = Zap で開く
+terminal-open-conversation-in-warp-tooltip = この会話を Zap デスクトップアプリで開く
 terminal-stop-sharing = 共有を停止
 terminal-copy-session-sharing-link = セッション共有リンクをコピー
 terminal-shared-session-make-editor = 編集者にする
@@ -348,26 +348,26 @@ terminal-input-a11y-label = コマンド入力。
 terminal-input-a11y-helper = シェルコマンドを入力し、Enter で実行。Cmd+↑ で過去に実行したコマンドの出力に移動。Cmd+L でコマンド入力に再フォーカス。
 terminal-input-ai-command-search-hint = '#' を入力して AI コマンド候補を表示
 terminal-input-run-commands-hint = コマンドを実行
-terminal-input-agent-hint-deploy-react-vercel = 何でも Warp で。例: React アプリを Vercel にデプロイし環境変数を設定
-terminal-input-agent-hint-debug-python-ci = 何でも Warp で。例: CI で Python テストが失敗する原因をデバッグ
-terminal-input-agent-hint-setup-microservice = 何でも Warp で。例: Docker で新しいマイクロサービスをセットアップしデプロイパイプラインを作成
-terminal-input-agent-hint-fix-node-memory-leak = 何でも Warp で。例: Node.js アプリのメモリリークを発見して修正
-terminal-input-agent-hint-backup-postgres = 何でも Warp で。例: PostgreSQL DB のバックアップスクリプトを作成しスケジュール
-terminal-input-agent-hint-migrate-mysql-postgres = 何でも Warp で。例: MySQL から PostgreSQL へのデータ移行
-terminal-input-agent-hint-monitor-aws = 何でも Warp で。例: AWS インフラの監視とアラートを設定
-terminal-input-agent-hint-build-fastapi = 何でも Warp で。例: FastAPI でモバイルアプリ向け REST API を構築
-terminal-input-agent-hint-optimize-sql = 何でも Warp で。例: 遅い SQL クエリを最適化
-terminal-input-agent-hint-github-actions = 何でも Warp で。例: マージ時に自動デプロイする GitHub Actions ワークフローを作成
-terminal-input-agent-hint-redis-cache = 何でも Warp で。例: Web アプリに Redis キャッシュを設定
-terminal-input-agent-hint-kubernetes-pods = 何でも Warp で。例: Kubernetes Pod がクラッシュし続ける原因をトラブルシュート
-terminal-input-agent-hint-bigquery-pipeline = 何でも Warp で。例: CSV を処理して BigQuery に投入するデータパイプラインを構築
-terminal-input-agent-hint-ssl-https = 何でも Warp で。例: SSL 証明書を設定してドメインを HTTPS 化
-terminal-input-agent-hint-refactor-legacy-code = 何でも Warp で。例: レガシーコードをモダンな設計パターンにリファクタ
-terminal-input-agent-hint-unit-tests = 何でも Warp で。例: 認証サービスのユニットテストを作成
-terminal-input-agent-hint-elk-logs = 何でも Warp で。例: 分散システム向けに ELK スタックでログ集約を構築
-terminal-input-agent-hint-oauth-express = 何でも Warp で。例: Express.js アプリに OAuth2 認証を実装
-terminal-input-agent-hint-optimize-docker = 何でも Warp で。例: ビルド時間とサイズを削減するため Docker イメージを最適化
-terminal-input-agent-hint-ab-testing = 何でも Warp で。例: Web アプリ向けに A/B テスト基盤を構築
+terminal-input-agent-hint-deploy-react-vercel = 何でも Zap で。例: React アプリを Vercel にデプロイし環境変数を設定
+terminal-input-agent-hint-debug-python-ci = 何でも Zap で。例: CI で Python テストが失敗する原因をデバッグ
+terminal-input-agent-hint-setup-microservice = 何でも Zap で。例: Docker で新しいマイクロサービスをセットアップしデプロイパイプラインを作成
+terminal-input-agent-hint-fix-node-memory-leak = 何でも Zap で。例: Node.js アプリのメモリリークを発見して修正
+terminal-input-agent-hint-backup-postgres = 何でも Zap で。例: PostgreSQL DB のバックアップスクリプトを作成しスケジュール
+terminal-input-agent-hint-migrate-mysql-postgres = 何でも Zap で。例: MySQL から PostgreSQL へのデータ移行
+terminal-input-agent-hint-monitor-aws = 何でも Zap で。例: AWS インフラの監視とアラートを設定
+terminal-input-agent-hint-build-fastapi = 何でも Zap で。例: FastAPI でモバイルアプリ向け REST API を構築
+terminal-input-agent-hint-optimize-sql = 何でも Zap で。例: 遅い SQL クエリを最適化
+terminal-input-agent-hint-github-actions = 何でも Zap で。例: マージ時に自動デプロイする GitHub Actions ワークフローを作成
+terminal-input-agent-hint-redis-cache = 何でも Zap で。例: Web アプリに Redis キャッシュを設定
+terminal-input-agent-hint-kubernetes-pods = 何でも Zap で。例: Kubernetes Pod がクラッシュし続ける原因をトラブルシュート
+terminal-input-agent-hint-bigquery-pipeline = 何でも Zap で。例: CSV を処理して BigQuery に投入するデータパイプラインを構築
+terminal-input-agent-hint-ssl-https = 何でも Zap で。例: SSL 証明書を設定してドメインを HTTPS 化
+terminal-input-agent-hint-refactor-legacy-code = 何でも Zap で。例: レガシーコードをモダンな設計パターンにリファクタ
+terminal-input-agent-hint-unit-tests = 何でも Zap で。例: 認証サービスのユニットテストを作成
+terminal-input-agent-hint-elk-logs = 何でも Zap で。例: 分散システム向けに ELK スタックでログ集約を構築
+terminal-input-agent-hint-oauth-express = 何でも Zap で。例: Express.js アプリに OAuth2 認証を実装
+terminal-input-agent-hint-optimize-docker = 何でも Zap で。例: ビルド時間とサイズを削減するため Docker イメージを最適化
+terminal-input-agent-hint-ab-testing = 何でも Zap で。例: Web アプリ向けに A/B テスト基盤を構築
 terminal-input-steer-agent-hint = 実行中のエージェントを誘導
 terminal-input-steer-agent-backspace-hint = 実行中のエージェントを誘導、または Backspace で終了
 terminal-input-follow-up-hint = フォローアップを質問
@@ -403,7 +403,7 @@ terminal-message-open-plan = {" "}プランを開く
 terminal-starting-shell = シェルを起動中...
 terminal-input-no-skills-found = スキルが見つかりません
 terminal-model-specs-title = モデル仕様
-terminal-model-specs-description = Warp のハーネスでのモデル性能、クレジット消費レート、タスク速度のベンチマーク。
+terminal-model-specs-description = Zap のハーネスでのモデル性能、クレジット消費レート、タスク速度のベンチマーク。
 terminal-model-specs-reasoning-level-title = 推論レベル
 terminal-model-specs-reasoning-level-description = 推論レベルを上げるとクレジット消費とレイテンシが増えますが、複雑なタスクでの性能が向上します。
 terminal-model-auto-mode-title = Auto モード
@@ -468,7 +468,7 @@ env-vars-variables-label = 変数
 # Files: crates/onboarding/src/callout/view.rs
 # =============================================================================
 
-onboarding-callout-meet-input-title = Warp 入力欄のご紹介
+onboarding-callout-meet-input-title = Zap 入力欄のご紹介
 onboarding-callout-meet-input-text-prefix = ターミナル入力欄はターミナルコマンドとエージェントへのプロンプトの両方を受け付け、どちらを使っているか自動的に判定します。
 onboarding-callout-meet-input-text-suffix = を使うと、入力欄をエージェントモード (自然言語) またはターミナルモード (コマンド) に固定できます。
 onboarding-callout-talk-agent-title = エージェントと対話する
@@ -483,9 +483,9 @@ onboarding-callout-meet-terminal-text-suffix = を使ってエージェントを
 onboarding-callout-nl-overrides-title = 自然言語の上書き
 onboarding-callout-nl-overrides-text-prefix = 自動判定はいつでも次の方法で上書きできます:
 onboarding-callout-nl-support-title = 自然言語サポート
-onboarding-callout-nl-support-text-prefix = 自然言語入力は既定で無効です。有効にすると、平易な英語でリクエストを入力でき、Warp がエージェント向けクエリを自動判定します。次の方法でいつでも上書きできます:
+onboarding-callout-nl-support-text-prefix = 自然言語入力は既定で無効です。有効にすると、平易な英語でリクエストを入力でき、Zap がエージェント向けクエリを自動判定します。次の方法でいつでも上書きできます:
 onboarding-callout-enable-nl-detection = 自然言語判定を有効にする
-onboarding-callout-new-agent-title = Warp の新しいエージェント体験のご紹介
+onboarding-callout-new-agent-title = Zap の新しいエージェント体験のご紹介
 onboarding-callout-new-agent-text = エージェントとの会話は、ターミナルとは別のスコープを持つ画面になりました。ESC を押せばいつでもターミナルに戻れます。
 onboarding-callout-updated-agent-input-title = 更新されたエージェント入力欄
 onboarding-callout-updated-agent-input-project-text = エージェント入力欄は既定で自然言語とコマンドの両方を判定します。! を使うと bash モードに固定してコマンドを書けます。\n\n下記のクエリを送信してエージェントにこのプロジェクトを初期化させるか、⊗ で入力をクリアして自分で始めましょう!
@@ -500,9 +500,9 @@ onboarding-callout-back-terminal = ターミナルに戻る
 # =============================================================================
 
 language-widget-label = 言語
-language-widget-secondary = 変更を完全に反映するには Warp を再起動してください。
+language-widget-secondary = 変更を完全に反映するには Zap を再起動してください。
 language-restart-required-title = 言語が変更されました
-language-restart-required-body = Warp の UI 言語が更新されました。一部のテキストは即座に切り替わりますが、すべての箇所に反映するには再起動が必要です。
+language-restart-required-body = Zap の UI 言語が更新されました。一部のテキストは即座に切り替わりますが、すべての箇所に反映するには再起動が必要です。
 # =============================================================================
 # SECTION: settings (Owner: agent-settings)
 # Files: app/src/settings_view/**
@@ -513,7 +513,7 @@ language-restart-required-body = Warp の UI 言語が更新されました。�
 
 # Sidebar / SettingsSection labels (Display impl)
 settings-section-about = 概要
-# OpenWarp: settings-section-account は Account 設定ページとともに削除。
+# Zap: settings-section-account は Account 設定ページとともに削除。
 settings-section-mcp-servers = MCP サーバー
 settings-section-billing-and-usage = 請求と使用状況
 settings-section-appearance = 外観
@@ -521,11 +521,12 @@ settings-section-features = 機能
 settings-section-keybindings = キーボードショートカット
 settings-section-referrals = 紹介
 settings-section-shared-blocks = 共有ブロック
-settings-section-warp-drive = Warp Drive
+settings-section-warp-drive = Zap Drive
 settings-section-warpify = Warpify
 settings-section-network = ネットワーク
+settings-section-cloud-sync = クラウド同期
 settings-section-ai = AI
-settings-section-warp-agent = Warp エージェント
+settings-section-warp-agent = Zap エージェント
 settings-section-agent-profiles = プロファイル
 settings-section-agent-mcp-servers = MCP サーバー
 settings-section-agent-providers = プロバイダー
@@ -555,15 +556,15 @@ settings-debug-hide-inband-blocks = インバンドコマンドブロックを�
 # 命名前缀:settings-about-* / settings-main-*
 
 # about_page.rs
-settings-about-copyright = Copyright 2026 Warp
+settings-about-copyright = Copyright 2026 Zap
 settings-about-automatic-updates-label = 自動更新
-settings-about-automatic-updates-description = 有効にすると、OpenWarp はバックグラウンドで新バージョンを確認しダウンロードします。無効でも手動で更新を確認できます。
+settings-about-automatic-updates-description = 有効にすると、Zap はバックグラウンドで新バージョンを確認しダウンロードします。無効でも手動で更新を確認できます。
 settings-about-export-logs = ログをエクスポート…
 settings-about-export-logs-description = 最近のアプリログ（および存在する場合は MCP / 自動更新ログ）と診断サマリーを zip にまとめ、保存場所を選択できます。トラブルシューティングのために共有してください。
 settings-about-export-logs-success = ログを { $path } にエクスポートしました
 settings-about-export-logs-failure = ログのエクスポートに失敗しました：{ $error }
 
-# OpenWarp: main_page.rs 関連の文字列は Account 設定ページとともに削除された。
+# Zap: main_page.rs 関連の文字列は Account 設定ページとともに削除された。
 
 
 # --- ANCHOR-SUB-MCP (agent-settings-mcp) ---
@@ -610,7 +611,7 @@ settings-mcp-install-modal-install = インストール
 settings-mcp-install-modal-no-server = MCP サーバーが選択されていません
 
 # ---- list_page.rs ----
-settings-mcp-list-description = MCP サーバーを追加して Warp エージェントの機能を拡張します。MCP サーバーは標準化されたインターフェースを通じてデータソースやツールをエージェントに公開し、プラグインのように動作します。カスタムサーバーを追加するか、プリセットを使用して人気のサーバーから始められます。
+settings-mcp-list-description = MCP サーバーを追加して Zap エージェントの機能を拡張します。MCP サーバーは標準化されたインターフェースを通じてデータソースやツールをエージェントに公開し、プラグインのように動作します。カスタムサーバーを追加するか、プリセットを使用して人気のサーバーから始められます。
 settings-mcp-list-learn-more = 詳細はこちら。
 settings-mcp-list-empty-state = MCP サーバーを追加するとここに表示されます。
 settings-mcp-list-no-search-results = 検索結果が見つかりませんでした
@@ -623,9 +624,9 @@ settings-mcp-list-template-available-to-install = インストール可能
 settings-mcp-list-file-based-detected = 設定ファイルから検出
 settings-mcp-list-toast-server-updated = MCP サーバーを更新しました
 settings-mcp-list-section-my-mcps = マイ MCP
-settings-mcp-list-section-shared-by-warp-and-team = Warp と { $name } から利用可能
-settings-mcp-list-section-shared-by-warp-and-other-devices = Warp および別のデバイスから共有
-settings-mcp-list-section-shared-from-warp = Warp から共有
+settings-mcp-list-section-shared-by-warp-and-team = Zap と { $name } から利用可能
+settings-mcp-list-section-shared-by-warp-and-other-devices = Zap および別のデバイスから共有
+settings-mcp-list-section-shared-from-warp = Zap から共有
 settings-mcp-list-section-detected-from = { $provider } から検出
 settings-mcp-list-chip-global = グローバル
 settings-mcp-list-chip-shared-by-creator = 共有者: { $creator }
@@ -664,7 +665,7 @@ settings-mcp-update-modal-no-updates = 利用可能な更新はありません
 # 此锚点下放 settings_view/platform_page.rs 字符串
 # 命名前缀:settings-platform-*
 settings-platform-section-title = エージェント API キー
-settings-platform-description = API キーを作成・管理して、ローカルエージェントから Warp アカウントへのアクセスを許可します。
+settings-platform-description = API キーを作成・管理して、ローカルエージェントから Zap アカウントへのアクセスを許可します。
     詳細は次を参照
 settings-platform-documentation-link = ドキュメント。
 settings-platform-create-button = + API キーを作成
@@ -681,10 +682,10 @@ settings-platform-value-never = なし
 settings-platform-scope-personal = 個人
 settings-platform-scope-team = チーム
 settings-platform-zero-state-title = API キーがありません
-settings-platform-zero-state-description = キーを作成して Warp への外部アクセスを管理します
-settings-platform-create-api-key-description-personal = この API キーはユーザーに紐付き、Warp アカウントに対するリクエストを実行できます。
+settings-platform-zero-state-description = キーを作成して Zap への外部アクセスを管理します
+settings-platform-create-api-key-description-personal = この API キーはユーザーに紐付き、Zap アカウントに対するリクエストを実行できます。
 settings-platform-create-api-key-description-team = この API キーはチームに紐付き、チームを代理してリクエストを実行できます。
-settings-platform-create-api-key-name-placeholder = Warp API キー
+settings-platform-create-api-key-name-placeholder = Zap API キー
 settings-platform-create-api-key-expiration-one-day = 1 日
 settings-platform-create-api-key-expiration-thirty-days = 30 日
 settings-platform-create-api-key-expiration-ninety-days = 90 日
@@ -715,8 +716,8 @@ settings-keybindings-subheader = キーボードショートカットを設定
 settings-keybindings-command-column = コマンド
 
 # --- ANCHOR-SUB-REFERRALS (agent-settings-referrals) ---
-settings-referrals-page-title = 友人を Warp に招待
-settings-referrals-anonymous-header = ローカル OpenWarp ビルドでは紹介プログラムを利用できません
+settings-referrals-page-title = 友人を Zap に招待
+settings-referrals-anonymous-header = ローカル Zap ビルドでは紹介プログラムを利用できません
 settings-referrals-sign-up = ローカルでは利用不可
 settings-referrals-link-label = リンク
 settings-referrals-email-label = メール
@@ -730,7 +731,7 @@ settings-referrals-email-success-toast = メールを送信しました。
 settings-referrals-email-failure-toast = メール送信に失敗しました。再試行してください。
 settings-referrals-email-empty-error = メールアドレスを入力してください。
 settings-referrals-email-invalid-error = 次のメールアドレスが有効か確認してください: { $email }
-settings-referrals-reward-intro = 紹介で Warp 限定グッズを獲得*
+settings-referrals-reward-intro = 紹介で Zap 限定グッズを獲得*
 settings-referrals-claimed-count-singular = 現在の紹介数
 settings-referrals-claimed-count-plural = 現在の紹介数
 settings-referrals-terms-link = 一部制限が適用されます。
@@ -746,7 +747,7 @@ settings-referrals-reward-backpack = バックパック
 
 # --- ANCHOR-SUB-WARPIFY (agent-settings-warpify) ---
 settings-warpify-page-title = Warpify
-settings-warpify-description-prefix = Warp が特定のシェルを「Warpify」(ブロック・入力モード等のサポートを追加) するかを設定します。
+settings-warpify-description-prefix = Zap が特定のシェルを「Warpify」(ブロック・入力モード等のサポートを追加) するかを設定します。
 settings-warpify-learn-more = 詳細
 settings-warpify-section-subshells = サブシェル
 settings-warpify-section-subshells-subtitle = 対応サブシェル: bash、zsh、fish。
@@ -759,7 +760,7 @@ settings-warpify-command-placeholder = コマンド (正規表現対応)
 settings-warpify-host-placeholder = ホスト (正規表現対応)
 settings-warpify-enable-ssh = SSH セッションを Warpify
 settings-warpify-install-ssh-extension = SSH 拡張をインストール
-settings-warpify-install-ssh-extension-description = リモートホストに Warp の SSH 拡張がインストールされていない場合のインストール挙動を制御します。
+settings-warpify-install-ssh-extension-description = リモートホストに Zap の SSH 拡張がインストールされていない場合のインストール挙動を制御します。
 settings-warpify-use-tmux = Tmux Warpification を使用
 settings-warpify-tmux-description = tmux ssh ラッパーは既定のラッパーが動作しない多くの状況で機能しますが、warpify するためにボタン押下が必要な場合があります。新しいタブから有効になります。
 settings-warpify-ssh-tmux-toggle-binding-label = Warpification 用 SSH セッション検出
@@ -797,9 +798,54 @@ settings-network-test-success-http = ✅ インターネット到達可能 ({$la
 settings-network-test-failed-tcp = ❌ プロキシに到達できません: {$error}
 settings-network-test-failed-http = ❌ 接続失敗: {$error}
 
+# --- ANCHOR-SUB-CLOUD-SYNC (agent-settings-cloud-sync) ---
+# クラウド同期設定ページ
+settings-cloud-sync-description = GitHub Gist または Gitee Gist を介してクラウド同期を設定します。設定は暗号化され、シークレット Gist として保存されます。
+settings-cloud-sync-scope-note = 現在、SSH管理サーバーの設定データのみ同期しています。
+settings-cloud-sync-platform-label = 同期プラットフォーム
+settings-cloud-sync-platform-description = 同期に使用するクラウドサービスを選択
+settings-cloud-sync-token-label = アクセストークン
+settings-cloud-sync-token-description = gist 権限のある個人アクセストークン
+settings-cloud-sync-token-placeholder = アクセストークンを入力...
+settings-cloud-sync-operations-header = 同期操作
+settings-cloud-sync-upload-label = アップロード
+settings-cloud-sync-download-label = ダウンロード
+settings-cloud-sync-status-header = 同期ステータス
+settings-cloud-sync-local-version-label = ローカルバージョン
+settings-cloud-sync-last-time-label = 最終同期時刻
+settings-cloud-sync-last-platform-label = 最終同期プラットフォーム
+settings-cloud-sync-local-version = ローカルバージョン: {$version}
+settings-cloud-sync-last-time = 最終同期時刻: {$time}
+settings-cloud-sync-last-platform = 最終同期プラットフォーム: {$platform}
+settings-cloud-sync-na = N/A
+settings-cloud-sync-never = 未同期
+settings-cloud-sync-syncing-upload = {$platform} にアップロード中...
+settings-cloud-sync-syncing-download = {$platform} からダウンロード中...
+settings-cloud-sync-success-upload = {$platform} へのアップロード成功（バージョン v{$version}）
+settings-cloud-sync-success-download = {$platform} からのダウンロード成功（バージョン v{$version}）
+settings-cloud-sync-already-up-to-date = 最新バージョンです（v{$version}）、同期不要
+settings-cloud-sync-failed = 失敗: {$error}
+settings-cloud-sync-conflict-status = 競合: ローカル v{$local} vs リモート v{$remote}
+settings-cloud-sync-conflict-status-equal = バージョンが一致: ローカル v{$local} = リモート v{$remote}
+settings-cloud-sync-token-not-configured = {$platform} Token が設定されていません
+settings-cloud-sync-conflict-title = バージョン競合
+settings-cloud-sync-conflict-description = リモートバージョン（v{$remote}）がローカル（v{$local}）より新しいです。強制アップロードするとリモートデータが上書きされます。
+settings-cloud-sync-conflict-description-equal = リモートバージョンとローカルバージョンが同一です。強制アップロードするとリモートデータが上書きされます。
+settings-cloud-sync-force-upload = 強制アップロード
+settings-cloud-sync-download-confirm-title = ダウンロードの確認
+settings-cloud-sync-download-confirm-description = ダウンロードすると、ローカルのすべてのSSHサーバー設定がリモートバージョンに置き換えられます。この操作は元に戻せません。
+settings-cloud-sync-download-confirm-button = ダウンロードを確認
+settings-cloud-sync-upload-confirm-title = アップロードの確認
+settings-cloud-sync-upload-confirm-description = アップロードすると、リモートのすべての SSH サーバー設定がローカルバージョンで上書きされます。Gist は履歴を保持しないため、この操作は元に戻せません。
+settings-cloud-sync-upload-confirm-button = アップロードを確認
+settings-cloud-sync-clear = クリア
+settings-cloud-sync-validating = トークンを検証中...
+settings-cloud-sync-token-valid = トークン有効（{$username}）
+settings-cloud-sync-token-invalid = 無効なトークン：{$error}
+
 # --- ANCHOR-SUB-AI-PAGE (agent-settings-ai-page) ---
 # Section / sub-headers
-settings-ai-warp-agent-header = Warp エージェント
+settings-ai-warp-agent-header = Zap エージェント
 settings-ai-active-ai-section = アクティブな AI
 settings-ai-input-section = 入力
 settings-ai-mcp-servers-section = MCP サーバー
@@ -839,23 +885,23 @@ settings-ai-execute-commands = コマンドの実行
 settings-ai-interact-running-commands = 実行中コマンドとの対話
 settings-ai-call-mcp-servers = MCP サーバーの呼び出し
 settings-ai-command-denylist = コマンド拒否リスト
-settings-ai-command-denylist-description = Warp エージェントが実行する前に必ず権限を確認するコマンドにマッチする正規表現。
+settings-ai-command-denylist-description = Zap エージェントが実行する前に必ず権限を確認するコマンドにマッチする正規表現。
 settings-ai-command-allowlist = コマンド許可リスト
-settings-ai-command-allowlist-description = Warp エージェントが自動的に実行できるコマンドにマッチする正規表現。
+settings-ai-command-allowlist-description = Zap エージェントが自動的に実行できるコマンドにマッチする正規表現。
 settings-ai-directory-allowlist = ディレクトリ許可リスト
 settings-ai-directory-allowlist-description = エージェントに特定ディレクトリのファイルアクセスを付与します。
 settings-ai-mcp-allowlist = MCP 許可リスト
-settings-ai-mcp-allowlist-description = Warp エージェントによるこれらの MCP サーバーの呼び出しを許可します。
+settings-ai-mcp-allowlist-description = Zap エージェントによるこれらの MCP サーバーの呼び出しを許可します。
 settings-ai-mcp-denylist = MCP 拒否リスト
-settings-ai-mcp-denylist-description = Warp エージェントはこのリストにある MCP サーバーを呼び出す前に必ず権限を確認します。
+settings-ai-mcp-denylist-description = Zap エージェントはこのリストにある MCP サーバーを呼び出す前に必ず権限を確認します。
 settings-ai-info-banner-managed-by-workspace = 一部の権限はワークスペースによって管理されています。
 
 # Models / Profiles
 settings-ai-base-model = ベースモデル
-settings-ai-base-model-description = このモデルは Warp エージェントの中心エンジンとして機能します。ほとんどのやり取りを担い、必要に応じて計画やコード生成などのタスクで他のモデルを呼び出します。Warp はモデルの可用性や、会話要約などの補助タスクに応じて自動的に別のモデルへ切り替えることがあります。
+settings-ai-base-model-description = このモデルは Zap エージェントの中心エンジンとして機能します。ほとんどのやり取りを担い、必要に応じて計画やコード生成などのタスクで他のモデルを呼び出します。Zap はモデルの可用性や、会話要約などの補助タスクに応じて自動的に別のモデルへ切り替えることがあります。
 settings-ai-show-model-picker-in-prompt = プロンプトにモデル選択を表示
 settings-ai-codebase-context = コードベースのコンテキスト
-settings-ai-codebase-context-description = Warp エージェントによるコードベースの概要生成を許可し、コンテキストとして利用します。コードがサーバーに保存されることはありません。
+settings-ai-codebase-context-description = Zap エージェントによるコードベースの概要生成を許可し、コンテキストとして利用します。コードがサーバーに保存されることはありません。
 settings-ai-add-profile = プロファイルを追加
 settings-ai-agents-description = エージェントの動作範囲を設定します。アクセスできる対象、自律性のレベル、承認を求めるタイミングを選択できます。自然言語入力、コードベース認識などの動作も細かく調整できます。
 settings-ai-profiles-description = プロファイルでは、エージェントが実行できるアクションや承認が必要なタイミング、コーディングや計画などのタスクで使用するモデルなど、エージェントの動作を定義できます。プロジェクトごとにスコープを限定することもできます。
@@ -892,7 +938,7 @@ settings-ai-rules-label = ルール
 settings-ai-suggested-rules-label = ルールの提案
 settings-ai-suggested-rules-description = やり取りに基づいて保存するルールを AI に提案させます。
 settings-ai-manage-rules = ルールを管理
-settings-ai-rules-description = ルールは、Warp エージェントがコードベースや特定のワークフローのお作法に沿うよう導きます。
+settings-ai-rules-description = ルールは、Zap エージェントがコードベースや特定のワークフローのお作法に沿うよう導きます。
 
 # Voice
 settings-ai-voice-input-label = 音声入力
@@ -923,12 +969,12 @@ settings-ai-coding-agent-select-header = コーディングエージェントを
 
 # Experimental / Agent
 settings-ai-cloud-agent-computer-use = エージェントでのコンピュータ操作
-settings-ai-cloud-agent-computer-use-description = Warp アプリから開始したエージェント会話でコンピュータ操作を有効化します。
+settings-ai-cloud-agent-computer-use-description = Zap アプリから開始したエージェント会話でコンピュータ操作を有効化します。
 
 # AWS Bedrock
 settings-ai-aws-bedrock-toggle = AWS Bedrock の認証情報を使用
-settings-ai-aws-bedrock-description = Warp はローカルの AWS CLI 認証情報を読み込み、Bedrock 対応モデルへ送信します。
-settings-ai-aws-bedrock-description-managed = Warp はローカルの AWS CLI 認証情報を読み込み、Bedrock 対応モデルへ送信します。この設定は組織によって管理されています。
+settings-ai-aws-bedrock-description = Zap はローカルの AWS CLI 認証情報を読み込み、Bedrock 対応モデルへ送信します。
+settings-ai-aws-bedrock-description-managed = Zap はローカルの AWS CLI 認証情報を読み込み、Bedrock 対応モデルへ送信します。この設定は組織によって管理されています。
 settings-ai-aws-login-command = ログインコマンド
 settings-ai-aws-profile = AWS プロファイル
 settings-ai-aws-auto-login = ログインコマンドを自動実行
@@ -959,8 +1005,8 @@ settings-features-show-changelog-after-update = アップデート後にチェ�
 settings-features-mouse-scroll-multiplier = マウスホイール 1 回でスクロールする行数
 settings-features-auto-open-code-review = コードレビューパネルを自動で開く
 settings-features-max-rows-per-block = ブロック内の最大行数
-settings-features-ssh-wrapper = Warp SSH ラッパー
-settings-features-receive-desktop-notifications = Warp からのデスクトップ通知を受信
+settings-features-ssh-wrapper = Zap SSH ラッパー
+settings-features-receive-desktop-notifications = Zap からのデスクトップ通知を受信
 settings-features-show-in-app-agent-notifications = アプリ内エージェント通知を表示
 settings-features-confirm-close-shared-session = 読み取り専用セッションを閉じる前に確認
 settings-features-global-hotkey-label = グローバルホットキー:
@@ -1013,7 +1059,7 @@ settings-features-working-dir-custom = カスタムディレクトリ
 settings-features-undo-close-enable = 閉じたセッションの再オープンを有効化
 settings-features-undo-close-grace-period = 猶予期間 (秒)
 settings-features-configure-global-hotkey = グローバルホットキーを設定
-settings-features-make-default-terminal = Warp を既定のターミナルにする
+settings-features-make-default-terminal = Zap を既定のターミナルにする
 settings-features-pin-top = 上に固定
 settings-features-pin-bottom = 下に固定
 settings-features-pin-left = 左に固定
@@ -1041,7 +1087,7 @@ settings-features-see-docs = ドキュメントを参照。
 settings-features-allowed-values-1-20 = 許容値: 1〜20
 settings-features-supports-floating-1-20 = 1〜20 の浮動小数点値に対応します。
 settings-features-auto-open-code-review-description = この設定が有効な場合、会話で最初に受け入れた差分でコードレビューパネルが開きます
-settings-features-default-terminal-current = Warp が既定のターミナルです
+settings-features-default-terminal-current = Zap が既定のターミナルです
 settings-features-takes-effect-new-sessions = この変更は新規セッションから有効になります
 settings-features-seconds = 秒
 settings-features-vim-system-clipboard = 無名レジスタをシステムクリップボードに設定
@@ -1057,7 +1103,7 @@ settings-features-new-tab-placement = 新規タブの配置
 settings-features-linux-selection-clipboard-tooltip = Linux のプライマリクリップボードをサポートするかどうか。
 settings-features-changes-apply-new-windows = 変更は新規ウィンドウに適用されます。
 settings-features-wayland-description = この設定を有効にするとグローバルホットキーは使えなくなります。無効の場合、Wayland コンポジタが分数スケーリング (例: 125%) を使用しているとテキストがぼやけることがあります。
-settings-features-restart-warp-to-apply = 変更を反映するには Warp を再起動してください。
+settings-features-restart-warp-to-apply = 変更を反映するには Zap を再起動してください。
 
 # --- ANCHOR-SUB-SETTINGS-PAGE-NAV (agent-settings-page-nav) ---
 # 此锚点下放 settings_view/{settings_page,nav,delete_environment_confirmation_dialog,directory_color_add_picker,pane_manager}.rs 字符串
@@ -1140,7 +1186,7 @@ settings-exec-profile-editor-workspace-override-tooltip = このオプション�
 settings-exec-profile-editor-section-models = モデル
 settings-exec-profile-editor-section-permissions = 権限
 settings-exec-profile-editor-base-model = ベースモデル
-settings-exec-profile-editor-base-model-desc = このモデルはエージェントの主要エンジンとして機能します。ほとんどのやり取りを駆動し、必要に応じて計画やコード生成などのために他モデルを呼び出します。Warp はモデルの可用性や、会話の要約などの補助タスクのため、自動的に代替モデルに切り替える場合があります。
+settings-exec-profile-editor-base-model-desc = このモデルはエージェントの主要エンジンとして機能します。ほとんどのやり取りを駆動し、必要に応じて計画やコード生成などのために他モデルを呼び出します。Zap はモデルの可用性や、会話の要約などの補助タスクのため、自動的に代替モデルに切り替える場合があります。
 settings-exec-profile-editor-full-terminal-use-model = ターミナル全面利用モデル
 settings-exec-profile-editor-full-terminal-use-model-desc = データベースシェル、デバッガ、REPL、開発サーバーなど、対話型ターミナルアプリケーション内でエージェントが動作する際に使用されるモデル。ライブ出力を読み取り、PTY にコマンドを書き込みます。
 settings-exec-profile-editor-title-model = タイトル生成モデル
@@ -1204,7 +1250,7 @@ settings-show-blocks-unshare-failed = ブロックの共有解除に失敗しま
 settings-show-blocks-confirm-dialog-title = ブロックを共有解除
 settings-show-blocks-confirm-dialog-text = このブロックを共有解除してもよろしいですか?
 
-    リンク経由でアクセスできなくなり、Warp サーバーから完全に削除されます。
+    リンク経由でアクセスできなくなり、Zap サーバーから完全に削除されます。
 settings-show-blocks-confirm-cancel = キャンセル
 settings-show-blocks-confirm-unshare = 共有解除
 
@@ -1236,7 +1282,7 @@ settings-appearance-theme-sync-os-description = システムに合わせてラ�
 # Custom App Icon widget
 settings-appearance-custom-icon-label = アプリアイコンをカスタマイズ
 settings-appearance-custom-icon-bundle-warning = アプリアイコンの変更にはアプリがバンドルされている必要があります。
-settings-appearance-custom-icon-restart-warning = MacOS で希望のアイコンスタイルを適用するには Warp の再起動が必要な場合があります。
+settings-appearance-custom-icon-restart-warning = MacOS で希望のアイコンスタイルを適用するには Zap の再起動が必要な場合があります。
 
 # Window widgets
 settings-appearance-window-custom-size-label = カスタムサイズで新規ウィンドウを開く
@@ -1254,10 +1300,10 @@ settings-appearance-tools-panel-consistent-label = ツールパネルの表示�
 
 # Input
 settings-appearance-input-type-label = 入力タイプ
-settings-appearance-input-type-warp = Warp
+settings-appearance-input-type-warp = Zap
 settings-appearance-input-type-shell = シェル (PS1)
 settings-appearance-input-position-label = 入力位置
-settings-appearance-input-mode-pinned-bottom = 下部に固定 (Warp モード)
+settings-appearance-input-mode-pinned-bottom = 下部に固定 (Zap モード)
 settings-appearance-input-mode-pinned-top = 上部に固定 (リバースモード)
 settings-appearance-input-mode-waterfall = 上から開始 (クラシックモード)
 
@@ -1273,6 +1319,7 @@ settings-appearance-block-show-dividers-label = ブロックの区切り線を�
 # Text / Fonts
 settings-appearance-font-agent-label = エージェントフォント
 settings-appearance-font-match-terminal = ターミナルに合わせる
+settings-appearance-font-ui-label = UI フォント
 settings-appearance-font-terminal-label = ターミナルフォント
 settings-appearance-font-view-all-system = 利用可能なシステムフォントをすべて表示
 settings-appearance-font-weight-label = フォントの太さ
@@ -1330,12 +1377,12 @@ settings-appearance-zoom-secondary = すべてのウィンドウの既定ズー�
 
 # --- ANCHOR-SUB-ENVIRONMENTS (agent-settings-environments) ---
 settings-environments-page-title = 環境
-settings-environments-page-description = 環境はアンビエントエージェントが実行される場所を定義します。GitHub (推奨)、Warp 支援セットアップ、または手動構成で数分で設定できます。
+settings-environments-page-description = 環境はアンビエントエージェントが実行される場所を定義します。GitHub (推奨)、Zap 支援セットアップ、または手動構成で数分で設定できます。
 settings-environments-search-placeholder = 環境を検索...
 settings-environments-no-matches = 検索条件に一致する環境はありません。
 settings-environments-section-personal = 個人
-settings-environments-section-team-default = Warp とこのデバイスから提供
-settings-environments-section-team-named = Warp と { $team } で共有
+settings-environments-section-team-default = Zap とこのデバイスから提供
+settings-environments-section-team-named = Zap と { $team } で共有
 settings-environments-env-id-prefix = 環境 ID: { $id }
 settings-environments-detail-image = イメージ: { $image }
 settings-environments-detail-repos = リポジトリ: { $repos }
@@ -1482,7 +1529,7 @@ quit-warning-title-pane = ペインを閉じますか?
 quit-warning-title-tab-singular = タブを閉じますか?
 quit-warning-title-tab-plural = タブを閉じますか?
 quit-warning-title-window = ウィンドウを閉じますか?
-quit-warning-title-app = Warp を終了しますか?
+quit-warning-title-app = Zap を終了しますか?
 quit-warning-title-editor-tab = 変更を保存しますか?
 
 # ---- Buttons ----
@@ -1522,7 +1569,7 @@ quit-warning-unsaved-editor-tab = { $file } への変更を保存しますか? �
 quit-warning-unsaved-editor-tab-fallback-name = このファイル
 
 # --- ANCHOR-SUB-RULES-PAGE (agent-rules-page) ---
-# Manage Rules 页面(Warp Drive 中的 AI Fact Collection)。
+# Manage Rules 页面(Zap Drive 中的 AI Fact Collection)。
 rules-collection-name = ルール
 
 # --- ANCHOR-SUB-KEYBINDING-DESC (agent-keybinding-descriptions) ---
@@ -1596,12 +1643,12 @@ keybinding-desc-workspace-toggle-vertical-tabs-menu = 縦タブパネルを切�
 keybinding-desc-workspace-left-panel-agent-conversations = 左パネル: エージェント会話
 keybinding-desc-workspace-left-panel-project-explorer = 左パネル: プロジェクトエクスプローラー
 keybinding-desc-workspace-left-panel-global-search = 左パネル: グローバル検索
-keybinding-desc-workspace-left-panel-warp-drive = 左パネル: Warp Drive
+keybinding-desc-workspace-left-panel-warp-drive = 左パネル: Zap Drive
 keybinding-desc-workspace-left-panel-ssh-manager = 左パネル: SSH マネージャー
 keybinding-desc-workspace-open-global-search = グローバル検索を開く
 keybinding-desc-workspace-open-global-search-menu = グローバル検索
-keybinding-desc-workspace-toggle-warp-drive = Warp Drive を切り替え
-keybinding-desc-workspace-toggle-warp-drive-menu = Warp Drive
+keybinding-desc-workspace-toggle-warp-drive = Zap Drive を切り替え
+keybinding-desc-workspace-toggle-warp-drive-menu = Zap Drive
 keybinding-desc-workspace-toggle-conversation-list-view = エージェント会話リストビューを切り替え
 keybinding-desc-workspace-toggle-conversation-list-view-menu = エージェント会話リストビュー
 keybinding-desc-workspace-close-panel = フォーカス中のパネルを閉じる
@@ -1613,7 +1660,7 @@ keybinding-desc-workspace-toggle-navigation-palette = ナビゲーションパ�
 keybinding-desc-workspace-toggle-navigation-palette-menu = ナビゲーションパレット
 keybinding-desc-workspace-toggle-launch-config-palette = launch 設定パレット
 keybinding-desc-workspace-toggle-files-palette = ファイルパレットを切り替え
-keybinding-desc-workspace-search-drive = Warp Drive を検索
+keybinding-desc-workspace-search-drive = Zap Drive を検索
 keybinding-desc-workspace-move-tab-left = タブを左に移動
 keybinding-desc-workspace-move-tab-up = タブを上に移動
 keybinding-desc-workspace-move-tab-right = タブを右に移動
@@ -1626,7 +1673,7 @@ keybinding-desc-workspace-toggle-block-snackbar = スティッキーコマンド
 
 # Window / tab close
 keybinding-desc-workspace-rename-active-tab = 現在のタブをリネーム
-keybinding-desc-workspace-terminate-app = Warp を終了
+keybinding-desc-workspace-terminate-app = Zap を終了
 keybinding-desc-workspace-close-window = ウィンドウを閉じる
 keybinding-desc-workspace-close-active-tab = 現在のタブを閉じる
 keybinding-desc-workspace-close-other-tabs = 他のタブを閉じる
@@ -1644,12 +1691,12 @@ keybinding-desc-workspace-view-changelog = 最新の changelog を表示
 
 # Resource center / Drive export / CLI
 keybinding-desc-workspace-toggle-resource-center = リソースセンターを切り替え
-keybinding-desc-workspace-export-all-warp-drive-objects = すべての Warp Drive オブジェクトをエクスポート
+keybinding-desc-workspace-export-all-warp-drive-objects = すべての Zap Drive オブジェクトをエクスポート
 keybinding-desc-workspace-install-cli = Oz CLI コマンドをインストール
 keybinding-desc-workspace-uninstall-cli = Oz CLI コマンドをアンインストール
 
 # AI assistant / agents
-keybinding-desc-workspace-toggle-ai-assistant = Warp AI を切り替え
+keybinding-desc-workspace-toggle-ai-assistant = Zap AI を切り替え
 
 # Env vars / prompts
 keybinding-desc-workspace-create-personal-env-vars = 新規個人環境変数を作成
@@ -1673,7 +1720,7 @@ keybinding-desc-workspace-toggle-notification-mailbox = 通知メールボック
 # Settings pages
 keybinding-desc-workspace-show-settings = 設定を開く
 keybinding-desc-workspace-show-settings-menu = 設定
-# OpenWarp: keybinding-desc-workspace-show-settings-account は Account 設定ページとともに削除。
+# Zap: keybinding-desc-workspace-show-settings-account は Account 設定ページとともに削除。
 keybinding-desc-workspace-show-settings-appearance = 設定を開く: 外観
 keybinding-desc-workspace-show-settings-appearance-menu = 外観...
 keybinding-desc-workspace-show-settings-features = 設定を開く: 機能
@@ -1682,7 +1729,7 @@ keybinding-desc-workspace-show-settings-shared-blocks-menu = 共有ブロック�
 keybinding-desc-workspace-show-settings-keyboard-shortcuts = 設定を開く: キーボードショートカット
 keybinding-desc-workspace-show-settings-keyboard-shortcuts-menu = キーボードショートカットを設定...
 keybinding-desc-workspace-show-settings-about = 設定を開く: バージョン情報
-keybinding-desc-workspace-show-settings-about-menu = Warp について
+keybinding-desc-workspace-show-settings-about-menu = Zap について
 keybinding-desc-workspace-show-settings-warpify = 設定を開く: Warpify
 keybinding-desc-workspace-show-settings-warpify-menu = Warpify を設定...
 keybinding-desc-workspace-show-settings-ai = 設定を開く: AI
@@ -1697,7 +1744,7 @@ keybinding-desc-workspace-link-to-slack = Slack コミュニティに参加 (外
 keybinding-desc-workspace-link-to-user-docs = ユーザードキュメントを表示 (外部リンクを開く)
 keybinding-desc-workspace-send-feedback = フィードバックを送信 (外部リンクを開く)
 keybinding-desc-workspace-send-feedback-oz = Oz でフィードバックを送信
-keybinding-desc-workspace-view-logs = Warp ログを表示
+keybinding-desc-workspace-view-logs = Zap ログを表示
 keybinding-desc-workspace-link-to-privacy-policy = プライバシーポリシーを表示 (外部リンクを開く)
 
 # Input / terminal / project bindings (registered outside workspace/mod.rs)
@@ -1718,8 +1765,8 @@ keybinding-desc-workspace-view-first-time-user-experience = [Debug] 初回ユー
 keybinding-desc-workspace-undismiss-aws-login-banner = [Debug] AWS ログインバナーの非表示を解除
 keybinding-desc-workspace-open-oz-launch-modal = [Debug] Oz Launch モーダルを開く
 keybinding-desc-workspace-reset-oz-launch-modal-state = [Debug] Oz Launch モーダル状態をリセット
-keybinding-desc-workspace-open-openwarp-launch-modal = [Debug] OpenWarp Launch モーダルを開く
-keybinding-desc-workspace-reset-openwarp-launch-modal-state = [Debug] OpenWarp Launch モーダル状態をリセット
+keybinding-desc-workspace-open-zap-launch-modal = [Debug] Zap Launch モーダルを開く
+keybinding-desc-workspace-reset-zap-launch-modal-state = [Debug] Zap Launch モーダル状態をリセット
 keybinding-desc-workspace-install-opencode-warp-plugin = [Debug] OpenCode Warp プラグインをインストール
 keybinding-desc-workspace-use-local-opencode-warp-plugin = [Debug] ローカル OpenCode Warp プラグインを使用 (テスト専用)
 keybinding-desc-workspace-open-session-config-modal = [Debug] Session Config モーダルを開く
@@ -1728,7 +1775,7 @@ keybinding-desc-workspace-sample-process = プロセスをサンプリング
 keybinding-desc-workspace-dump-heap-profile = ヒーププロファイルをダンプ (一度のみ実行可能)
 
 # Terminal input bindings
-keybinding-desc-input-show-network-log = Warp ネットワークログを表示
+keybinding-desc-input-show-network-log = Zap ネットワークログを表示
 keybinding-desc-input-clear-screen = 画面をクリア
 keybinding-desc-input-toggle-classic-completions = (実験的) クラシック補完モードを切り替え
 keybinding-desc-input-command-search = コマンド検索
@@ -1909,9 +1956,9 @@ keybinding-desc-welcome-terminal-session = ターミナルセッション
 keybinding-desc-welcome-add-repository = リポジトリを追加
 
 # AI assistant panel binding desc
-keybinding-desc-ai-assistant-close = Warp AI を閉じる
-keybinding-desc-ai-assistant-focus-terminal-input = Warp AI からターミナル入力にフォーカス
-keybinding-desc-ai-assistant-restart = Warp AI を再起動
+keybinding-desc-ai-assistant-close = Zap AI を閉じる
+keybinding-desc-ai-assistant-focus-terminal-input = Zap AI からターミナル入力にフォーカス
+keybinding-desc-ai-assistant-restart = Zap AI を再起動
 
 # Code review binding desc
 keybinding-desc-code-review-save-all = コードレビューの未保存ファイルをすべて保存
@@ -1980,9 +2027,9 @@ keybinding-desc-conversation-details-copy = コピー
 
 # Terminal extras binding desc
 keybinding-desc-terminal-show-history = 履歴を表示
-keybinding-desc-terminal-ask-ai-selection = 選択について Warp AI に質問
-keybinding-desc-terminal-ask-ai-last-block = 直前のブロックについて Warp AI に質問
-keybinding-desc-terminal-ask-ai = Warp AI に質問
+keybinding-desc-terminal-ask-ai-selection = 選択について Zap AI に質問
+keybinding-desc-terminal-ask-ai-last-block = 直前のブロックについて Zap AI に質問
+keybinding-desc-terminal-ask-ai = Zap AI に質問
 keybinding-desc-terminal-load-agent-conversation = エージェントモード会話を読み込み (クリップボードのデバッグリンクから)
 keybinding-desc-terminal-toggle-session-recording = セッションの PTY 記録を切り替え
 
@@ -2106,7 +2153,7 @@ toggle-suffix-syntax-highlighting = シンタックスハイライト
 toggle-suffix-audible-bell = ターミナル音響ベル
 toggle-suffix-autosuggestions = オートサジェスト
 toggle-suffix-autosuggestion-keybinding-hint = オートサジェストキーバインドヒント
-toggle-suffix-ssh-wrapper = Warp SSH ラッパー
+toggle-suffix-ssh-wrapper = Zap SSH ラッパー
 toggle-suffix-link-tooltip = リンククリック時のツールチップ表示
 toggle-suffix-quit-warning = 終了警告モーダル
 toggle-suffix-alias-expansion = エイリアス展開
@@ -2139,10 +2186,10 @@ agent-thinking-display-never-show = エージェント思考表示を設定: 表
 # --- ANCHOR-SUB-EXTERNAL-EDITOR (settings-external-editor) ---
 settings-external-editor-choose-default = ファイルリンクを開くエディタを選択
 settings-external-editor-choose-code-panels = コードレビューパネル・プロジェクトエクスプローラー・グローバル検索からファイルを開くエディタを選択
-settings-external-editor-choose-layout = Warp でファイルを開くレイアウトを選択
+settings-external-editor-choose-layout = Zap でファイルを開くレイアウトを選択
 settings-external-editor-tabbed-header = ファイルを単一エディタペインにグループ化
 settings-external-editor-tabbed-desc = この設定がオンの場合、同じタブで開いたファイルは自動的に単一エディタペインにグループ化されます。
-settings-external-editor-prefer-markdown = Markdown ファイルを既定で Warp の Markdown ビューアで開く
+settings-external-editor-prefer-markdown = Markdown ファイルを既定で Zap の Markdown ビューアで開く
 settings-external-editor-layout-split-pane = ペイン分割
 settings-external-editor-layout-new-tab = 新規タブ
 settings-external-editor-default-app = 既定アプリ
@@ -2159,7 +2206,7 @@ menu-block-copy-url = URL をコピー
 menu-block-copy-path = パスをコピー
 menu-block-show-in-finder = Finder で表示
 menu-block-show-containing-folder = 含まれるフォルダを表示
-menu-block-open-in-warp = Warp で開く
+menu-block-open-in-warp = Zap で開く
 menu-block-open-in-editor = エディタで開く
 menu-block-insert-into-input = 入力欄に挿入
 menu-block-copy-command = コマンドをコピー
@@ -2171,7 +2218,7 @@ menu-block-scroll-to-top-of-blocks = ブロックの先頭へスクロール
 menu-block-scroll-to-bottom-of-block = ブロックの末尾へスクロール
 menu-block-scroll-to-bottom-of-blocks = ブロックの末尾へスクロール
 menu-block-save-as-workflow = ワークフローとして保存
-menu-block-ask-warp-ai = Warp AI に質問
+menu-block-ask-warp-ai = Zap AI に質問
 menu-block-copy-output = 出力をコピー
 menu-block-copy-filtered-output = フィルタ済み出力をコピー
 menu-block-toggle-block-filter = ブロックフィルタを切り替え
@@ -2196,7 +2243,7 @@ menu-input-paste = 貼り付け
 menu-input-select-all = すべて選択
 menu-input-command-search = コマンド検索
 menu-input-ai-command-search = AI コマンド検索
-menu-input-ask-warp-ai = Warp AI に質問
+menu-input-ask-warp-ai = Zap AI に質問
 menu-input-save-as-workflow = ワークフローとして保存
 menu-input-hide-hint-text = 入力ヒントを非表示
 menu-input-show-hint-text = 入力ヒントを表示
@@ -2271,11 +2318,11 @@ slash-cmd-create-environment-hint = <任意のリポジトリパスまたは Git
 slash-cmd-docker-sandbox-desc = 新しい Docker サンドボックスのターミナルセッションを作成
 slash-cmd-create-new-project-desc = Oz と一緒に新しいコーディングプロジェクトを作成
 slash-cmd-create-new-project-hint = <作りたいものを記述>
-slash-cmd-open-skill-desc = Warp 内蔵エディタでスキルの Markdown ファイルを開く
+slash-cmd-open-skill-desc = Zap 内蔵エディタでスキルの Markdown ファイルを開く
 slash-cmd-skills-desc = スキルを呼び出す
 slash-cmd-add-prompt-desc = 新しいエージェントプロンプトを追加
 slash-cmd-add-rule-desc = エージェントの新しいグローバルルールを追加
-slash-cmd-open-file-desc = Warp のコードエディタでファイルを開く
+slash-cmd-open-file-desc = Zap のコードエディタでファイルを開く
 slash-cmd-open-file-hint = <path/to/file[:line[:col]]> または "@" で検索
 slash-cmd-rename-tab-desc = 現在のタブの名前を変更
 slash-cmd-rename-tab-hint = <タブ名>
@@ -2314,7 +2361,7 @@ slash-cmd-export-to-file-hint = <任意のファイル名>
 # --- ANCHOR-SUB-PROMPT-TIPS ---
 # Prompt editor modal (app/src/prompt/editor_modal.rs)
 prompt-editor-title = プロンプトを編集
-prompt-editor-warp-prompt-section = Warp ターミナルプロンプト
+prompt-editor-warp-prompt-section = Zap ターミナルプロンプト
 prompt-editor-shell-prompt-section = シェルプロンプト (PS1)
 prompt-editor-restore-default = デフォルトに戻す
 prompt-editor-same-line-prompt = 同一行プロンプト
@@ -2324,7 +2371,7 @@ prompt-editor-save-changes = 変更を保存
 
 # Welcome tips (app/src/tips/tip_view.rs)
 welcome-tips-command-palette-title = コマンドパレット
-welcome-tips-command-palette-description = キーボードから手を離さずに Warp の機能をすべて簡単に発見できます。
+welcome-tips-command-palette-description = キーボードから手を離さずに Zap の機能をすべて簡単に発見できます。
 welcome-tips-split-pane-title = ペイン分割
 welcome-tips-split-pane-description = タブを複数のペインに分割して理想的なレイアウトを作成。
 welcome-tips-history-search-title = 履歴検索
@@ -2332,7 +2379,7 @@ welcome-tips-history-search-description = 過去に実行したコマンドを�
 welcome-tips-ai-command-search-title = AI コマンド検索
 welcome-tips-ai-command-search-description = 自然言語からシェルコマンドを生成。
 welcome-tips-theme-picker-title = テーマピッカー
-welcome-tips-theme-picker-description = 組み込みテーマから選んで Warp を自分好みに。または自作も可能。
+welcome-tips-theme-picker-description = 組み込みテーマから選んで Zap を自分好みに。または自作も可能。
 welcome-tips-shortcut-label = ショートカット
 welcome-tips-skip = ようこそチップをスキップ
 welcome-tips-complete-title = 完了!
@@ -2393,7 +2440,7 @@ search-filter-display-actions = アクション
 search-filter-display-sessions = セッション
 search-filter-display-conversations = 会話
 search-filter-display-launch-configurations = 起動構成
-search-filter-display-drive = Warp Drive
+search-filter-display-drive = Zap Drive
 search-filter-display-environment-variables = 環境変数
 search-filter-display-prompt-history = プロンプト履歴
 search-filter-display-files = ファイル
@@ -2478,7 +2525,7 @@ drive-trash-title = ゴミ箱
 drive-trash-deletion-warning = ゴミ箱内のアイテムは 30 日後に完全に削除されます。
 drive-team-space-zero-state = ローカルビルドではチームスペースを利用できません。ワークフローとノートブックは Personal で管理してください。
 drive-sign-up-storage-limit = ローカルストレージ上限はこのデバイス上で適用されます。
-drive-local-storage-limit-description = ローカルストレージ上限はこのデバイス上で適用されます。不要な項目を削除して、新しい Warp Drive オブジェクト用の容量を空けてください。
+drive-local-storage-limit-description = ローカルストレージ上限はこのデバイス上で適用されます。不要な項目を削除して、新しい Zap Drive オブジェクト用の容量を空けてください。
 drive-sign-up = ローカルで管理
 drive-copy-link = リンクをコピー
 drive-collapse-all = すべて折りたたむ
@@ -2542,7 +2589,7 @@ workflow-keep-editing = 編集を続ける
 workflow-discard-changes = 変更を破棄
 workflow-ai-assist-autofill = 自動入力
 workflow-ai-assist-loading = 読み込み中
-workflow-ai-assist-tooltip = Warp AI でタイトル・説明・パラメータを生成
+workflow-ai-assist-tooltip = Zap AI でタイトル・説明・パラメータを生成
 workflow-tooltip-restore-from-trash = ワークフローをゴミ箱から復元
 workflow-ai-assist-error-byop-required = 自動入力には BYOP モデルが必要です。設定 → AI でプロバイダとモデルを設定してください。
 workflow-ai-assist-error-bad-command = メタデータの生成に失敗しました。別のコマンドで再度お試しください。
@@ -2570,7 +2617,7 @@ workspace-conversation-list-fork-new-tab = 新しいタブで分岐
 workspace-conversation-list-fallback-title = 会話
 workspace-left-panel-project-explorer = プロジェクトエクスプローラ
 workspace-left-panel-global-search = グローバル検索
-workspace-left-panel-warp-drive = Warp Drive
+workspace-left-panel-warp-drive = Zap Drive
 workspace-left-panel-agent-conversations = エージェント会話
 workspace-left-panel-ssh-manager = SSH マネージャー
 workspace-left-panel-ssh-manager-placeholder = SSH マネージャー — 近日公開
@@ -2586,6 +2633,7 @@ workspace-left-panel-ssh-manager-menu-new-folder = 新しいフォルダ
 workspace-left-panel-ssh-manager-menu-new-server = 新しい SSH サーバー
 workspace-left-panel-ssh-manager-menu-edit = 編集
 workspace-left-panel-ssh-manager-menu-connect = 接続
+workspace-left-panel-ssh-manager-menu-clone = 複製
 workspace-left-panel-ssh-manager-menu-delete = 削除
 workspace-left-panel-ssh-manager-pane-hint = フィールドの編集と「接続」は次のイテレーションで提供されます。現状このペインは保存済み設定を表示するだけです。SQLite ストアか、まもなく登場するエディタで調整してください。
 workspace-left-panel-ssh-manager-pane-folder-body = フォルダ。フォルダ内のサーバーを選択すると詳細が表示されます。フォルダを右クリックすると作成/削除アクションが利用できます。
@@ -2598,10 +2646,38 @@ workspace-left-panel-ssh-manager-error-name-required = 名前は空にできま�
 workspace-left-panel-ssh-manager-error-port-invalid = ポートは 1〜65535 の数値を指定してください。
 workspace-left-panel-ssh-manager-error-host-required = ホストは空にできません。
 workspace-left-panel-ssh-manager-connect = 接続
+workspace-left-panel-ssh-manager-test = テスト
+workspace-left-panel-ssh-manager-testing = テスト中...
+workspace-left-panel-ssh-manager-status-online = オンライン
+workspace-left-panel-ssh-manager-status-offline = オフライン
+workspace-left-panel-ssh-manager-status-unknown = 不明
 search-filter-placeholder-ssh-servers = SSH サーバーを検索...
 search-filter-display-ssh-servers = SSH サーバー
 workspace-left-panel-ssh-manager-menu-rename = 名前変更
 workspace-left-panel-ssh-manager-tree-empty = SSH サーバーがまだありません。📁 でフォルダ追加、+ でサーバー追加。
+workspace-left-panel-ssh-manager-root-password = Root パスワード
+workspace-left-panel-ssh-manager-root-password-placeholder = root 切り替え時のパスワード
+workspace-left-panel-ssh-manager-startup-command = 起動コマンド
+workspace-left-panel-ssh-manager-startup-command-placeholder = 接続成功後に自動実行するコマンド
+workspace-left-panel-ssh-manager-notes = メモ
+workspace-left-panel-ssh-manager-notes-placeholder = メモ情報
+# TODO: review
+workspace-left-panel-ssh-manager-candidates-header = { $path } から
+# TODO: review
+workspace-left-panel-ssh-manager-candidates-empty = { $path } にインポート可能なホストがありません
+# TODO: review
+workspace-left-panel-ssh-manager-candidates-not-found = SSH 設定ファイルが見つかりません: { $path }
+# TODO: review
+workspace-left-panel-ssh-manager-candidates-error = SSH 設定の読み込みに失敗しました { $path }: { $error }
+# TODO: review
+workspace-left-panel-ssh-manager-candidates-add = SSH マネージャーに追加
+# TODO: review
+workspace-left-panel-ssh-manager-candidates-added = 追加済み
+# TODO: review
+workspace-left-panel-ssh-manager-candidates-refresh = ~/.ssh/config から再読み込み
+terminal-su-root-password-confirm = Root パスワードを自動入力
+terminal-su-root-password-confirm-subtitle = クリックして保存された Root パスワードを入力
+terminal-su-root-password-cancel = キャンセル
 workspace-left-panel-close-panel = パネルを閉じる
 workspace-tabs-panel-tooltip = タブパネル
 workspace-tools-panel-tooltip = ツールパネル
@@ -2677,34 +2753,34 @@ global-search-unsupported-session-description = グローバル検索は現在 G
 global-search-failed = グローバル検索に失敗しました。
 
 # Wasm NUX dialog (app/src/wasm_nux_dialog.rs)
-wasm-nux-open-desktop-title = Warp デスクトップで開きますか?
+wasm-nux-open-desktop-title = Zap デスクトップで開きますか?
 wasm-nux-open-desktop-detail = 今後のリンクは自動的にデスクトップで開きます。
-wasm-nux-open-desktop-confirm = Warp で開く
-wasm-nux-download-title = Warp デスクトップをダウンロードしますか?
-wasm-nux-download-description = Warp は AI と開発チームのナレッジを内蔵したインテリジェントなターミナルです。
+wasm-nux-open-desktop-confirm = Zap で開く
+wasm-nux-download-title = Zap デスクトップをダウンロードしますか?
+wasm-nux-download-description = Zap は AI と開発チームのナレッジを内蔵したインテリジェントなターミナルです。
 wasm-nux-learn-more = 詳しく見る
 wasm-nux-download-confirm = ダウンロード
-wasm-nux-object-kind-drive-objects = Warp Drive オブジェクト
-wasm-nux-object-kind-warp-links = Warp リンク
+wasm-nux-object-kind-drive-objects = Zap Drive オブジェクト
+wasm-nux-object-kind-warp-links = Zap リンク
 wasm-nux-always-open-on-web-title = { $object_kind } を常に Web で開きますか?
 wasm-nux-always-open-on-web-detail = この設定は設定画面でいつでも変更できます。
 wasm-nux-yes = はい
 
 # Auth override warning (app/src/auth/auth_override_warning_body.rs)
 auth-override-warning-title = 新しいログインを検出しました
-auth-override-warning-confirm-title = 個人の Warp Drive オブジェクトと環境設定を削除しますか?
-auth-override-warning-description = Web ブラウザから Warp アカウントにログインしたようです。続行すると、この匿名セッションの個人 Warp Drive オブジェクトおよび環境設定はすべて完全に削除されます。
+auth-override-warning-confirm-title = 個人の Zap Drive オブジェクトと環境設定を削除しますか?
+auth-override-warning-description = Web ブラウザから Zap アカウントにログインしたようです。続行すると、この匿名セッションの個人 Zap Drive オブジェクトおよび環境設定はすべて完全に削除されます。
 auth-override-warning-cannot-undo = この操作は取り消せません。
 auth-override-warning-export = データをエクスポート
 auth-override-warning-export-description =  して後でインポートできます。
 auth-override-warning-cancel = キャンセル
 auth-override-warning-continue = 続行
-auth-override-warning-accessibility-help = Warp が Web ブラウザからの新しいログインを検出しました。ログインせずに Warp の使用を続けるには Esc を押してキャンセルしてください。
+auth-override-warning-accessibility-help = Zap が Web ブラウザからの新しいログインを検出しました。ログインせずに Zap の使用を続けるには Esc を押してキャンセルしてください。
 
 # Auth SSO link/login failures/paste token/logout/offline/privacy
 auth-needs-sso-link-button = SSO をリンク
 auth-needs-sso-link-title = 組織がアカウントの SSO を有効化しています
-auth-needs-sso-link-detail = 下のボタンをクリックして Warp アカウントを SSO プロバイダにリンクしてください。
+auth-needs-sso-link-detail = 下のボタンをクリックして Zap アカウントを SSO プロバイダにリンクしてください。
 auth-login-failure-troubleshooting-prefix =  初めてではありませんか? こちらの
 auth-login-failure-troubleshooting-link =  トラブルシューティングドキュメント
 auth-login-failure-troubleshooting-suffix = をご覧ください。
@@ -2718,20 +2794,20 @@ auth-paste-token-title = 認証トークンを下に貼り付けてください
 auth-paste-token-detail = ブラウザから認証トークンを貼り付けてログインを完了してください。
 auth-paste-token-cancel = キャンセル
 auth-paste-token-continue = 続行
-auth-offline-first-use-description = 現在オフラインです。Warp を初めて使用するにはインターネット接続が必要です。
+auth-offline-first-use-description = 現在オフラインです。Zap を初めて使用するにはインターネット接続が必要です。
 auth-offline-first-use-learn-more = 詳しく見る
-auth-offline-overlay-title = Warp をオフラインで使用
-auth-offline-overlay-paragraph-1 = OpenWarp のローカル機能はオフラインで動作します。
+auth-offline-overlay-title = Zap をオフラインで使用
+auth-offline-overlay-paragraph-1 = Zap のローカル機能はオフラインで動作します。
 auth-offline-overlay-paragraph-2 = BYOP AI 機能を使う場合のみ、選択したプロバイダーへの接続が必要です。
-auth-offline-overlay-paragraph-3 = OpenWarp は匿名のローカルユーザー ID で動作し、外部オブジェクトや利用量計測のためにインターネット接続を要求しません。
+auth-offline-overlay-paragraph-3 = Zap は匿名のローカルユーザー ID で動作し、外部オブジェクトや利用量計測のためにインターネット接続を要求しません。
 auth-offline-overlay-dismiss = 閉じる
 auth-privacy-settings-title = プライバシー設定
 auth-privacy-settings-done = 完了
-auth-privacy-settings-help-improve = Warp の改善に協力する
-auth-privacy-settings-help-improve-description = ハイレベルな機能利用データは Warp プロダクトチームのロードマップ優先順位付けに役立ちます。
+auth-privacy-settings-help-improve = Zap の改善に協力する
+auth-privacy-settings-help-improve-description = ハイレベルな機能利用データは Zap プロダクトチームのロードマップ優先順位付けに役立ちます。
 auth-privacy-settings-learn-more = 詳しく見る
 auth-privacy-settings-send-crash-reports = クラッシュレポートを送信
-auth-privacy-settings-crash-reports-description = クラッシュレポートは Warp エンジニアリングチームが安定性を理解しパフォーマンスを改善するのに役立ちます。
+auth-privacy-settings-crash-reports-description = クラッシュレポートは Zap エンジニアリングチームが安定性を理解しパフォーマンスを改善するのに役立ちます。
 auth-logout-confirm = はい、ログアウトする
 auth-logout-show-running-processes = 実行中のプロセスを表示
 auth-logout-cancel = キャンセル
@@ -2744,7 +2820,7 @@ auth-logout-shared-sessions-warning = リモートセッションが { $count } 
         [one] 件
        *[other] 件
     }あります。
-auth-logout-unsynced-drive-objects-warning = 未同期の Warp Drive オブジェクトが { $count } { $count ->
+auth-logout-unsynced-drive-objects-warning = 未同期の Zap Drive オブジェクトが { $count } { $count ->
         [one] 件
        *[other] 件
     }あります。ログアウトすると、{ $count ->
@@ -2761,12 +2837,12 @@ auth-logout-unsaved-files-warning = 未保存のファイルが { $count } { $co
 
 # CLI agent plugin instructions
 cli-agent-plugin-run-on-remote = これらのコマンドは必ずリモートマシン上で実行してください。
-cli-agent-plugin-codex-install-title = Codex の Warp 通知を有効化
-cli-agent-plugin-codex-install-subtitle = Codex を最新版に更新し、フォーカス時通知を有効にすることで Warp が作業中に通知を表示できるようにします。
+cli-agent-plugin-codex-install-title = Codex の Zap 通知を有効化
+cli-agent-plugin-codex-install-subtitle = Codex を最新版に更新し、フォーカス時通知を有効にすることで Zap が作業中に通知を表示できるようにします。
 cli-agent-plugin-codex-update-step = Codex を最新版に更新します。
 cli-agent-plugin-codex-notification-step = Codex の設定で通知条件を "always" に設定します。~/.codex/config.toml を開くか作成して以下を追加してください:
 cli-agent-plugin-codex-restart-note = 変更を反映するため Codex を再起動します。
-cli-agent-plugin-deepseek-install-title = DeepSeek の Warp 通知を有効化
+cli-agent-plugin-deepseek-install-title = DeepSeek の Zap 通知を有効化
 cli-agent-plugin-deepseek-install-subtitle = DeepSeek 設定ファイル (~/.deepseek/config.toml) に以下を追加してターン完了通知を有効にします。
 cli-agent-plugin-deepseek-notification-step = ~/.deepseek/config.toml で通知条件を "always" に設定します:
 cli-agent-plugin-deepseek-restart-note = 変更を反映するため DeepSeek を再起動します。
@@ -2807,18 +2883,18 @@ terminal-bootstrapping-installing-progress = インストール中... ({ $p }%)
 terminal-bootstrapping-installing = インストール中...
 terminal-bootstrapping-updating = 更新中...
 terminal-bootstrapping-initializing = 初期化中...
-terminal-bootstrapping-installing-warp-ssh-extension-progress = Warp SSH 拡張をインストール中... ({ $p }%)
-terminal-bootstrapping-installing-warp-ssh-extension = Warp SSH 拡張をインストール中...
-terminal-bootstrapping-updating-warp-ssh-extension = Warp SSH 拡張を更新中...
+terminal-bootstrapping-installing-warp-ssh-extension-progress = Zap SSH 拡張をインストール中... ({ $p }%)
+terminal-bootstrapping-installing-warp-ssh-extension = Zap SSH 拡張をインストール中...
+terminal-bootstrapping-updating-warp-ssh-extension = Zap SSH 拡張を更新中...
 terminal-bootstrapping-starting-shell-name = { $shell } を起動中...
 agent-tip-prefix = ヒント:
 agent-tip-slash-menu = `/` でスラッシュコマンドメニューを開き、エージェントのクイックアクションにアクセスできます。
 agent-tip-toggle-input-mode = <keybinding> で自然言語検出を切り替え、エージェント入力とターミナル入力を切り替えられます。
 agent-tip-plan = `/plan` <prompt> で実行前にエージェント用のプランを作成できます。
-agent-tip-command-palette = <keybinding> でコマンドパレットを開き、Warp のアクションやショートカットにアクセスできます。
+agent-tip-command-palette = <keybinding> でコマンドパレットを開き、Zap のアクションやショートカットにアクセスできます。
 agent-tip-warp-drive = 再利用可能なワークフロー、ノートブック、プロンプトを保存する場所:
 agent-tip-redirect-running-agent = 新しいプロンプトを入力すると、実行中のエージェントを別方向に向け直せます。
-agent-tip-add-context = `@` でファイル、ブロック、Warp Drive オブジェクトからコンテキストをプロンプトに追加できます。
+agent-tip-add-context = `@` でファイル、ブロック、Zap Drive オブジェクトからコンテキストをプロンプトに追加できます。
 agent-tip-attach-prior-output = <keybinding> で直前のコマンド出力をエージェントのコンテキストとして添付できます。
 agent-tip-init-index = `/init` でリポジトリをインデックス化し、エージェントがコードベースを理解できるようにします。
 agent-tip-agent-profiles = エージェントプロファイルを追加して、セッションごとに権限とモデルをカスタマイズできます。
@@ -2848,10 +2924,10 @@ agent-tip-auto-approve = <keybinding> で残りのセッションのエージェ
 agent-tip-desktop-notifications = デスクトップ通知を有効にするとエージェントが注意を必要とするときに通知を受け取れます。
 agent-tip-cancel-task = <keybinding> で現在のエージェントタスクをキャンセルできます。
 agent-tip-action-open-palette = パレットを開く
-agent-tip-action-warp-drive = Warp Drive。
+agent-tip-action-warp-drive = Zap Drive。
 agent-tip-action-show-diff-view = 差分ビューを表示
 agent-tip-voice-input = <keybinding> を押し続けるとプロンプトをエージェントに直接話しかけられます。
-hoa-welcome-banner-title = ユニバーサルエージェントサポートのご紹介: Warp であらゆるコーディングエージェントをレベルアップ
+hoa-welcome-banner-title = ユニバーサルエージェントサポートのご紹介: Zap であらゆるコーディングエージェントをレベルアップ
 hoa-feature-vertical-tabs-title = 縦型タブ
 hoa-feature-vertical-tabs-description = git ブランチ、worktree、PR などのリッチなタブタイトルとメタデータ。完全カスタマイズ可能。
 hoa-feature-tab-configs-title = タブ設定
@@ -2859,10 +2935,10 @@ hoa-feature-tab-configs-description = タブレベルのスキーマでディレ
 hoa-feature-agent-inbox-title = エージェント受信箱
 hoa-feature-agent-inbox-description = エージェントが注意を必要とする際の通知。中央受信箱からもアクセス可能
 hoa-feature-native-code-review-title = ネイティブコードレビュー
-hoa-feature-native-code-review-description = Warp のコードレビューからインラインコメントを Claude Code、Codex、OpenCode へ直接送信
+hoa-feature-native-code-review-description = Zap のコードレビューからインラインコメントを Claude Code、Codex、OpenCode へ直接送信
 resource-center-whats-new-section = 新着情報
 resource-center-getting-started-section = はじめに
-resource-center-maximize-warp-section = Warp を最大限に活用
+resource-center-maximize-warp-section = Zap を最大限に活用
 resource-center-advanced-setup-section = 高度なセットアップ
 resource-center-create-first-block-title = 最初のブロックを作成
 resource-center-create-first-block-description = コマンドを実行するとコマンドと出力がグループ化されて表示されます。
@@ -2871,16 +2947,16 @@ resource-center-navigate-blocks-description = クリックでブロックを選�
 resource-center-block-action-title = ブロックに対してアクション
 resource-center-block-action-description = ブロックを右クリックでコピー/貼り付け、共有などが可能です。
 resource-center-command-palette-title = コマンドパレットを開く
-resource-center-command-palette-description = キーボードから Warp のすべての機能にアクセス。
+resource-center-command-palette-description = キーボードから Zap のすべての機能にアクセス。
 resource-center-set-theme-title = テーマを設定
-resource-center-set-theme-description = テーマを選んで Warp を自分好みに。
+resource-center-set-theme-description = テーマを選んで Zap を自分好みに。
 resource-center-custom-prompt-title = カスタムプロンプトを使用
-resource-center-custom-prompt-description = PS1 設定を尊重するよう Warp をセットアップ
+resource-center-custom-prompt-description = PS1 設定を尊重するよう Zap をセットアップ
 resource-center-view-documentation = ドキュメントを表示
-resource-center-integrate-ide-title = Warp を IDE と連携
-resource-center-integrate-ide-description = よく使う開発ツールから Warp を起動できるよう設定
-resource-center-how-warp-uses-warp-title = Warp チームの Warp 活用法
-resource-center-how-warp-uses-warp-description = Warp のエンジニアリングチームがお気に入り機能をどう使っているか学びます
+resource-center-integrate-ide-title = Zap を IDE と連携
+resource-center-integrate-ide-description = よく使う開発ツールから Zap を起動できるよう設定
+resource-center-how-warp-uses-warp-title = Zap チームの Zap 活用法
+resource-center-how-warp-uses-warp-description = Zap のエンジニアリングチームがお気に入り機能をどう使っているか学びます
 resource-center-read-article = 記事を読む
 resource-center-command-search-title = コマンド検索
 resource-center-command-search-description = 過去に実行したコマンド、ワークフローなどを検索して実行。
@@ -2921,20 +2997,20 @@ agent-message-bar-again-send-to-agent = 再度押すとエージェントに送�
 #        resource center, theme picker, terminal banners, AI footer/tool output
 # =============================================================================
 
-onboarding-intention-title = Warp へようこそ
+onboarding-intention-title = Zap へようこそ
 onboarding-intention-subtitle = どのように作業しますか？
 onboarding-intention-agent-title = AI エージェントでより速く開発する
 onboarding-intention-agent-description = クラス最高のターミナルサポートを備えたエージェントファースト体験。次のようなターミナル/エージェント駆動の AI 機能を利用できます:
 onboarding-intention-terminal-title = ターミナルとして使う
 onboarding-intention-terminal-badge = AI 機能なし
 onboarding-intention-terminal-description = AI を使わず、速度・コンテキスト・コントロールに最適化されたモダンなターミナル。
-onboarding-ai-feature-warp-agents = Warp エージェント
+onboarding-ai-feature-warp-agents = Zap エージェント
 onboarding-ai-feature-oz-cloud-agents-platform = Oz ローカルエージェントプラットフォーム
 onboarding-ai-feature-next-command-predictions = 次コマンド予測
 onboarding-ai-feature-prompt-suggestions = プロンプト候補
 onboarding-ai-feature-remote-control-agents = Claude Code、Codex、その他エージェントによるリモートコントロール
 onboarding-ai-feature-agents-over-ssh = SSH 経由のエージェント
-onboarding-agent-title = Warp エージェントをカスタマイズ
+onboarding-agent-title = Zap エージェントをカスタマイズ
 onboarding-agent-subtitle = アプリ内エージェントの既定値を選択します。
 onboarding-agent-default-model = 既定モデル
 onboarding-agent-autonomy = 自律性
@@ -2946,7 +3022,7 @@ onboarding-agent-autonomy-partial-title = パーシャル
 onboarding-agent-autonomy-partial-subtitle = 計画立案・ファイル読み取り・低リスクコマンドの実行が可能です。変更や機微なコマンド実行の前に確認します。
 onboarding-agent-autonomy-none-title = なし
 onboarding-agent-autonomy-none-subtitle = 承認なしでは何もアクションを行いません。
-onboarding-agent-disable-warp-agent = Warp エージェントを無効化
+onboarding-agent-disable-warp-agent = Zap エージェントを無効化
 onboarding-agent-upgrade-title = アップグレードでプレミアムモデルにアクセス。
 onboarding-agent-upgrade-subtitle = 最先端モデルには有料プランが必要です。
 onboarding-agent-paste-token-link = ここをクリック
@@ -2954,7 +3030,7 @@ onboarding-agent-open-page-manually = {" "}し、手動でページを開いて�
 onboarding-agent-paste-token-suffix = {" "}してブラウザからトークンを貼り付けます。
 onboarding-agent-plan-activated = プランを有効化しました。すべてのプレミアムモデルが利用可能です。
 onboarding-project-title = プロジェクトを開く
-onboarding-project-subtitle = Warp でのコーディング向けにプロジェクトを設定します。
+onboarding-project-subtitle = Zap でのコーディング向けにプロジェクトを設定します。
 onboarding-project-open-local-folder = ローカルフォルダを開く
 onboarding-project-initialize-automatically = プロジェクトを自動で初期化
 onboarding-project-initialize-description = プロジェクト環境を準備し、コードのインデックスを構築し、プロジェクトルールを生成します。エージェントの理解を深め、性能を高めます。
@@ -2968,7 +3044,7 @@ onboarding-third-party-title = サードパーティエージェントをカス�
 onboarding-third-party-subtitle = Claude Code、Codex、Gemini などのエージェントを使う際の既定値を選択します。
 onboarding-third-party-cli-toolbar = CLI エージェントツールバー
 onboarding-third-party-notifications = 通知
-onboarding-customize-title = Warp をカスタマイズ
+onboarding-customize-title = Zap をカスタマイズ
 onboarding-customize-subtitle = 機能と UI を自分の作業スタイルに合わせて調整します。
 onboarding-customize-tab-styling = タブのスタイル
 onboarding-customize-vertical = 縦
@@ -2976,49 +3052,49 @@ onboarding-customize-horizontal = 横
 onboarding-customize-conversation-history = 会話履歴
 onboarding-customize-file-explorer = ファイルエクスプローラー
 onboarding-customize-global-file-search = グローバルファイル検索
-onboarding-customize-warp-drive = Warp Drive
+onboarding-customize-warp-drive = Zap Drive
 onboarding-customize-tools-panel = ツールパネル
 onboarding-customize-code-review = コードレビュー
 onboarding-free-user-title = はじめましょう。
-onboarding-free-user-agent-title = Warp 内蔵エージェントによるエージェント駆動開発
-onboarding-free-user-agent-description = Warp 内蔵エージェント Oz でローカルに反復・計画・構築。
+onboarding-free-user-agent-title = Zap 内蔵エージェントによるエージェント駆動開発
+onboarding-free-user-agent-description = Zap 内蔵エージェント Oz でローカルに反復・計画・構築。
 onboarding-free-user-terminal-title = サードパーティエージェント対応のクラシックターミナル
 onboarding-free-user-terminal-description = サードパーティエージェント (Claude Code、Codex、Gemini CLI) と従来型ターミナルワークフローに対応するモダンターミナル。
-onboarding-free-user-subscribe-title = サブスクライブして Warp のエージェント駆動開発を利用しましょう。
+onboarding-free-user-subscribe-title = サブスクライブして Zap のエージェント駆動開発を利用しましょう。
 onboarding-free-user-subscribe-item-credits = 月 1,500 クレジット
 onboarding-free-user-subscribe-item-models = OpenAI、Anthropic、Google のフロンティアモデルへのアクセス
 onboarding-free-user-subscribe-item-reload = Reload クレジットおよびボリューム割引へのアクセス
 onboarding-free-user-subscribe-item-cloud-agents = 拡張エージェントアクセス
 onboarding-free-user-subscribe-item-indexing = 最大規模のコードベースインデックス上限
-onboarding-free-user-subscribe-item-drive = 無制限の Warp Drive オブジェクトとコラボレーション
+onboarding-free-user-subscribe-item-drive = 無制限の Zap Drive オブジェクトとコラボレーション
 onboarding-free-user-subscribe-item-support = プライベートメールサポート
 onboarding-free-user-subscribe-item-cloud-storage = ローカル会話保存
 
-auth-opt-out-line-1 = OpenWarp はオンボーディングの選択をこのデバイスに保存します。
+auth-opt-out-line-1 = Zap はオンボーディングの選択をこのデバイスに保存します。
 auth-opt-out-line-2-prefix = 次から調整できます:{" "}
 auth-privacy-settings-prefix = 次から調整できます:{" "}
 auth-privacy-settings-ai-prefix = ローカル AI 設定は次で調整できます:{" "}
 auth-privacy-settings = プライバシー設定
-auth-local-privacy-note = OpenWarp はオンボーディングの選択をこのデバイスに保存します。
+auth-local-privacy-note = Zap はオンボーディングの選択をこのデバイスに保存します。
 auth-terms-prefix = 続行しても、この設定はこのデバイスに残ります。{" "}
 auth-terms-of-service = ローカル設定
 auth-log-in = ログイン
 auth-paste-token-from-browser = ここをクリックしてブラウザからトークンを貼り付け
-auth-login-slide-title-warp-drive = Warp Drive をはじめる
+auth-login-slide-title-warp-drive = Zap Drive をはじめる
 auth-login-slide-title-ai = AI をはじめる
 auth-login-slide-subtitle-warp-drive = アカウントを接続して、ノートブック・ワークフローなどをデバイス間で保存・共有します。
 auth-login-slide-subtitle-ai = アカウントを接続して、AI による計画・コーディング・自動化を有効にします。
-auth-disable-warp-drive = Warp Drive を無効化
+auth-disable-warp-drive = Zap Drive を無効化
 auth-disable-ai-features = AI 機能を無効化
-auth-enable-warp-drive = Warp Drive を有効化
+auth-enable-warp-drive = Zap Drive を有効化
 auth-enable-ai-features = AI 機能を有効化
 auth-browser-sign-in-one-line-title = 続行するにはブラウザでサインインしてください
 auth-open-page-manually-line-prefix = {" "}し、開いてください
 auth-open-page-manually-line-suffix = ページを手動で。
-auth-disable-warp-drive-confirm-title = 本当に Warp Drive を無効化しますか？
+auth-disable-warp-drive-confirm-title = 本当に Zap Drive を無効化しますか？
 auth-disable-ai-features-confirm-title = 本当に AI 機能を無効化しますか？
-auth-disable-warp-drive-confirm-body = Warp Drive はワークフローやナレッジをデバイス間で保存し、チームと共有できます。続行すると、以下の機能が利用できなくなります:
-auth-disable-ai-features-confirm-body = Warp は AI でより便利になります。続行すると、以下の機能はいずれも利用できなくなります:
+auth-disable-warp-drive-confirm-body = Zap Drive はワークフローやナレッジをデバイス間で保存し、チームと共有できます。続行すると、以下の機能が利用できなくなります:
+auth-disable-ai-features-confirm-body = Zap は AI でより便利になります。続行すると、以下の機能はいずれも利用できなくなります:
 auth-feature-session-sharing = セッション共有
 auth-sign-up = ローカルで続行
 auth-sign-in = サインイン
@@ -3029,11 +3105,11 @@ auth-skip-login-confirm-title = 本当にログインをスキップしますか
 auth-skip-login-confirm-line-1 = 後でサインアップできますが、AI など一部の機能は
 auth-skip-login-confirm-line-2-prefix = ログインユーザーのみ利用可能です。{" "}
 auth-yes-skip-login = はい、ログインをスキップ
-auth-require-login-ai-collaboration = ローカル AI 機能に Warp アカウントは必要ありません。
-auth-require-login-drive-limit = OpenWarp では Warp Drive オブジェクトをローカルに保存します。
-auth-require-login-share = ローカル OpenWarp ビルドでは共有機能を利用できません。
-auth-welcome-title = Warp へようこそ！
-auth-sign-up-for-warp = OpenWarp を続行
+auth-require-login-ai-collaboration = ローカル AI 機能に Zap アカウントは必要ありません。
+auth-require-login-drive-limit = Zap では Zap Drive オブジェクトをローカルに保存します。
+auth-require-login-share = ローカル Zap ビルドでは共有機能を利用できません。
+auth-welcome-title = Zap へようこそ！
+auth-sign-up-for-warp = Zap を続行
 auth-browser-sign-in-title = 続行するにはブラウザで\nサインインしてください
 auth-browser-not-launched-prefix = ブラウザが起動していない場合、{" "}
 auth-copy-url = URL をコピー
@@ -3046,7 +3122,7 @@ voice-transcription-disabled-microphone = マイクアクセスが許可され�
 voice-transcription = 音声書き起こし
 voice-transcription-hold-key = 音声書き起こし (`{ $key }` キーを押し続ける)
 
-get-started-welcome-title = Warp へようこそ
+get-started-welcome-title = Zap へようこそ
 get-started-subtitle = エージェント型開発環境
 theme-creator-theme-name = テーマ名
 theme-creator-background-color = 背景色
@@ -3084,11 +3160,11 @@ notebook-file-loading = { $name } を読み込み中…
 notebook-file-missing-source = ソースファイルがありません
 
 terminal-shared-session-reconnecting = オフライン、再接続を試みています…
-terminal-banner-p10k-supported = Powerlevel10k が Warp に対応しました！{"  "}
+terminal-banner-p10k-supported = Powerlevel10k が Zap に対応しました！{"  "}
 terminal-banner-p10k-older-version-prefix = 古い (非対応の) バージョンを実行しているようです。次の手順に従ってください:{" "}
 terminal-banner-these-instructions = この手順
 terminal-banner-update-latest-suffix = {" "}に従って最新版に更新してください。
-terminal-banner-pure-unsupported = Pure はまだ Warp で対応していません。代替として対応プロンプトの利用をご検討ください。{"  "}
+terminal-banner-pure-unsupported = Pure はまだ Zap で対応していません。代替として対応プロンプトの利用をご検討ください。{"  "}
 terminal-loading-session = セッションを読み込み中…
 
 ai-footer-hide-rich-input = リッチ入力を非表示
@@ -3155,7 +3231,7 @@ sharing-invite = 招待
 sharing-who-has-access = アクセス権を持つユーザー
 terminal-shared-session-cancel-request = リクエストをキャンセル
 terminal-shared-session-continue-sharing = 共有を続行
-settings-import-reset-to-warp-defaults = Warp の既定にリセット
+settings-import-reset-to-warp-defaults = Zap の既定にリセット
 settings-import-type-theme = テーマ
 settings-import-type-theme-with-comma = テーマ、
 settings-import-type-option-as-meta = Option を Meta として扱う
@@ -3254,19 +3330,19 @@ common-resource-not-found-or-access-denied = リソースが見つからない�
 workspace-close-session = セッションを閉じる
 workspace-auto-reload = 自動再読み込み
 workspace-add-new-repo = {" "}+ 新しいリポジトリを追加
-workspace-notification-permission-denied-toast = Warp にはデスクトップ通知を送る権限がありません。
+workspace-notification-permission-denied-toast = Zap にはデスクトップ通知を送る権限がありません。
 workspace-troubleshoot-notifications-link = 通知のトラブルシューティング
-workspace-plan-synced-to-warp-drive-toast = プランを Warp Drive に同期しました
+workspace-plan-synced-to-warp-drive-toast = プランを Zap Drive に同期しました
 workspace-remote-control-link-copied-toast = リモートコントロールリンクをコピーしました。
 workspace-update-now = 今すぐ更新
-workspace-update-warp = Warp を更新
+workspace-update-warp = Zap を更新
 workspace-app-out-of-date-needs-update = アプリが古く、更新が必要です。
 workspace-restart-app-and-update-now = アプリを再起動して今すぐ更新
 workspace-sampling-process-toast = プロセスを 3 秒間サンプリング中…
 workspace-version-deprecation-banner = アプリが古く、一部機能が想定どおり動作しない可能性があります。直ちに更新してください。
-workspace-version-deprecation-without-permissions-banner = 直ちに更新しないと一部の Warp 機能が想定どおり動作しない可能性がありますが、Warp は更新を実行できません。
-workspace-new-version-unable-to-update-banner = 新しいバージョンが利用可能ですが、Warp は更新を実行できません。
-workspace-unable-to-launch-new-installed-version = Warp はインストール済みの新バージョンを起動できませんでした。
+workspace-version-deprecation-without-permissions-banner = 直ちに更新しないと一部の Zap 機能が想定どおり動作しない可能性がありますが、Zap は更新を実行できません。
+workspace-new-version-unable-to-update-banner = 新しいバージョンが利用可能ですが、Zap は更新を実行できません。
+workspace-unable-to-launch-new-installed-version = Zap はインストール済みの新バージョンを起動できませんでした。
 tab-config-session-type = セッションタイプ
 terminal-copy-error = エラーをコピー
 terminal-authenticate-with-github = GitHub で認証
@@ -3279,7 +3355,7 @@ terminal-warpify-without-tmux = TMUX なしで Warpify
 terminal-continue-without-warpification = Warpification なしで続行
 terminal-always-install = 常にインストール
 terminal-never-install = インストールしない
-terminal-ssh-report-issue-prefix = Warp の SSH 安定性向上に取り組んでいます。次の対応をご検討ください:{" "}
+terminal-ssh-report-issue-prefix = Zap の SSH 安定性向上に取り組んでいます。次の対応をご検討ください:{" "}
 terminal-ssh-report-issue-link = issue を起票
 terminal-ssh-report-issue-suffix = {" "}し、GitHub に投稿いただくと問題を特定しやすくなります。
 terminal-ssh-why-need-tmux = なぜ tmux が必要ですか？
@@ -3291,7 +3367,7 @@ terminal-hide-secret = シークレットを非表示
 terminal-copy-secret = シークレットをコピー
 terminal-tag-agent-for-assistance = サポートのためエージェントをタグ付け
 terminal-save-as-workflow-secrets-tooltip = シークレットを含むブロックは保存できません。
-terminal-agent-mode-setup-title = このコードベース向けに Warp を最適化しますか？
+terminal-agent-mode-setup-title = このコードベース向けに Zap を最適化しますか？
 terminal-agent-mode-setup-description = エージェントにコードベースを理解させ、ルールを生成させて、よりスマートで一貫した応答を引き出しましょう。/init を実行することでいつでも実行できます。
 terminal-agent-mode-setup-optimize = 最適化
 terminal-no-active-conversation-to-export = エクスポートできるアクティブな会話がありません
@@ -3308,7 +3384,7 @@ notifications-banner-dismissed-title = このバナーは今後表示しませ�
 notifications-banner-disabled-title = 通知はオフになっていますが、設定からいつでも有効化できます。
 notifications-banner-enable = 有効化
 notifications-banner-permissions-accepted-title = 成功！デスクトップ通知を受け取る準備が整いました。
-notifications-banner-permissions-denied-title = Warp は通知送信の権限を拒否されました。
+notifications-banner-permissions-denied-title = Zap は通知送信の権限を拒否されました。
 notifications-banner-permissions-error-title = 権限のリクエスト中に問題が発生しました。
 notifications-banner-allow-permissions-title = 通知のセットアップを完了するため、権限リクエストの「許可」をお忘れなく。
 notifications-banner-configure-notifications = 通知を構成
@@ -3353,7 +3429,7 @@ notebook-sync-conflict-resolution-message = 編集中に変更が加えられた
 notebook-sync-feature-not-available-message = この機能が一時的に利用できないため、ノートブックをサーバーに保存できませんでした。変更はローカルに保存されています。後でやり直してください。
 notebook-link-copied-toast = リンクをコピーしました
 settings-share-with-team = ローカルに保存
-tooltip-secrets-not-sent-to-warp-server = *シークレットは Warp のサーバーに送信されません。
+tooltip-secrets-not-sent-to-warp-server = *シークレットは Zap のサーバーに送信されません。
 editor-voice-limit-hit-toast = 音声リクエストの上限に達しました。次のサイクルの一部として上限が更新されます。
 editor-voice-error-toast = 音声入力の処理中にエラーが発生しました。
 ai-copied-branch-name-toast = ブランチ名をコピーしました

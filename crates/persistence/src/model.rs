@@ -14,9 +14,9 @@ use super::schema::{
     generic_string_objects, ignored_suggestions, mcp_environment_variables,
     mcp_server_installations, mcp_server_panes, notebook_panes, notebooks, object_actions,
     object_metadata, object_permissions, pane_branches, pane_leaves, pane_nodes, panels,
-    project_rules, projects, server_experiments, settings_panes, ssh_nodes, ssh_servers, tabs,
-    team_members, team_settings, teams, terminal_panes, user_profiles, welcome_panes, windows,
-    workflow_panes, workflows, workspace_teams, workspaces,
+    project_rules, projects, server_experiments, settings_panes, ssh_nodes, ssh_servers,
+    sync_meta, tabs, team_members, team_settings, teams, terminal_panes, user_profiles,
+    welcome_panes, windows, workflow_panes, workflows, workspace_teams, workspaces,
 };
 
 #[derive(Insertable)]
@@ -716,7 +716,7 @@ pub struct Block {
     pub host: Option<String>,
     pub is_background: bool,
     pub rprompt: Option<String>,
-    /// JSON-serialized representation of the Warp prompt snapshot (Context Chips). Note that this
+    /// JSON-serialized representation of the Zap prompt snapshot (Context Chips). Note that this
     /// is different from PS1 and RPROMPT1
     pub prompt_snapshot: Option<String>,
     pub block_id: String,
@@ -1446,6 +1446,8 @@ pub struct SshServerRow {
     pub username: String,
     pub auth_type: String,
     pub key_path: Option<String>,
+    pub startup_command: Option<String>,
+    pub notes: Option<String>,
     pub last_connected_at: Option<NaiveDateTime>,
 }
 
@@ -1458,4 +1460,23 @@ pub struct NewSshServer<'a> {
     pub username: &'a str,
     pub auth_type: &'a str,
     pub key_path: Option<&'a str>,
+    pub startup_command: Option<&'a str>,
+    pub notes: Option<&'a str>,
+}
+
+// --- Sync Meta ---------------------------------------------------------
+
+#[derive(Identifiable, Queryable, Selectable, Clone, Debug)]
+#[diesel(table_name = sync_meta)]
+#[diesel(primary_key(key))]
+pub struct SyncMetaRow {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Insertable, AsChangeset, Clone, Debug)]
+#[diesel(table_name = sync_meta)]
+pub struct NewSyncMeta<'a> {
+    pub key: &'a str,
+    pub value: &'a str,
 }

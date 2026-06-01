@@ -30,8 +30,8 @@ use crate::pane_group::{BackingView, PaneConfiguration, PaneEvent};
 use crate::ssh_manager::{SshTreeChangedEvent, SshTreeChangedNotifier};
 
 use warp_ssh_manager::{
-    AuthType, KeychainSecretStore, NodeKind, SecretKind, SshNode, SshRepository, SshSecretStore,
-    SshServerInfo,
+    AuthType, ConnectionStatus, KeychainSecretStore, NodeKind, SecretKind, SshNode, SshRepository,
+    SshSecretStore, SshServerInfo,
 };
 
 const FIELD_LABEL_MARGIN_TOP: f32 = 6.0;
@@ -46,16 +46,18 @@ const AUTH_TOGGLE_PADDING_V: f32 = 6.0;
 pub enum SshServerAction {
     Save,
     Connect,
+    TestConnection,
     SetAuthPassword,
     SetAuthKey,
     /// 打开系统文件选择器选私钥文件,把路径写入 key_path editor。
     PickKeyFile,
 }
 
-/// 一次性显示在 Save 按钮上方/下方的状态标签。Phase 2 用于"已保存 / 错误"提示。
+/// 一次性显示在 Save 按钮上方/下方的状态标签。
 #[derive(Debug, Clone)]
 enum StatusBanner {
     Saved,
+    Success(String),
     Error(String),
 }
 
@@ -74,17 +76,24 @@ pub struct SshServerView {
     user_editor: ViewHandle<EditorView>,
     password_editor: ViewHandle<EditorView>,
     key_path_editor: ViewHandle<EditorView>,
+    root_password_editor: ViewHandle<EditorView>,
+    startup_command_editor: ViewHandle<EditorView>,
+    notes_editor: ViewHandle<EditorView>,
 
     /// 当前选中的认证方式。Save 按钮提交此值到 DB。
     auth_type: AuthType,
 
     save_btn_state: MouseStateHandle,
     connect_btn_state: MouseStateHandle,
+    test_btn_state: MouseStateHandle,
     auth_password_btn_state: MouseStateHandle,
     auth_key_btn_state: MouseStateHandle,
     key_path_picker_btn_state: MouseStateHandle,
 
     status: Option<StatusBanner>,
+    connection_status: ConnectionStatus,
+    latency_ms: Option<u64>,
+    is_testing: bool,
     scroll_state: ClippedScrollStateHandle,
 }
 
@@ -97,6 +106,9 @@ impl SshServerView {
         let user_editor = make_editor(false, "root", ctx);
         let password_editor = make_editor(true, "•••••••", ctx);
         let key_path_editor = make_editor(false, "/home/user/.ssh/id_ed25519", ctx);
+        let root_password_editor = make_editor(true, &crate::t!("workspace-left-panel-ssh-manager-root-password-placeholder"), ctx);
+        let startup_command_editor = make_editor(false, &crate::t!("workspace-left-panel-ssh-manager-startup-command-placeholder"), ctx);
+        let notes_editor = make_editor(false, &crate::t!("workspace-left-panel-ssh-manager-notes-placeholder"), ctx);
 
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new("SSH server"));
 
@@ -112,13 +124,20 @@ impl SshServerView {
             user_editor,
             password_editor,
             key_path_editor,
+            root_password_editor,
+            startup_command_editor,
+            notes_editor,
             auth_type: AuthType::Password,
             save_btn_state: MouseStateHandle::default(),
             connect_btn_state: MouseStateHandle::default(),
+            test_btn_state: MouseStateHandle::default(),
             auth_password_btn_state: MouseStateHandle::default(),
             auth_key_btn_state: MouseStateHandle::default(),
             key_path_picker_btn_state: MouseStateHandle::default(),
             status: None,
+            connection_status: ConnectionStatus::Unknown,
+            latency_ms: None,
+            is_testing: false,
             scroll_state: ClippedScrollStateHandle::default(),
         };
         me.reload(ctx);
@@ -132,6 +151,9 @@ impl SshServerView {
             me.user_editor.clone(),
             me.password_editor.clone(),
             me.key_path_editor.clone(),
+            me.root_password_editor.clone(),
+            me.startup_command_editor.clone(),
+            me.notes_editor.clone(),
         ];
         for editor in editors {
             ctx.subscribe_to_view(&editor, |me, source, event, ctx| match event {
@@ -172,6 +194,9 @@ impl SshServerView {
             self.user_editor.clone(),
             self.password_editor.clone(),
             self.key_path_editor.clone(),
+            self.root_password_editor.clone(),
+            self.startup_command_editor.clone(),
+            self.notes_editor.clone(),
         ];
         for editor in all {
             if editor != *active {
@@ -238,6 +263,29 @@ impl SshServerView {
             // 这里直接清空 buffer,密码保留在 keychain 里;Save 时只在 buffer 非空才写。
             self.password_editor
                 .update(ctx, |e, ctx| e.set_buffer_text("", ctx));
+            let startup_command = srv.startup_command.clone().unwrap_or_default();
+            self.startup_command_editor
+                .update(ctx, |e, ctx| e.set_buffer_text(&startup_command, ctx));
+            let notes = srv.notes.clone().unwrap_or_default();
+            self.notes_editor
+                .update(ctx, |e, ctx| e.set_buffer_text(&notes, ctx));
+            // Root 密码:检测 keychain 是否已保存,已保存时显示占位提示。
+            let root_pw_saved = KeychainSecretStore
+                .get(&srv.node_id, SecretKind::RootPassword)
+                .unwrap_or(None)
+                .is_some();
+            self.root_password_editor
+                .update(ctx, |e, ctx| {
+                    e.set_buffer_text("", ctx);
+                    if root_pw_saved {
+                        e.set_placeholder_text("●●●●●●●", ctx);
+                    } else {
+                        e.set_placeholder_text(
+                            &crate::t!("workspace-left-panel-ssh-manager-root-password-placeholder"),
+                            ctx,
+                        );
+                    }
+                });
         }
 
         // `set_buffer_text` 默认让所有 editor 处于"全选"状态(buffer 替换 +
@@ -249,6 +297,9 @@ impl SshServerView {
             self.user_editor.clone(),
             self.password_editor.clone(),
             self.key_path_editor.clone(),
+            self.root_password_editor.clone(),
+            self.startup_command_editor.clone(),
+            self.notes_editor.clone(),
         ];
         for editor in editors {
             editor.update(ctx, |e, ctx| e.clear_selections(ctx));
@@ -269,6 +320,9 @@ impl SshServerView {
         let user = self.current_text(&self.user_editor.clone(), ctx);
         let password = self.current_text(&self.password_editor.clone(), ctx);
         let key_path_text = self.current_text(&self.key_path_editor.clone(), ctx);
+        let root_password = self.current_text(&self.root_password_editor.clone(), ctx);
+        let startup_command_text = self.current_text(&self.startup_command_editor.clone(), ctx);
+        let notes_text = self.current_text(&self.notes_editor.clone(), ctx);
 
         let name = name.trim().to_string();
         if name.is_empty() {
@@ -302,6 +356,8 @@ impl SshServerView {
             } else {
                 Some(key_path)
             },
+            startup_command: if startup_command_text.trim().is_empty() { None } else { Some(startup_command_text.trim().to_string()) },
+            notes: if notes_text.trim().is_empty() { None } else { Some(notes_text.trim().to_string()) },
             last_connected_at: self.server.as_ref().and_then(|s| s.last_connected_at),
         };
 
@@ -340,6 +396,18 @@ impl SshServerView {
                 .update(ctx, |e, ctx| e.set_buffer_text("", ctx));
         }
 
+        // Root password
+        if !root_password.is_empty() {
+            if let Err(e) = store.set(&self.node_id, SecretKind::RootPassword, &root_password) {
+                log::error!("ssh_server_view: root password keychain write failed: {e:?}");
+                self.status = Some(StatusBanner::Error(format!("keychain: {e}")));
+                ctx.notify();
+                return;
+            }
+            self.root_password_editor
+                .update(ctx, |e, ctx| e.set_buffer_text("", ctx));
+        }
+
         // 4. reload + 状态提示 + 通知所有 SshManagerPanel 刷新树
         self.reload(ctx);
         self.status = Some(StatusBanner::Saved);
@@ -358,6 +426,8 @@ impl SshServerView {
         let port_str = self.current_text(&self.port_editor.clone(), ctx);
         let user = self.current_text(&self.user_editor.clone(), ctx);
         let key_path_text = self.current_text(&self.key_path_editor.clone(), ctx);
+        let startup_command_text = self.current_text(&self.startup_command_editor.clone(), ctx);
+        let notes_text = self.current_text(&self.notes_editor.clone(), ctx);
 
         let port: u16 = port_str.trim().parse().unwrap_or(22);
         let host = host.trim().to_string();
@@ -380,12 +450,91 @@ impl SshServerView {
             } else {
                 Some(key_path)
             },
+            startup_command: if startup_command_text.trim().is_empty() { None } else { Some(startup_command_text.trim().to_string()) },
+            notes: if notes_text.trim().is_empty() { None } else { Some(notes_text.trim().to_string()) },
             last_connected_at: self.server.as_ref().and_then(|s| s.last_connected_at),
         };
         ctx.dispatch_typed_action(&crate::workspace::WorkspaceAction::OpenSshTerminal {
             node_id: self.node_id.clone(),
             server,
         });
+    }
+
+    fn on_test_connection(&mut self, ctx: &mut ViewContext<Self>) {
+        let host = self.current_text(&self.host_editor.clone(), ctx);
+        let port_str = self.current_text(&self.port_editor.clone(), ctx);
+        let user = self.current_text(&self.user_editor.clone(), ctx);
+        let password = self.current_text(&self.password_editor.clone(), ctx);
+        let key_path_text = self.current_text(&self.key_path_editor.clone(), ctx);
+
+        let port: u16 = port_str.trim().parse().unwrap_or(22);
+        let host = host.trim().to_string();
+        if host.is_empty() {
+            self.status = Some(StatusBanner::Error(crate::t!(
+                "workspace-left-panel-ssh-manager-error-host-required"
+            )));
+            ctx.notify();
+            return;
+        }
+
+        let key_path = key_path_text.trim().to_string();
+        let server = SshServerInfo {
+            node_id: self.node_id.clone(),
+            host,
+            port,
+            username: user.trim().to_string(),
+            auth_type: self.auth_type,
+            key_path: if key_path.is_empty() { None } else { Some(key_path) },
+            startup_command: None,
+            notes: None,
+            last_connected_at: None,
+        };
+
+        let password = if password.is_empty() { None } else { Some(password) };
+
+        self.is_testing = true;
+        self.status = None;
+        ctx.notify();
+
+        let node_id = self.node_id.clone();
+        ctx.spawn(
+            async move {
+                let result = warp_ssh_manager::ssh_command::test_connection(&server, password).await;
+                (node_id, result)
+            },
+            |me, (_node_id, result), ctx| {
+                me.is_testing = false;
+                me.connection_status = result.status;
+                me.latency_ms = result.latency_ms;
+                match result.status {
+                    ConnectionStatus::Online => {
+                        let latency_str = result.latency_ms
+                            .map(|ms| format!("{ms}ms"))
+                            .unwrap_or_else(|| "N/A".into());
+                        let msg = result.error_message.unwrap_or_default();
+                        if msg.contains("password auth required") {
+                            me.status = Some(StatusBanner::Success(format!(
+                                "Server reachable - latency: {latency_str}"
+                            )));
+                        } else {
+                            me.status = Some(StatusBanner::Success(format!(
+                                "Online - latency: {latency_str}"
+                            )));
+                        }
+                    }
+                    ConnectionStatus::Offline => {
+                        me.latency_ms = None;
+                        let err = result.error_message.unwrap_or_else(|| "Unknown error".into());
+                        me.status = Some(StatusBanner::Error(err));
+                    }
+                    ConnectionStatus::Unknown => {
+                        me.latency_ms = None;
+                        me.status = None;
+                    }
+                }
+                ctx.notify();
+            },
+        );
     }
 
     /// 打开系统文件选择器选私钥文件,选完写入 key_path editor。回调 ctx
@@ -665,6 +814,71 @@ impl SshServerView {
             .finish()
     }
 
+    fn render_test_button(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let label = if self.is_testing {
+            crate::t!("workspace-left-panel-ssh-manager-testing")
+        } else {
+            crate::t!("workspace-left-panel-ssh-manager-test")
+        };
+        appearance
+            .ui_builder()
+            .button(ButtonVariant::Secondary, self.test_btn_state.clone())
+            .with_style(UiComponentStyles {
+                font_weight: Some(Weight::Bold),
+                width: Some(SAVE_BUTTON_WIDTH),
+                height: Some(SAVE_BUTTON_HEIGHT),
+                font_size: Some(13.0),
+                ..Default::default()
+            })
+            .with_centered_text_label(label)
+            .build()
+            .on_click(move |ctx, _, _| ctx.dispatch_typed_action(SshServerAction::TestConnection))
+            .finish()
+    }
+
+    fn render_connection_status(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let bg = theme.background();
+        let (icon, color, text) = match self.connection_status {
+            ConnectionStatus::Online => {
+                let latency_str = self.latency_ms
+                    .map(|ms| format!(" ({ms}ms)"))
+                    .unwrap_or_default();
+                (
+                    "●",
+                    theme.ui_green_color().into(),
+                    format!("{}{latency_str}", crate::t!("workspace-left-panel-ssh-manager-status-online")),
+                )
+            }
+            ConnectionStatus::Offline => (
+                "●",
+                theme.ui_error_color().into(),
+                crate::t!("workspace-left-panel-ssh-manager-status-offline"),
+            ),
+            ConnectionStatus::Unknown => (
+                "○",
+                theme.sub_text_color(bg),
+                crate::t!("workspace-left-panel-ssh-manager-status-unknown"),
+            ),
+        };
+
+        Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(4.0)
+            .with_child(
+                Text::new_inline(icon, appearance.ui_font_family(), 12.0)
+                    .with_color(color.into())
+                    .finish(),
+            )
+            .with_child(
+                Text::new_inline(text, appearance.ui_font_family(), appearance.ui_font_size())
+                    .with_color(color.into())
+                    .finish(),
+            )
+            .with_main_axis_size(MainAxisSize::Min)
+            .finish()
+    }
+
     fn render_status_banner(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
         let theme = appearance.theme();
         let (text, color) = match self.status.as_ref()? {
@@ -672,6 +886,7 @@ impl SshServerView {
                 crate::t!("workspace-left-panel-ssh-manager-status-saved"),
                 theme.ui_green_color(),
             ),
+            StatusBanner::Success(msg) => (msg.clone(), theme.ui_green_color()),
             StatusBanner::Error(msg) => (msg.clone(), theme.ui_error_color()),
         };
         Some(
@@ -730,6 +945,7 @@ impl TypedActionView for SshServerView {
         match action {
             SshServerAction::Save => self.on_save(ctx),
             SshServerAction::Connect => self.on_connect(ctx),
+            SshServerAction::TestConnection => self.on_test_connection(ctx),
             SshServerAction::SetAuthPassword => self.on_set_auth(AuthType::Password, ctx),
             SshServerAction::SetAuthKey => self.on_set_auth(AuthType::Key, ctx),
             SshServerAction::PickKeyFile => self.on_pick_key_file(ctx),
@@ -779,7 +995,7 @@ impl View for SshServerView {
         let title = Text::new_inline(
             title_text,
             appearance.ui_font_family(),
-            appearance.ui_font_size() + 6.0,
+            appearance.ui_font_heading_2(),
         )
         .with_color(
             appearance
@@ -789,10 +1005,11 @@ impl View for SshServerView {
         )
         .finish();
 
-        // Title 在左 / [Connect] [Save] 按钮在右。
+        // Title 在左 / [Test] [Connect] [Save] 按钮在右。
         let buttons = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(8.0)
+            .with_child(self.render_test_button(appearance))
             .with_child(self.render_connect_button(appearance))
             .with_child(self.render_save_button(appearance))
             .with_main_axis_size(MainAxisSize::Min)
@@ -806,7 +1023,9 @@ impl View for SshServerView {
             .finish();
 
         let mut col = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
-        col.add_child(Container::new(header).with_margin_bottom(16.0).finish());
+        col.add_child(Container::new(header).with_margin_bottom(8.0).finish());
+
+        col.add_child(Container::new(self.render_connection_status(appearance)).with_margin_bottom(8.0).finish());
 
         if let Some(banner) = self.render_status_banner(appearance) {
             col.add_child(banner);
@@ -852,6 +1071,25 @@ impl View for SshServerView {
                 ));
             }
         }
+
+        // 启动命令
+        col.add_child(self.render_text_field(
+            &crate::t!("workspace-left-panel-ssh-manager-startup-command"),
+            &self.startup_command_editor,
+            appearance,
+        ));
+        // Root 密码
+        col.add_child(self.render_text_field(
+            &crate::t!("workspace-left-panel-ssh-manager-root-password"),
+            &self.root_password_editor,
+            appearance,
+        ));
+        // 备注
+        col.add_child(self.render_text_field(
+            &crate::t!("workspace-left-panel-ssh-manager-notes"),
+            &self.notes_editor,
+            appearance,
+        ));
 
         let theme = appearance.theme();
         let inner = ConstrainedBox::new(

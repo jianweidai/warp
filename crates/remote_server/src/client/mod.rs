@@ -11,11 +11,13 @@ use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
     client_message, server_message, Abort, Authenticate, BufferEdit, ClientMessage, CloseBuffer,
-    DeleteFile, ErrorCode, Initialize, InitializeResponse, ListDirectory, ListDirectoryResponse,
-    LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse, OpenBuffer,
-    OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse, ResolveConflict,
-    ResolveConflictResponse, RunCommandRequest, RunCommandResponse, SaveBuffer, SaveBufferResponse,
-    ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
+    CreateDirectory, CreateDirectoryResponse, DeleteFile, ErrorCode, Initialize,
+    InitializeResponse, ListDirectory, ListDirectoryResponse, LoadRepoMetadataDirectoryResponse,
+    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileChunk,
+    ReadFileChunkResponse, ReadFileContextRequest, ReadFileContextResponse, ResolveConflict,
+    ResolveConflictResponse, ResolvePath, ResolvePathResponse, RunCommandRequest,
+    RunCommandResponse, SaveBuffer, SaveBufferResponse, ServerMessage, SessionBootstrapped,
+    TextEdit, WriteFile, WriteFileChunk, WriteFileChunkResponse,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
@@ -91,7 +93,7 @@ pub enum ClientEvent {
 /// This type does **not** own the child subprocess whose stdio backs it.
 /// For transports that spawn a subprocess (e.g. SSH), the caller is
 /// responsible for holding the `Child` for the lifetime of the session
-/// so that `kill_on_drop` fires when teardown occurs. In Warp this is
+/// so that `kill_on_drop` fires when teardown occurs. In Zap this is
 /// the `RemoteServerManager`, which stores the child in
 /// `RemoteSessionState` alongside the `Arc<RemoteServerClient>`. That
 /// way the child's lifetime is gated by the manager's session map
@@ -124,7 +126,7 @@ impl RemoteServerClient {
     /// The caller retains ownership of the `Child` itself. Typically the
     /// caller spawns the `Command` with `kill_on_drop(true)` and stashes
     /// the returned `Child` somewhere whose lifetime matches the
-    /// session's (in Warp, on the `RemoteServerManager`'s
+    /// session's (in Zap, on the `RemoteServerManager`'s
     /// `RemoteSessionState`). Dropping the `Child` there triggers
     /// SIGKILL on the subprocess, regardless of how many
     /// `Arc<RemoteServerClient>` clones are still alive.
@@ -372,7 +374,7 @@ impl RemoteServerClient {
         }
     }
 
-    /// OpenWarp:列举远端主机上某个目录的直接子项。
+    /// Zap:列举远端主机上某个目录的直接子项。
     ///
     /// 终端文件链接检测用它精确校验远端路径形态(本地会话靠
     /// `fs::metadata` 做这件事,远端文件不在本地磁盘上)。
@@ -389,6 +391,101 @@ impl RemoteServerClient {
             Some(server_message::Message::ListDirectoryResponse(resp)) => Ok(resp),
             other => {
                 log::error!("Unexpected response variant for ListDirectory: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Resolves a path on the remote host for the server file browser.
+    pub async fn resolve_path(&self, path: String) -> Result<ResolvePathResponse, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::ResolvePath(ResolvePath { path })),
+        };
+        let response = self.send_request(request_id, msg).await?;
+        match response.message {
+            Some(server_message::Message::ResolvePathResponse(resp)) => Ok(resp),
+            other => {
+                log::error!("Unexpected response variant for ResolvePath: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Creates a directory on the remote host, including missing parents.
+    pub async fn create_directory(
+        &self,
+        path: String,
+    ) -> Result<CreateDirectoryResponse, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::CreateDirectory(CreateDirectory {
+                path,
+            })),
+        };
+        let response = self.send_request(request_id, msg).await?;
+        match response.message {
+            Some(server_message::Message::CreateDirectoryResponse(resp)) => Ok(resp),
+            other => {
+                log::error!("Unexpected response variant for CreateDirectory: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Reads a byte range from a remote file.
+    pub async fn read_file_chunk(
+        &self,
+        path: String,
+        offset: u64,
+        max_bytes: u64,
+    ) -> Result<ReadFileChunkResponse, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::ReadFileChunk(ReadFileChunk {
+                path,
+                offset,
+                max_bytes,
+            })),
+        };
+        let response = self.send_request(request_id, msg).await?;
+        match response.message {
+            Some(server_message::Message::ReadFileChunkResponse(resp)) => Ok(resp),
+            other => {
+                log::error!("Unexpected response variant for ReadFileChunk: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Writes a byte range to a remote file.
+    pub async fn write_file_chunk(
+        &self,
+        path: String,
+        offset: u64,
+        bytes: Vec<u8>,
+        truncate: bool,
+        executable: Option<bool>,
+    ) -> Result<WriteFileChunkResponse, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::WriteFileChunk(WriteFileChunk {
+                path,
+                offset,
+                bytes,
+                truncate,
+                executable,
+            })),
+        };
+        let response = self.send_request(request_id, msg).await?;
+        match response.message {
+            Some(server_message::Message::WriteFileChunkResponse(resp)) => Ok(resp),
+            other => {
+                log::error!("Unexpected response variant for WriteFileChunk: {other:?}");
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -413,7 +510,7 @@ impl RemoteServerClient {
 
     /// Sends a buffer edit notification to the remote host.
     ///
-    /// OpenWarp:与其它 fire-and-forget 通知不同,buffer 编辑投递失败必须上报。
+    /// Zap:与其它 fire-and-forget 通知不同,buffer 编辑投递失败必须上报。
     /// `outbound_tx` 关闭(连接已死)时若静默吞掉,本地 buffer 会继续推进而
     /// daemon 收不到编辑,造成不可见的失步。失败返回 `Err` 让调用方处理。
     pub fn send_buffer_edit(

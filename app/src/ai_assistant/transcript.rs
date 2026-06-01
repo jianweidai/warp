@@ -49,9 +49,6 @@ const TERMINAL_INPUT_SVG_PATH: &str = "bundled/svg/terminal-input.svg";
 const USER_ICON_SVG_PATH: &str = "bundled/svg/user.svg";
 const SAVE_WORKFLOW_ICON_PATH: &str = "bundled/svg/workflow.svg";
 
-const BODY_FONT_SIZE: f32 = 13.;
-const CODE_FONT_SIZE: f32 = 12.;
-const WARNING_MESSAGE_FONT_SIZE: f32 = 10.;
 
 const PANEL_LEFT_MARGIN: f32 = 15.;
 const DETAILS_BOTTOM_MARGIN: f32 = 12.;
@@ -66,7 +63,7 @@ const WHAT_TO_DO_NEXT_PROMPT: &str = "What should I do next?";
 const IN_FLIGHT_REQUEST_TEXT: &str = "Generating answer...";
 const ACCURACY_NOTICE_TEXT: &str = "AI responses can be inaccurate.";
 const MISSING_CONTEXT_NOTICE_TEXT: &str =
-    "Warp AI might forget earlier answers as conversations get long.";
+    "Zap AI might forget earlier answers as conversations get long.";
 
 lazy_static::lazy_static! {
     static ref SCROLL_BUFFER_OFFSET_PX: Pixels = (10.).into_pixels();
@@ -629,7 +626,7 @@ impl Transcript {
                         highlighted_hyperlink,
                     } => FormattedTextElement::new(
                         formatted_text.to_owned(),
-                        BODY_FONT_SIZE,
+                        appearance.ui_font_body_large(),
                         appearance.ui_font_family(),
                         appearance.monospace_font_family(),
                         theme.main_text_color(theme.surface_2()).into_solid(),
@@ -678,7 +675,7 @@ impl Transcript {
                                                         font_family_id: Some(
                                                             appearance.monospace_font_family(),
                                                         ),
-                                                        font_size: Some(CODE_FONT_SIZE),
+                                                        font_size: Some(appearance.ui_font_body()),
                                                         ..Default::default()
                                                     })
                                                     .build()
@@ -722,7 +719,7 @@ impl Transcript {
                 .ui_builder()
                 .wrappable_text(dialogue.raw.to_owned(), true)
                 .with_style(UiComponentStyles {
-                    font_size: Some(BODY_FONT_SIZE),
+                    font_size: Some(appearance.ui_font_body_large()),
                     ..Default::default()
                 })
                 .build()
@@ -803,7 +800,7 @@ impl Transcript {
                 Text::new_inline(
                     message,
                     appearance.ui_font_family(),
-                    WARNING_MESSAGE_FONT_SIZE,
+                    appearance.ui_font_overline(),
                 )
                 .with_color(blended_colors::text_sub(
                     appearance.theme(),

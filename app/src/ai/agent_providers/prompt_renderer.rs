@@ -191,6 +191,11 @@ struct GitCtx {
 struct SkillCtx {
     name: String,
     description: String,
+    /// Absolute path to SKILL.md for filesystem skills; `None` for bundled skills.
+    /// Bundled skills are loaded via `AIAgentInput::InvokeSkill`, not `read_skill`,
+    /// so exposing `@warp-skill:<id>` here would mislead the model into calling a
+    /// path that always fails the BYOP `skill_by_reference` lookup.
+    path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -199,7 +204,7 @@ struct ProjectRuleCtx {
     content: String,
 }
 
-/// OpenWarp BYOP 修复 Issue #116:全局 Rules(用户在 设置 → Agents → Rules 创建)
+/// Zap BYOP 修复 Issue #116:全局 Rules(用户在 设置 → Agents → Rules 创建)
 /// 的扁平视图,喂给 `partials/user_rules.j2` 渲染进 system prompt。
 #[derive(Debug, Serialize)]
 struct UserRuleCtx {
@@ -220,7 +225,7 @@ struct PromptContext {
     git: Option<GitCtx>,
     skills: Vec<SkillCtx>,
     project_rules: Vec<ProjectRuleCtx>,
-    /// OpenWarp BYOP 修复 Issue #116:由 caller(`render_system`)从
+    /// Zap BYOP 修复 Issue #116:由 caller(`render_system`)从
     /// `RequestParams.user_rules` 注入,经 `partials/user_rules.j2` 渲染。
     user_rules: Vec<UserRuleCtx>,
     current_time: String,
@@ -274,7 +279,7 @@ fn collect_prompt_context(model_id: &str, ctx: &[AIAgentContext]) -> PromptConte
             }
             AIAgentContext::CurrentTime { current_time } => {
                 // P0-1:与默认值保持一致,只保留自然日粒度。
-                // 上游 Warp 有可能传入精确到秒的 timestamp,这里统一压到“当前日期”。
+                // 上游 Zap 有可能传入精确到秒的 timestamp,这里统一压到“当前日期”。
                 out.current_time = current_time.format("%Y-%m-%d").to_string();
             }
             // 代码索引功能未实现,Codebase 上下文不进 system prompt。
@@ -297,9 +302,19 @@ fn collect_prompt_context(model_id: &str, ctx: &[AIAgentContext]) -> PromptConte
             }
             AIAgentContext::Skills { skills } => {
                 for s in skills {
+                    let path = match &s.reference {
+                        ai::skills::SkillReference::Path(p) => {
+                            Some(p.to_string_lossy().into_owned())
+                        }
+                        // Bundled skills load via InvokeSkill, not read_skill.
+                        // Omit skill_path to avoid guiding the model toward a
+                        // value that will always fail BYOP's skill_by_reference.
+                        ai::skills::SkillReference::BundledSkillId(_) => None,
+                    };
                     out.skills.push(SkillCtx {
                         name: s.name.clone(),
                         description: s.description.clone(),
+                        path,
                     });
                 }
             }
@@ -422,7 +437,7 @@ fn fallback_init_project_command(arguments: &str) -> String {
 /// 渲染兜底 system(只在模板加载/渲染失败时用,不应在正常路径触发)。
 fn fallback_system(model_id: &str) -> String {
     format!(
-        "You are the AI coding agent inside OpenWarp, an AI Development Environment (ADE). \
+        "You are the AI coding agent inside Zap, an AI Development Environment (ADE). \
          Model: {model_id}. \
          Use the registered tools (run_shell_command / read_files / apply_file_diffs / grep / file_glob / ...) \
          to take actions on the user's behalf. Be concise."
@@ -531,7 +546,7 @@ mod tests {
 
     #[test]
     fn render_produces_non_empty_for_all_families() {
-        // 任意 model id 都能渲染出非空字符串(包含 OpenWarp 自我标识)。
+        // 任意 model id 都能渲染出非空字符串(包含 Zap 自我标识)。
         for id in [
             "claude-sonnet-4-5",
             "gpt-4o",
@@ -550,8 +565,8 @@ mod tests {
                 &[],
             );
             assert!(
-                out.contains("OpenWarp"),
-                "id={id} should mention OpenWarp, got: {out}"
+                out.contains("Zap"),
+                "id={id} should mention Zap, got: {out}"
             );
         }
     }
@@ -563,6 +578,67 @@ mod tests {
         assert!(
             !out.contains("Skills provide specialized instructions"),
             "{out}"
+        );
+    }
+
+    /// Issue #169 回归:系统 prompt 中的 skill 区块必须包含 skill_path(绝对路径),
+    /// 而非仅 name/description,否则模型无法正确调用 read_skill 工具。
+    #[test]
+    fn render_includes_skill_path_for_read_skill_tool() {
+        use crate::ai::skills::SkillDescriptor;
+        use ai::skills::{SkillProvider, SkillReference, SkillScope};
+
+        let skill_path = "/home/user/.agents/skills/open-browser-use/SKILL.md";
+        let skill = SkillDescriptor {
+            reference: SkillReference::Path(skill_path.into()),
+            name: "open-browser-use".into(),
+            description: "Automates Chrome browser operations.".into(),
+            scope: SkillScope::Project,
+            provider: SkillProvider::Agents,
+            icon_override: None,
+        };
+        let ctx = vec![AIAgentContext::Skills {
+            skills: vec![skill],
+        }];
+        let out = render_system(&LLMId::from("byop:p:deepseek-chat"), &ctx, &[], false, &[]);
+        assert!(
+            out.contains(skill_path),
+            "system prompt must expose the skill_path so the model can pass it to read_skill; got: {out}"
+        );
+    }
+
+    /// Issue #169 后续:bundled skill 的 BundledSkillId 变体在 BYOP 路径下不可通过
+    /// read_skill 加载(走 InvokeSkill),因此 system prompt 中不应输出 <skill_path>
+    /// 以避免模型使用必然失败的 @warp-skill:{id} 值。
+    #[test]
+    fn render_omits_skill_path_for_bundled_skill() {
+        use crate::ai::skills::SkillDescriptor;
+        use ai::skills::{SkillProvider, SkillReference, SkillScope};
+        use warp_core::ui::icons::Icon;
+
+        let skill = SkillDescriptor {
+            reference: SkillReference::BundledSkillId("find-skills".into()),
+            name: "find-skills".into(),
+            description: "Help discover and install new agent skills.".into(),
+            scope: SkillScope::Bundled,
+            provider: SkillProvider::Zap,
+            icon_override: Some(Icon::WarpLogoLight),
+        };
+        let ctx = vec![AIAgentContext::Skills {
+            skills: vec![skill],
+        }];
+        let out = render_system(&LLMId::from("byop:p:deepseek-chat"), &ctx, &[], false, &[]);
+        assert!(
+            out.contains("find-skills"),
+            "bundled skill name should still appear in prompt: {out}"
+        );
+        assert!(
+            !out.contains("@warp-skill:"),
+            "bundled skill must NOT emit <skill_path> to avoid misleading the model: {out}"
+        );
+        assert!(
+            !out.contains("<skill_path>"),
+            "no <skill_path> tag should be rendered for bundled skills: {out}"
         );
     }
 

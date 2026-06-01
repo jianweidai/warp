@@ -1,7 +1,7 @@
 #![allow(deprecated)]
 
 use command::{blocking, r#async::Command};
-use futures::{StreamExt, TryStreamExt as _};
+use futures::StreamExt;
 use futures_lite::future;
 use instant::Instant;
 use std::{
@@ -29,7 +29,9 @@ use crate::{
     safe_info,
 };
 
-use super::{release_assets_directory_url, DownloadReady};
+use super::{
+    github, release_assets_directory_url, DownloadProgress, DownloadReady, ProgressCallback,
+};
 
 // Relative path to the directory containing old executables from before an autoupdate.
 //
@@ -135,9 +137,20 @@ where
 }
 
 pub(super) fn relaunch() -> Result<()> {
+    let channel = ChannelState::channel();
+
+    // openWarp(Channel::Oss):没有代码签名,无法用 RENAME_SWAP 在原地替换 bundle。
+    // 改成调 `/usr/bin/open <dmg>`,让 Finder 弹出标准挂载窗口,用户拖到
+    // Applications 目录完成安装。这里不调用 `open -n bundle` 重启自己,因为
+    // 当前进程在 apply_update 阶段已请求 terminate,UI 已经知道要等用户手动
+    // 关闭+重开。dmg 同样在当前进程退出后再启动 Finder。
+    if matches!(channel, Channel::Oss) {
+        return oss_open_installer();
+    }
+
     let bundle_path = PathBuf::from(get_bundle_path()?);
 
-    // 启动新版 Warp 前先等待当前进程退出，避免 Dock 中短暂出现多个图标。
+    // 启动新版 Zap 前先等待当前进程退出，避免 Dock 中短暂出现多个图标。
     // 这里用一个中间 shell 进程轮询当前 PID，进程退出后再启动新版应用。
     //
     // 每 200ms 检查一次当前进程是否仍在运行；进程退出后启动新版。
@@ -168,6 +181,69 @@ pub(super) fn relaunch() -> Result<()> {
         .arg(relaunch_script)
         .spawn()?;
     Ok(())
+}
+
+/// OSS macOS 安装入口:扫描 `cache_dir/autoupdate/<id>/` 找到刚下载的 dmg,
+/// 等当前进程退出后用 `/usr/bin/open <dmg>` 触发 Finder 标准挂载。
+fn oss_open_installer() -> Result<()> {
+    // 进入这条路径前 AutoupdateState.stage 必然是 UpdateReady / Updating,
+    // downloaded_update.update_id 必然存在;但我们不在 stateless 函数里访问
+    // AutoupdateState,改成扫描磁盘:遍历 cache_dir/autoupdate/ 找最新 dmg。
+    let mut autoupdate_dir = warp_core::paths::cache_dir();
+    autoupdate_dir.push("autoupdate");
+
+    let dmg = find_latest_dmg(&autoupdate_dir).ok_or_else(|| {
+        anyhow!("openWarp: 找不到已下载的 dmg(目录: {autoupdate_dir:?})")
+    })?;
+
+    log::info!("openWarp: 准备打开安装 dmg {dmg:?}");
+
+    let pid = std::process::id();
+    let quoted_dmg = shell_escape::escape(dmg.to_string_lossy());
+    // 等当前进程退出后再 open dmg。`open` 默认非阻塞,Finder 拿到 dmg 后会
+    // 自动 mount 并显示挂载窗口;用户在 Finder 里拖拽到 Applications 完成升级。
+    let script = format!(
+        "while ps -p {pid} >/dev/null 2>&1; do sleep 0.2; done; /usr/bin/open {quoted_dmg}"
+    );
+    log::info!("Executing OSS install command {script:?}");
+    blocking::Command::new("sh").arg("-c").arg(script).spawn()?;
+    Ok(())
+}
+
+/// 在 `autoupdate/` 目录下找出最新一次下载的 dmg。OSS 只下载 dmg 不下载其他文件,
+/// 按文件 mtime 取最新即可。返回 None 表示当前没有可用 dmg(异常情况)。
+fn find_latest_dmg(autoupdate_dir: &Path) -> Option<PathBuf> {
+    let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
+    let read_dir = fs::read_dir(autoupdate_dir).ok()?;
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Ok(inner) = fs::read_dir(&path) else {
+            continue;
+        };
+        for inner_entry in inner.flatten() {
+            let inner_path = inner_entry.path();
+            if inner_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_none_or(|e| !e.eq_ignore_ascii_case("dmg"))
+            {
+                continue;
+            }
+            let Ok(meta) = fs::metadata(&inner_path) else {
+                continue;
+            };
+            let Ok(mtime) = meta.modified() else {
+                continue;
+            };
+            if newest.as_ref().is_none_or(|(_, t)| mtime > *t) {
+                newest = Some((inner_path, mtime));
+            }
+        }
+    }
+    newest.map(|(p, _)| p)
 }
 
 pub async fn cleanup(update_id: &str) {
@@ -244,7 +320,7 @@ pub async fn cleanup_all_except(preserve_update_id: Option<&str>) {
     }
 }
 
-/// Determines if the user needs authorization in order to update Warp.
+/// Determines if the user needs authorization in order to update Zap.
 async fn needs_authorization(bundle_path: &Path) -> Result<bool> {
     // For the bundle path itself, check permissions without creating a test file so as to not
     // interfere with code signing.
@@ -269,8 +345,8 @@ async fn needs_authorization(bundle_path: &Path) -> Result<bool> {
 }
 
 /// Determines if a directory is writable as part of an update. This means:
-/// * Warp can create files in the directory
-/// * Warp can modify the permissions of created files
+/// * Zap can create files in the directory
+/// * Zap can modify the permissions of created files
 async fn is_directory_writable(directory: &Path) -> Result<bool> {
     // Just because we have writability access does not mean we can set the correct owner/group.
     // Test if we can set the owner/group on a temporarily created file. If we can, then we can
@@ -305,7 +381,7 @@ async fn is_directory_writable(directory: &Path) -> Result<bool> {
 }
 
 /// Verifies that the staged bundle path has a valid macOS code signature, and that its
-/// team identifier matches Warp's team identifier.
+/// team identifier matches Zap's team identifier.
 async fn verify_code_signature(component: &str, path: &Path) -> Result<()> {
     // Verify the signature of the staged update bundle with team identifier
     let codesign_verify_output = Command::new("/usr/bin/codesign")
@@ -335,20 +411,55 @@ pub(super) async fn download_update_and_cleanup(
     update_id: &str,
     last_successful_update_id: Option<&str>,
     client: &http_client::Client,
+    on_progress: ProgressCallback,
 ) -> Result<DownloadReady> {
-    // openWarp(Channel::Oss):在上层 mod.rs::on_update_check_complete 已提前进入
-    // UpdateReady 状态(不下载),这里不应被调到。留一个安全返回以防万一。
-    if matches!(ChannelState::channel(), Channel::Oss) {
-        log::info!("openWarp: 跳过自动下载,由用户在关于页面手动下载。");
-        return Ok(DownloadReady::No);
-    }
+    let channel = ChannelState::channel();
 
-    let result =
-        download_and_extract_binary(ChannelState::channel(), version_info, update_id, client).await;
+    // openWarp(Channel::Oss):没有 Apple Developer ID 签名,不能走官方
+    // download_and_extract_binary(mount + cp + codesign verify + RENAME_SWAP)。
+    // OSS 路径只把 dmg 流式下载到 cache_dir/autoupdate/<id>/,apply 时由
+    // `relaunch()` 走 `open <dmg>` 让 Finder 弹标准挂载窗口,用户拖到 Applications。
+    let result = if matches!(channel, Channel::Oss) {
+        oss_download_dmg(channel, version_info, update_id, client, on_progress).await
+    } else {
+        download_and_extract_binary(channel, version_info, update_id, client, on_progress).await
+    };
     if result.is_err() {
         cleanup_all_except(last_successful_update_id).await;
     }
     result
+}
+
+/// OSS 专用下载:只把 dmg 流式落盘到 `cache_dir/autoupdate/<update_id>/<dmg>`,
+/// 不做挂载也不做代码签名校验。返回 `DownloadReady::Yes` 表示安装包已就绪,
+/// 上层会切到 `UpdateReady`,等待用户点击"立即安装"触发 `relaunch()`。
+async fn oss_download_dmg(
+    channel: Channel,
+    version_info: &VersionInfo,
+    update_id: &str,
+    client: &http_client::Client,
+    on_progress: ProgressCallback,
+) -> Result<DownloadReady> {
+    log::info!(
+        "openWarp: 下载更新 dmg, version {} on channel {channel}",
+        &version_info.version
+    );
+
+    let download_dir = get_download_dir(update_id);
+    async_fs::create_dir_all(&download_dir).await?;
+
+    let dmg_path_buf = download_dmg(&channel, version_info, update_id, client, on_progress).await?;
+
+    // 故意不做 hdiutil mount / verify_code_signature:OSS 没有 Apple
+    // codesign 也不需要把 .app 拷进当前 bundle。dmg 本身就是用户要"打开"的物件。
+    // 但校验 GitHub Release 元数据里的 SHA-256,防御 CDN 中间人/资产损坏。
+    let asset_name = dmg_name(channel);
+    if let Err(e) = super::verify_oss_asset_sha256(&dmg_path_buf, &asset_name) {
+        // 校验失败时立即删除已下载文件,避免用户点击"安装"后打开损坏的 dmg。
+        let _ = async_fs::remove_file(&dmg_path_buf).await;
+        return Err(e);
+    }
+    Ok(DownloadReady::Yes)
 }
 
 /// Apply the downloaded update.
@@ -412,7 +523,7 @@ async fn apply_update(channel: Channel, version_info: &VersionInfo, update_id: &
         .await
         .is_ok()
     {
-        // If we performed this process already but didn't relaunch Warp, the old executable will
+        // If we performed this process already but didn't relaunch Zap, the old executable will
         // still be located in the user application data directory.  In that case, leave it there.
         log::info!("Already autoupdated without relaunching; ignoring executable from old bundle");
     } else {
@@ -521,6 +632,7 @@ async fn download_and_extract_binary(
     version_info: &VersionInfo,
     update_id: &str,
     client: &http_client::Client,
+    on_progress: ProgressCallback,
 ) -> Result<DownloadReady> {
     let bundle_path = PathBuf::from(get_bundle_path()?);
     let needs_authorization = needs_authorization(bundle_path.as_path())
@@ -539,7 +651,7 @@ async fn download_and_extract_binary(
     log::info!("Creating download dir {:?}", &download_dir);
     async_fs::create_dir_all(&download_dir).await?;
 
-    let dmg_path = download_dmg(&channel, version_info, update_id, client).await?;
+    let dmg_path = download_dmg(&channel, version_info, update_id, client, on_progress).await?;
 
     // Mount the downloaded dmg so we can copy out the binary.
     let mountpoint = mount_dmg(&dmg_path, update_id).await?;
@@ -642,25 +754,60 @@ async fn download_dmg(
     version_info: &VersionInfo,
     update_id: &str,
     client: &http_client::Client,
+    on_progress: ProgressCallback,
 ) -> Result<PathBuf> {
-    // TODO: Use a streaming fetch and and provide an api for tracking progress
     let update_url = update_url(*channel, &version_info.version);
     log::info!("Fetching new dmg at {update_url}");
     let res = client
         .get(&update_url)
         .timeout(Duration::from_secs(DMG_TIMEOUT_S))
         .send()
-        .await?;
+        .await?
+        .error_for_status()?;
+    // http_client::Response 没有 content_length(),只能从 headers 拿。
+    let total = res
+        .headers()
+        .get(http::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok());
     let dmg_file = dmg_path(channel, version_info, update_id);
 
+    // 上报 0/total 让 UI 立刻渲染进度条;后续每写一个 chunk 再 throttle 上报。
+    on_progress(DownloadProgress {
+        downloaded: 0,
+        total,
+    });
+
     let mut file = async_fs::File::create(&dmg_file).await?;
-    futures_lite::io::copy(
-        res.bytes_stream()
-            .map_err(std::io::Error::other)
-            .into_async_read(),
-        &mut file,
-    )
-    .await?;
+    let mut downloaded: u64 = 0;
+    // 节流:不要每个 chunk 都上报(reqwest chunk 可能很小,UI 会被狂刷重绘)。
+    // 每累积 64 KiB 或时间过 250ms 才推一次;最后一次在循环外强制 flush。
+    let mut last_reported = 0u64;
+    let mut last_reported_at = Instant::now();
+    const REPORT_BYTES_THRESHOLD: u64 = 64 * 1024;
+    const REPORT_TIME_THRESHOLD: Duration = Duration::from_millis(250);
+
+    use futures_lite::io::AsyncWriteExt as _;
+    let mut stream = res.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        file.write_all(&chunk).await?;
+        downloaded += chunk.len() as u64;
+        if downloaded - last_reported >= REPORT_BYTES_THRESHOLD
+            || last_reported_at.elapsed() >= REPORT_TIME_THRESHOLD
+        {
+            on_progress(DownloadProgress {
+                downloaded,
+                total,
+            });
+            last_reported = downloaded;
+            last_reported_at = Instant::now();
+        }
+    }
+    on_progress(DownloadProgress {
+        downloaded,
+        total,
+    });
     file.sync_data().await?;
 
     log::info!("Wrote DMG to tempfile at {:?}", &dmg_file);
@@ -686,8 +833,8 @@ async fn mount_dmg(dmg_dir: &Path, update_id: &str) -> Result<PathBuf> {
     hdiutil_cmd.args(["attach", "-mountpoint"]);
     hdiutil_cmd.arg(&volume);
     // Explanation of flags:
-    // -nobrowse: Do not show the Warp DMG in Finder or similar apps.
-    // -noautoopen: Do not open the Warp DMG in Finder.
+    // -nobrowse: Do not show the Zap DMG in Finder or similar apps.
+    // -noautoopen: Do not open the Zap DMG in Finder.
     // -readonly: For safety, we mount read-only since there's no need to modify the new app version.
     // -autofsck: Ensure that the DMG contents are verified. This is on by default for quarantined images, but macOS
     //    doesn't necessarily recognize our download as such.
@@ -705,10 +852,29 @@ async fn mount_dmg(dmg_dir: &Path, update_id: &str) -> Result<PathBuf> {
 }
 
 fn update_url(channel: Channel, version: &str) -> String {
+    let asset = dmg_name(channel);
+    if matches!(channel, Channel::Oss) {
+        // OSS 走 GitHub Releases:优先用 fetch_latest_release 缓存里的真实
+        // browser_download_url(以防仓库被 redirect / asset 改名)。缓存为空时
+        // 拼一个标准 `releases/download/<tag>/<asset>` 的兜底 URL,tag 直接用
+        // VersionInfo.version 加 `v` 前缀(VersionInfo 已经 trim 过 `v`)。
+        if let Some(release) = github::cached_release() {
+            if let Some(found) = release.find_asset(&asset) {
+                return found.browser_download_url.clone();
+            }
+            log::warn!(
+                "openWarp: cached release tag {} 没有名为 {asset} 的资产,回退到 tag URL",
+                release.tag_name
+            );
+        }
+        return format!(
+            "https://github.com/zerx-lab/warp/releases/download/v{version}/{asset}"
+        );
+    }
     format!(
         "{}/{}",
         release_assets_directory_url(channel, version),
-        dmg_name(channel)
+        asset
     )
 }
 
@@ -726,6 +892,18 @@ fn dmg_name(channel: Channel) -> String {
         .arg("-m")
         .output()
         .is_ok_and(|output| output.stdout.starts_with(b"arm64"));
+
+    // openWarp GitHub Release 资产名固定使用 `Zap-arm64.dmg` / `Zap-intel.dmg`
+    // (来自 .github/workflows 的命名约定),与 `app_name_prefix("zap-oss")` 不一致。
+    // 这里只对 OSS 写死,不会影响官方 channel 的 universal 命名。
+    if matches!(channel, Channel::Oss) {
+        return if is_arm64 {
+            "Zap-arm64.dmg".to_string()
+        } else {
+            "Zap-intel.dmg".to_string()
+        };
+    }
+
     if is_arm64 {
         return format!("{}-arm64.dmg", app_name_prefix(channel));
     }
@@ -736,12 +914,12 @@ fn dmg_name(channel: Channel) -> String {
 
 fn app_name_prefix(channel: Channel) -> &'static str {
     match channel {
-        Channel::Stable => "Warp",
+        Channel::Stable => "Zap",
         Channel::Preview => "WarpPreview",
         Channel::Local => "warp",
         Channel::Integration => "integration",
         Channel::Dev => "WarpDev",
-        Channel::Oss => "warp-oss",
+        Channel::Oss => "zap-oss",
     }
 }
 
@@ -752,7 +930,7 @@ fn executable_name(channel: Channel) -> &'static str {
         Channel::Local => "warp",
         Channel::Integration => "integration",
         Channel::Dev => "dev",
-        Channel::Oss => "warp-oss",
+        Channel::Oss => "zap-oss",
     }
 }
 
