@@ -95,7 +95,7 @@ use crate::{
         },
     },
     code::{editor::view::CodeEditorView, editor_management::CodeSource},
-    notebooks::editor::{markdown_table_appearance, rich_text_styles},
+    notebooks::editor::{rich_text_styles, MarkdownTableAppearance},
     settings_view::SettingsSection,
     terminal::{
         find::TerminalFindModel, safe_mode_settings::get_secret_obfuscation_mode,
@@ -2321,6 +2321,25 @@ fn visual_section_height(app: &AppContext) -> f32 {
 }
 
 const TABLE_BLOCK_CORNER_RADIUS: f32 = 8.0;
+
+fn ai_table_appearance(appearance: &Appearance) -> MarkdownTableAppearance {
+    let theme = appearance.theme();
+    MarkdownTableAppearance {
+        border_color: internal_colors::neutral_4(theme),
+        header_background: theme.surface_2().into_solid(),
+        cell_background: ColorU::transparent_black(),
+        alternate_row_background: Some(theme.surface_1().with_opacity(50).into_solid()),
+        text_color: internal_colors::text_sub(theme, theme.background()),
+        header_text_color: internal_colors::text_main(theme, theme.background()),
+        scrollbar_nonactive_thumb_color: theme.nonactive_ui_detail().into_solid(),
+        scrollbar_active_thumb_color: theme.active_ui_detail().into_solid(),
+        cell_padding: 8.,
+        outer_border: true,
+        column_dividers: true,
+        row_dividers: true,
+    }
+}
+
 fn render_table_section(
     table: &AgentOutputTable,
     table_handles: TableSectionHandles,
@@ -2340,7 +2359,7 @@ fn render_table_section(
     }
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
-    let table_appearance = markdown_table_appearance(appearance);
+    let table_appearance = ai_table_appearance(appearance);
     let notebook_styles = rich_text_styles(appearance, FontSettings::as_ref(app));
     let table_font_family = appearance.ai_font_family();
     let table_font_size = appearance.monospace_font_size();

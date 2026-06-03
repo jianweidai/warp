@@ -12,6 +12,7 @@ chrono.workspace = true
 command.workspace = true
 diesel = { workspace = true, features = ["chrono", "sqlite"] }
 dirs.workspace = true
+futures-lite.workspace = true
 instant.workspace = true
 keyring.workspace = true
 log.workspace = true

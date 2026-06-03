@@ -64,6 +64,11 @@ fn build_env() -> Environment<'static> {
     )
     .expect("footer partial parses");
     env.add_template(
+        "partials/thinking_language.j2",
+        include_str!("prompts/partials/thinking_language.j2"),
+    )
+    .expect("thinking_language partial parses");
+    env.add_template(
         "partials/plan_mode.j2",
         include_str!("prompts/partials/plan_mode.j2"),
     )
@@ -833,6 +838,64 @@ mod tests {
         assert!(
             !out.contains("## \n"),
             "无 name 时不应渲染空的 '## ' 标题: {out}"
+        );
+    }
+
+    #[test]
+    fn render_includes_thinking_language_across_all_template_families() {
+        // thinking_language.j2 经 footer.j2 注入,所有 system 模板族都引用了 footer。
+        // 回归用例确保 8 族模板都会渲染 thinking_language,不会因为某条家族没拉 footer
+        // 而漏注入,导致 LLM 在中文用户提问时仍用英文思考。
+        // 8 族对应: anthropic / gpt / beast / codex / gemini / kimi / trinity / default
+        for id in [
+            "claude-sonnet-4-5",
+            "gpt-3.5-turbo",
+            "gpt-4o",
+            "gpt-5-codex",
+            "gemini-2.5-pro",
+            "kimi-k2",
+            "trinity-v1",
+            "weird-model",
+        ] {
+            let out = render_system(
+                &LLMId::from(format!("byop:p:{id}").as_str()),
+                &[],
+                &[],
+                false,
+                &[],
+            );
+            assert!(
+                out.contains("# Thinking language"),
+                "id={id} 应渲染 thinking_language 区块: {out}"
+            );
+            assert!(
+                out.contains("internal reasoning"),
+                "id={id} 应包含 thinking_language 锚点: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn render_thinking_language_precedes_tool_aliases() {
+        // meta-rule 应在工具列表之前,不被 user_rules / project_rules 覆盖。
+        // 需要传一个非空 tool 列表,否则 tool_aliases.j2 整个块被 {% if available_tools %} 跳过。
+        let tools = vec!["read_files".to_string()];
+        let out = render_system(
+            &LLMId::from("byop:p:claude-sonnet-4-5"),
+            &[],
+            &tools,
+            false,
+            &[],
+        );
+        let pos_thinking = out
+            .find("# Thinking language")
+            .expect("应包含 thinking_language");
+        let pos_tools = out
+            .find("# Available Tools")
+            .expect("应包含 tool_aliases");
+        assert!(
+            pos_thinking < pos_tools,
+            "thinking_language 应在 tool_aliases 之前: thinking={pos_thinking}, tools={pos_tools}\n{out}"
         );
     }
 }

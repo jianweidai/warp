@@ -34,9 +34,12 @@ use warp_ssh_manager::{
     SshSecretStore, SshServerInfo,
 };
 
+use settings::Setting;
+
 use crate::editor::{
     EditorView, Event as EditorEvent, SingleLineEditorOptions, TextColors, TextOptions,
 };
+use crate::settings::SshSettings;
 use crate::ssh_manager::candidates::{CandidateRow, CandidatesViewModel};
 use crate::ssh_manager::{SshTreeChangedEvent, SshTreeChangedNotifier};
 
@@ -54,11 +57,14 @@ const PANEL_HORIZONTAL_PADDING: f32 = 8.0;
 const CONTEXT_MENU_WIDTH: f32 = 200.0;
 const CONTEXT_MENU_ITEM_PADDING_V: f32 = 7.0;
 const CONTEXT_MENU_ITEM_PADDING_H: f32 = 12.0;
-const MAX_CONTEXT_MENU_ITEMS: usize = 4;
+const MAX_CONTEXT_MENU_ITEMS: usize = 5;
 const SSH_PANEL_POSITION_ID: &str = "ssh_manager_panel_root";
 
 #[derive(Clone, Debug)]
 pub enum SshManagerPanelAction {
+    /// 工具栏按钮：始终在根级创建文件夹。
+    AddRootFolder,
+    /// 右键菜单：根据上下文决定父级。
     AddFolder,
     AddServer,
     DeleteSelected,
@@ -88,6 +94,8 @@ pub enum SshManagerPanelAction {
     ToggleAllFolders,
     /// 双击 server 行 = 连接(开新 tab)。Folder 双击 = 两次 toggle 抵消 no-op。
     DoubleClick(String),
+    /// 右键 server → "文件管理":打开 SFTP 文件浏览器 pane。
+    OpenSftp,
     /// "Candidates" 区段:把 `~/.ssh/config` 的一条候选拷贝进保存树。
     ImportCandidate {
         alias: String,
@@ -111,12 +119,19 @@ pub enum SshManagerPanelEvent {
         node_id: String,
         server: SshServerInfo,
     },
+    /// 用户右键 "SFTP 浏览",请求开 SFTP 文件浏览器 pane。
+    OpenSftpPane {
+        node_id: String,
+        server: SshServerInfo,
+    },
     PersistenceError(String),
 }
 
 struct RenameState {
     node_id: String,
     editor: ViewHandle<EditorView>,
+    /// 是否由新建文件夹自动触发的重命名。
+    is_newly_created: bool,
 }
 
 /// 单条 candidate 行的内容字段 —— 把渲染时关心的几个 Option 装一个 struct,
@@ -217,6 +232,13 @@ impl SshManagerPanel {
             },
         );
 
+        // 监听 SshSettings 变更，当自动发现开关切换时刷新候选区段。
+        ctx.subscribe_to_model(&SshSettings::handle(ctx), |me, _, _, ctx| {
+            me.candidates.update(ctx, |vm, ctx| vm.refresh(ctx));
+            me.sync_candidate_row_states(ctx);
+            ctx.notify();
+        });
+
         me
     }
 
@@ -257,10 +279,13 @@ impl SshManagerPanel {
         // 树变化 → 重算 "Added" 集合(PRODUCT.md decision E)。"已导入"按
         // `server.host == candidate.alias` 判定 —— 与 ImportCandidate 的写入
         // 语义对齐(decision I:导入时 `server.host = alias`)。
-        let hosts = list_server_hosts();
-        self.candidates
-            .update(ctx, |vm, ctx| vm.on_tree_changed(hosts, ctx));
-        self.sync_candidate_row_states(ctx);
+        let auto_discover = *SshSettings::as_ref(ctx).enable_ssh_auto_discovery.value();
+        if auto_discover {
+            let hosts = list_server_hosts();
+            self.candidates
+                .update(ctx, |vm, ctx| vm.on_tree_changed(hosts, ctx));
+            self.sync_candidate_row_states(ctx);
+        }
 
         ctx.notify();
     }
@@ -294,8 +319,8 @@ impl SshManagerPanel {
         }
     }
 
-    fn on_add_folder(&mut self, ctx: &mut ViewContext<Self>) {
-        let parent = self.parent_for_new_node();
+    /// 新建文件夹。`parent` 为 None 时在根级创建。
+    fn on_add_folder_with_parent(&mut self, parent: Option<String>, ctx: &mut ViewContext<Self>) {
         let result = warp_ssh_manager::with_conn(|c| {
             let name = unique_name(c, parent.as_deref(), "New folder")?;
             Ok(SshRepository::create_folder(c, parent.as_deref(), &name)?)
@@ -306,7 +331,7 @@ impl SshManagerPanel {
                 self.selected_id = Some(new_id.clone());
                 self.refresh_tree(ctx);
                 // 新建即重命名 — Drive 习惯。
-                self.enter_rename(new_id, ctx);
+                self.enter_rename(new_id, true, ctx);
             }
             Err(e) => {
                 log::error!("ssh_manager: create folder failed: {e:?}");
@@ -491,6 +516,26 @@ impl SshManagerPanel {
         self.dispatch_connect_for(&id, ctx);
     }
 
+    /// 右键 "SFTP 浏览":emit OpenSftpPane 事件。
+    fn on_open_sftp(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(id) = self.selected_id.clone() else {
+            return;
+        };
+        let kind = self.nodes.iter().find(|n| n.id == id).map(|n| n.kind);
+        if !matches!(kind, Some(NodeKind::Server)) {
+            return;
+        }
+        let server = warp_ssh_manager::with_conn(|c| Ok(SshRepository::get_server(c, &id)?))
+            .ok()
+            .flatten();
+        if let Some(server) = server {
+            ctx.emit(SshManagerPanelEvent::OpenSftpPane {
+                node_id: id,
+                server,
+            });
+        }
+    }
+
     fn dispatch_connect_for(&self, id: &str, ctx: &mut ViewContext<Self>) {
         let kind = self.nodes.iter().find(|n| n.id == id).map(|n| n.kind);
         if !matches!(kind, Some(NodeKind::Server)) {
@@ -514,7 +559,7 @@ impl SshManagerPanel {
         let kind = self.nodes.iter().find(|n| n.id == id).map(|n| n.kind);
         if !matches!(kind, Some(NodeKind::Server)) {
             // folder 的 "编辑" = 重命名
-            self.enter_rename(id, ctx);
+            self.enter_rename(id, false, ctx);
             return;
         }
         ctx.emit(SshManagerPanelEvent::OpenServerEditor { node_id: id });
@@ -604,6 +649,9 @@ impl SshManagerPanel {
             self.commit_rename(ctx);
         }
 
+        // commit_rename 对新建文件夹(is_newly_created)会清空 selected_id,但单击跳转的
+        // 语义就是选中被点击项,故这里立即覆盖为新 id 是预期行为 —— 清空只针对 Enter/ESC/
+        // 失焦到空白这类无新选择的退出路径,单击本身已提供了新的选择上下文。
         self.selected_id = Some(id.clone());
         let kind = self.nodes.iter().find(|n| n.id == id).map(|n| n.kind);
         match kind {
@@ -632,6 +680,9 @@ impl SshManagerPanel {
         }
         if let Some(t) = target.as_ref() {
             self.selected_id = Some(t.clone());
+        } else {
+            // 右键空白区域表示在根级操作，清除旧的选中状态。
+            self.selected_id = None;
         }
         self.context_menu_target = target;
         self.context_menu_position = Some(position);
@@ -644,7 +695,7 @@ impl SshManagerPanel {
         ctx.notify();
     }
 
-    fn enter_rename(&mut self, node_id: String, ctx: &mut ViewContext<Self>) {
+    fn enter_rename(&mut self, node_id: String, is_newly_created: bool, ctx: &mut ViewContext<Self>) {
         let current_name = self
             .nodes
             .iter()
@@ -683,7 +734,7 @@ impl SshManagerPanel {
         });
 
         ctx.focus(&editor);
-        self.rename_state = Some(RenameState { node_id, editor });
+        self.rename_state = Some(RenameState { node_id, editor, is_newly_created });
         ctx.notify();
     }
 
@@ -692,18 +743,26 @@ impl SshManagerPanel {
             return;
         };
         let new_name = rs.editor.as_ref(ctx).buffer_text(ctx).trim().to_string();
+        let id = rs.node_id.clone();
+        let was_newly_created = rs.is_newly_created;
         if new_name.is_empty() {
-            // 名字不能为空:撤销
+            // 名字不能为空:撤销。新建文件夹时同时清除选中。
+            if was_newly_created {
+                self.selected_id = None;
+            }
             ctx.notify();
             return;
         }
-        let id = rs.node_id.clone();
         let result =
             warp_ssh_manager::with_conn(|c| Ok(SshRepository::rename_node(c, &id, &new_name)?));
         if let Err(e) = result {
             log::error!("ssh_manager: rename failed: {e:?}");
             ctx.emit(SshManagerPanelEvent::PersistenceError(e.to_string()));
             return;
+        }
+        // 新建文件夹重命名完成后清除选中，使下次"新建文件夹"创建在根级。
+        if was_newly_created {
+            self.selected_id = None;
         }
         self.refresh_tree(ctx);
         SshTreeChangedNotifier::handle(ctx).update(ctx, |_, ctx| {
@@ -712,7 +771,12 @@ impl SshManagerPanel {
     }
 
     fn cancel_rename(&mut self, ctx: &mut ViewContext<Self>) {
-        self.rename_state = None;
+        if let Some(rs) = self.rename_state.take() {
+            // 新建文件夹取消重命名后清除选中，使下次"新建文件夹"创建在根级。
+            if rs.is_newly_created {
+                self.selected_id = None;
+            }
+        }
         ctx.notify();
     }
 
@@ -804,12 +868,7 @@ impl SshManagerPanel {
     }
 
     fn parent_for_new_node(&self) -> Option<String> {
-        let id = self.selected_id.as_ref()?;
-        let node = self.nodes.iter().find(|n| &n.id == id)?;
-        match node.kind {
-            NodeKind::Folder => Some(node.id.clone()),
-            NodeKind::Server => node.parent_id.clone(),
-        }
+        resolve_parent_for_new_node(self.selected_id.as_deref(), &self.nodes)
     }
 
     fn render_toolbar(
@@ -852,7 +911,7 @@ impl SshManagerPanel {
             .with_child(make_btn(
                 crate::ui_components::icons::Icon::Folder,
                 self.add_folder_btn.clone(),
-                SshManagerPanelAction::AddFolder,
+                SshManagerPanelAction::AddRootFolder,
             ))
             .with_child(make_btn(
                 crate::ui_components::icons::Icon::Plus,
@@ -1587,6 +1646,10 @@ impl SshManagerPanel {
                             SshManagerPanelAction::Connect,
                         ),
                         (
+                            crate::t!("workspace-left-panel-ssh-manager-menu-sftp"),
+                            SshManagerPanelAction::OpenSftp,
+                        ),
+                        (
                             crate::t!("workspace-left-panel-ssh-manager-menu-clone"),
                             SshManagerPanelAction::CloneServer(id.clone()),
                         ),
@@ -1670,14 +1733,20 @@ impl TypedActionView for SshManagerPanel {
 
     fn handle_action(&mut self, action: &SshManagerPanelAction, ctx: &mut ViewContext<Self>) {
         match action {
-            SshManagerPanelAction::AddFolder => self.on_add_folder(ctx),
+            SshManagerPanelAction::AddRootFolder => {
+                self.on_add_folder_with_parent(None, ctx)
+            }
+            SshManagerPanelAction::AddFolder => {
+                let parent = self.parent_for_new_node();
+                self.on_add_folder_with_parent(parent, ctx)
+            }
             SshManagerPanelAction::AddServer => self.on_add_server(ctx),
             SshManagerPanelAction::DeleteSelected => self.on_delete_selected(ctx),
             SshManagerPanelAction::Connect => self.on_connect(ctx),
             SshManagerPanelAction::Edit => self.on_edit(ctx),
             SshManagerPanelAction::CloneServer(id) => self.on_clone_server(id, ctx),
             SshManagerPanelAction::Click(id) => self.on_click(id.clone(), ctx),
-            SshManagerPanelAction::StartRename(id) => self.enter_rename(id.clone(), ctx),
+            SshManagerPanelAction::StartRename(id) => self.enter_rename(id.clone(), false, ctx),
             SshManagerPanelAction::CommitRename => self.commit_rename(ctx),
             SshManagerPanelAction::CancelRename => self.cancel_rename(ctx),
             SshManagerPanelAction::OpenContextMenu { target, position } => {
@@ -1693,6 +1762,7 @@ impl TypedActionView for SshManagerPanel {
             }
             SshManagerPanelAction::ToggleAllFolders => self.on_toggle_all_folders(ctx),
             SshManagerPanelAction::DoubleClick(id) => self.on_double_click(id.clone(), ctx),
+            SshManagerPanelAction::OpenSftp => self.on_open_sftp(ctx),
             SshManagerPanelAction::ImportCandidate { alias } => {
                 self.on_import_candidate(alias.clone(), ctx)
             }
@@ -1726,11 +1796,17 @@ impl View for SshManagerPanel {
 
         // PRODUCT.md §2:Candidates 区段在已保存树**上方**,共享同一面板
         // 水平内边距。区段在 view-model 还没 refresh 时返回 Empty,不会占
-        // 高度。
-        let candidates_section = Container::new(self.render_candidates(appearance, app))
-            .with_padding_left(PANEL_HORIZONTAL_PADDING - ITEM_PADDING_HORIZONTAL)
-            .with_padding_right(PANEL_HORIZONTAL_PADDING - ITEM_PADDING_HORIZONTAL)
-            .finish();
+        // 高度。自动发现关闭时不渲染区段。
+        let auto_discover =
+            *SshSettings::as_ref(app).enable_ssh_auto_discovery.value();
+        let candidates_section = if auto_discover {
+            Container::new(self.render_candidates(appearance, app))
+                .with_padding_left(PANEL_HORIZONTAL_PADDING - ITEM_PADDING_HORIZONTAL)
+                .with_padding_right(PANEL_HORIZONTAL_PADDING - ITEM_PADDING_HORIZONTAL)
+                .finish()
+        } else {
+            Empty::new().finish()
+        };
 
         let tree = Container::new(self.render_tree(appearance))
             .with_padding_left(PANEL_HORIZONTAL_PADDING - ITEM_PADDING_HORIZONTAL)
@@ -1774,6 +1850,22 @@ impl View for SshManagerPanel {
 }
 
 // --- helpers --------------------------------------------------------------
+
+/// 根据当前选中项和节点列表，计算新建节点的父级 ID。
+/// - 选中文件夹 → 作为子节点创建在该文件夹下
+/// - 选中服务器 → 作为兄弟节点创建（继承服务器的父级）
+/// - 无选中 → 创建在根级（返回 None）
+fn resolve_parent_for_new_node(
+    selected_id: Option<&str>,
+    nodes: &[SshNode],
+) -> Option<String> {
+    let id = selected_id?;
+    let node = nodes.iter().find(|n| n.id == id)?;
+    match node.kind {
+        NodeKind::Folder => Some(node.id.clone()),
+        NodeKind::Server => node.parent_id.clone(),
+    }
+}
 
 fn sort_for_display(nodes: Vec<SshNode>, depths: &HashMap<String, usize>) -> Vec<SshNode> {
     use std::collections::BTreeMap;
@@ -1864,3 +1956,7 @@ fn unique_name(
     }
     Ok(format!("{base} {}", uuid::Uuid::new_v4()))
 }
+
+#[cfg(test)]
+#[path = "panel_tests.rs"]
+mod tests;

@@ -8,9 +8,9 @@
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    Align, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container, CornerRadius,
-    CrossAxisAlignment, Element, Fill, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
-    MouseStateHandle, ParentElement, Radius, ScrollbarWidth, Shrinkable, Text,
+    Align, ChildView, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
+    CornerRadius, CrossAxisAlignment, Element, Fill, Flex, Hoverable, MainAxisAlignment,
+    MainAxisSize, MouseStateHandle, ParentElement, Radius, ScrollbarWidth, Shrinkable, Text,
 };
 use warpui::fonts::Weight;
 use warpui::platform::{Cursor, FilePickerConfiguration};
@@ -20,7 +20,7 @@ use warpui::{
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
-
+use crate::view_components::dropdown::{Dropdown, DropdownItem};
 use crate::editor::{
     EditorView, Event as EditorEvent, SingleLineEditorOptions, TextColors, TextOptions,
 };
@@ -31,8 +31,9 @@ use crate::ssh_manager::{SshTreeChangedEvent, SshTreeChangedNotifier};
 
 use warp_ssh_manager::{
     AuthType, ConnectionStatus, KeychainSecretStore, NodeKind, SecretKind, SshNode, SshRepository,
-    SshSecretStore, SshServerInfo,
+    SshSecretStore, SshSecretStoreError, SshServerInfo,
 };
+use zeroize::Zeroizing;
 
 const FIELD_LABEL_MARGIN_TOP: f32 = 6.0;
 const FIELD_LABEL_MARGIN_BOTTOM: f32 = 4.0;
@@ -51,6 +52,8 @@ pub enum SshServerAction {
     SetAuthKey,
     /// 打开系统文件选择器选私钥文件,把路径写入 key_path editor。
     PickKeyFile,
+    /// 选择分组(None 表示根级,Some(index) 表示 self.folders[index])。
+    SelectGroup(Option<usize>),
 }
 
 /// 一次性显示在 Save 按钮上方/下方的状态标签。
@@ -90,6 +93,15 @@ pub struct SshServerView {
     auth_key_btn_state: MouseStateHandle,
     key_path_picker_btn_state: MouseStateHandle,
 
+    /// 分组下拉选择器。
+    group_dropdown: ViewHandle<Dropdown<SshServerAction>>,
+    /// 缓存所有文件夹节点 (id, name),用于重建下拉列表。
+    folders: Vec<(String, String)>,
+    /// 当前选中的分组 ID(None 表示根级)。
+    current_group_id: Option<String>,
+    /// 初始从 DB 读到的 parent_id,用于判断 save 时是否需要 move_node。
+    original_parent_id: Option<String>,
+
     status: Option<StatusBanner>,
     connection_status: ConnectionStatus,
     latency_ms: Option<u64>,
@@ -99,18 +111,35 @@ pub struct SshServerView {
 
 impl SshServerView {
     pub fn new(node_id: String, ctx: &mut ViewContext<Self>) -> Self {
-        // 6 个 single-line editors。password 走 is_password=true。
         let name_editor = make_editor(false, &crate::t!("common-name"), ctx);
         let host_editor = make_editor(false, "example.com", ctx);
         let port_editor = make_editor(false, "22", ctx);
         let user_editor = make_editor(false, "root", ctx);
         let password_editor = make_editor(true, "•••••••", ctx);
         let key_path_editor = make_editor(false, "/home/user/.ssh/id_ed25519", ctx);
-        let root_password_editor = make_editor(true, &crate::t!("workspace-left-panel-ssh-manager-root-password-placeholder"), ctx);
-        let startup_command_editor = make_editor(false, &crate::t!("workspace-left-panel-ssh-manager-startup-command-placeholder"), ctx);
-        let notes_editor = make_editor(false, &crate::t!("workspace-left-panel-ssh-manager-notes-placeholder"), ctx);
+        let root_password_editor = make_editor(
+            true,
+            &crate::t!("workspace-left-panel-ssh-manager-root-password-placeholder"),
+            ctx,
+        );
+        let startup_command_editor = make_editor(
+            false,
+            &crate::t!("workspace-left-panel-ssh-manager-startup-command-placeholder"),
+            ctx,
+        );
+        let notes_editor = make_editor(
+            false,
+            &crate::t!("workspace-left-panel-ssh-manager-notes-placeholder"),
+            ctx,
+        );
 
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new("SSH server"));
+
+        let group_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dd = Dropdown::new(ctx);
+            dd.set_main_axis_size(MainAxisSize::Max, ctx);
+            dd
+        });
 
         let mut me = Self {
             node_id,
@@ -134,6 +163,10 @@ impl SshServerView {
             auth_password_btn_state: MouseStateHandle::default(),
             auth_key_btn_state: MouseStateHandle::default(),
             key_path_picker_btn_state: MouseStateHandle::default(),
+            group_dropdown,
+            folders: Vec::new(),
+            current_group_id: None,
+            original_parent_id: None,
             status: None,
             connection_status: ConnectionStatus::Unknown,
             latency_ms: None,
@@ -214,22 +247,34 @@ impl SshServerView {
         let id = self.node_id.clone();
         let result = warp_ssh_manager::with_conn(|c| {
             let nodes = SshRepository::list_nodes(c)?;
-            let node = nodes.into_iter().find(|n| n.id == id);
+            let node = nodes.iter().find(|n| n.id == id).cloned();
             let server = match node.as_ref().map(|n| n.kind) {
                 Some(NodeKind::Server) => SshRepository::get_server(c, &id)?,
                 _ => None,
             };
-            Ok((node, server))
+            // 收集所有 folder 节点(id, name)
+            let folders: Vec<(String, String)> = nodes
+                .iter()
+                .filter(|n| matches!(n.kind, NodeKind::Folder))
+                .map(|n| (n.id.clone(), n.name.clone()))
+                .collect();
+            Ok((node, server, folders))
         });
         match result {
-            Ok((node, server)) => {
+            Ok((node, server, folders)) => {
+                self.original_parent_id = node.as_ref().and_then(|n| n.parent_id.clone());
+                self.current_group_id = self.original_parent_id.clone();
                 self.node = node;
                 self.server = server;
+                self.folders = folders;
             }
             Err(e) => {
                 log::error!("ssh_server_view: reload failed: {e:?}");
                 self.node = None;
                 self.server = None;
+                self.folders = Vec::new();
+                self.original_parent_id = None;
+                self.current_group_id = None;
             }
         }
 
@@ -261,8 +306,22 @@ impl SshServerView {
             // 注意:不展示明文密码,只在 keychain 里"存在"时给一个全是 • 的占位 — 不
             // 影响保存语义(空字符串保持密码不变;非空字符串覆盖)。
             // 这里直接清空 buffer,密码保留在 keychain 里;Save 时只在 buffer 非空才写。
+            // 占位模式镜像 root_password_editor(keychain 已存 → "●●●●●●●";
+            // 未存 → 回到 new() 时设的 "•••••••"),给用户一个"留空也能 Test"
+            // 的视觉提示。
+            let pw_saved = KeychainSecretStore
+                .get(&srv.node_id, SecretKind::Password)
+                .unwrap_or(None)
+                .is_some();
             self.password_editor
-                .update(ctx, |e, ctx| e.set_buffer_text("", ctx));
+                .update(ctx, |e, ctx| {
+                    e.set_buffer_text("", ctx);
+                    if pw_saved {
+                        e.set_placeholder_text("●●●●●●●", ctx);
+                    } else {
+                        e.set_placeholder_text("•••••••", ctx);
+                    }
+                });
             let startup_command = srv.startup_command.clone().unwrap_or_default();
             self.startup_command_editor
                 .update(ctx, |e, ctx| e.set_buffer_text(&startup_command, ctx));
@@ -289,7 +348,7 @@ impl SshServerView {
         }
 
         // `set_buffer_text` 默认让所有 editor 处于"全选"状态(buffer 替换 +
-        // 默认 selection),首次渲染会看到 6 个输入框同时被高亮。逐个 clear。
+        // 默认 selection),首次渲染会看到多个输入框同时被高亮。逐个 clear。
         let editors = [
             self.name_editor.clone(),
             self.host_editor.clone(),
@@ -305,11 +364,55 @@ impl SshServerView {
             editor.update(ctx, |e, ctx| e.clear_selections(ctx));
         }
 
+        self.rebuild_group_dropdown(ctx);
         ctx.notify();
+    }
+
+    /// 根据 self.folders 重建下拉列表并设置当前选中项。
+    fn rebuild_group_dropdown(&mut self, ctx: &mut ViewContext<Self>) {
+        let root_label = crate::t!("workspace-left-panel-ssh-manager-group-root");
+        let mut items: Vec<DropdownItem<SshServerAction>> =
+            vec![DropdownItem::new(root_label, SshServerAction::SelectGroup(None))];
+        for (i, (_, name)) in self.folders.iter().enumerate() {
+            items.push(DropdownItem::new(
+                name.clone(),
+                SshServerAction::SelectGroup(Some(i)),
+            ));
+        }
+
+        // 查找当前分组对应的 index
+        let selected_index = if let Some(ref gid) = self.current_group_id {
+            self.folders
+                .iter()
+                .position(|(id, _)| id == gid)
+                .map(|pos| pos + 1) // +1 因为 index 0 是 "Root"
+                .unwrap_or_else(|| {
+                    // 文件夹已被外部删除,回退到根级
+                    self.current_group_id = None;
+                    0
+                })
+        } else {
+            0 // Root
+        };
+
+        self.group_dropdown.update(ctx, |dd, ctx| {
+            dd.set_items(items, ctx);
+            dd.set_selected_by_index(selected_index, ctx);
+        });
     }
 
     fn current_text(&self, editor: &ViewHandle<EditorView>, app: &AppContext) -> String {
         editor.as_ref(app).buffer_text(app)
+    }
+
+    /// 获取当前选中的分组 ID。
+    pub fn current_group_id(&self) -> &Option<String> {
+        &self.current_group_id
+    }
+
+    /// 获取所有文件夹 (id, name) 的引用（用于测试）。
+    pub fn folders(&self) -> &[(String, String)] {
+        &self.folders
     }
 
     fn on_save(&mut self, ctx: &mut ViewContext<Self>) {
@@ -356,18 +459,32 @@ impl SshServerView {
             } else {
                 Some(key_path)
             },
-            startup_command: if startup_command_text.trim().is_empty() { None } else { Some(startup_command_text.trim().to_string()) },
-            notes: if notes_text.trim().is_empty() { None } else { Some(notes_text.trim().to_string()) },
+            startup_command: if startup_command_text.trim().is_empty() {
+                None
+            } else {
+                Some(startup_command_text.trim().to_string())
+            },
+            notes: if notes_text.trim().is_empty() {
+                None
+            } else {
+                Some(notes_text.trim().to_string())
+            },
             last_connected_at: self.server.as_ref().and_then(|s| s.last_connected_at),
         };
 
-        // 2. 写 DB(rename + update_server)
+        // 2. 写 DB(rename + update_server + 可能的 move_node)
         let id = self.node_id.clone();
         let info_for_db = info.clone();
         let name_for_db = name.clone();
+        let group_changed = self.current_group_id != self.original_parent_id;
+        let new_parent_id = self.current_group_id.clone();
         let result = warp_ssh_manager::with_conn(move |c| {
             SshRepository::rename_node(c, &id, &name_for_db)?;
             SshRepository::update_server(c, &info_for_db)?;
+            if group_changed {
+                let new_parent = new_parent_id.as_deref();
+                SshRepository::move_node_to_end(c, &id, new_parent)?;
+            }
             Ok(())
         });
         if let Err(e) = result {
@@ -421,12 +538,12 @@ impl SshServerView {
     /// terminal pane 跑 `ssh ...`。**优先用编辑器里的当前值**(可能用户改了
     /// 字段还没 Save),这样连接的是"用户屏幕上看到"的配置,而不是 DB 里旧的。
     fn on_connect(&mut self, ctx: &mut ViewContext<Self>) {
-        // 跟 on_save 一样的字段收集逻辑(简化版,不写 DB)
         let host = self.current_text(&self.host_editor.clone(), ctx);
         let port_str = self.current_text(&self.port_editor.clone(), ctx);
         let user = self.current_text(&self.user_editor.clone(), ctx);
         let key_path_text = self.current_text(&self.key_path_editor.clone(), ctx);
-        let startup_command_text = self.current_text(&self.startup_command_editor.clone(), ctx);
+        let startup_command_text = self
+            .current_text(&self.startup_command_editor.clone(), ctx);
         let notes_text = self.current_text(&self.notes_editor.clone(), ctx);
 
         let port: u16 = port_str.trim().parse().unwrap_or(22);
@@ -450,8 +567,16 @@ impl SshServerView {
             } else {
                 Some(key_path)
             },
-            startup_command: if startup_command_text.trim().is_empty() { None } else { Some(startup_command_text.trim().to_string()) },
-            notes: if notes_text.trim().is_empty() { None } else { Some(notes_text.trim().to_string()) },
+            startup_command: if startup_command_text.trim().is_empty() {
+                None
+            } else {
+                Some(startup_command_text.trim().to_string())
+            },
+            notes: if notes_text.trim().is_empty() {
+                None
+            } else {
+                Some(notes_text.trim().to_string())
+            },
             last_connected_at: self.server.as_ref().and_then(|s| s.last_connected_at),
         };
         ctx.dispatch_typed_action(&crate::workspace::WorkspaceAction::OpenSshTerminal {
@@ -490,7 +615,10 @@ impl SshServerView {
             last_connected_at: None,
         };
 
-        let password = if password.is_empty() { None } else { Some(password) };
+        // 密码立即用 Zeroizing 包裹,确保从 UI 文本框取出后全程内存零化,
+        // 直到 async 测试任务结束 drop。优先级:form 值 > keychain > None。
+        // 详见 `resolve_test_password` 注释。
+        let password = resolve_test_password(&self.node_id, &password, &KeychainSecretStore);
 
         self.is_testing = true;
         self.status = None;
@@ -559,7 +687,7 @@ impl SshServerView {
     fn on_set_auth(&mut self, auth: AuthType, ctx: &mut ViewContext<Self>) {
         if self.auth_type != auth {
             self.auth_type = auth;
-            // 清空密码 buffer — 切换 auth 类型时上次输入的密码 / passphrase 语义变了。
+            // 切换 auth 类型时清空密码 buffer — 密码和 passphrase 语义不同。
             self.password_editor
                 .update(ctx, |e, ctx| e.set_buffer_text("", ctx));
             self.status = None;
@@ -622,8 +750,7 @@ impl SshServerView {
         .finish()
     }
 
-    /// 私钥路径字段:label + (输入框 + 浏览按钮) 一行。点 "浏览" 调
-    /// `ctx.open_file_picker(...)` 打开系统文件选择器。
+    /// 私钥路径字段:label + (输入框 + 浏览按钮) 一行。
     fn render_key_path_field(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let text_input = appearance
@@ -645,7 +772,6 @@ impl SshServerView {
             .build()
             .finish();
 
-        // 文件夹图标按钮 — 点击打开 picker。
         let icon_color = theme.sub_text_color(theme.background());
         let icon_el = ConstrainedBox::new(
             crate::ui_components::icons::Icon::Folder
@@ -900,6 +1026,23 @@ impl SshServerView {
             .finish(),
         )
     }
+
+    /// 分组下拉字段:label + dropdown。
+    fn render_group_field(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let label = self.render_label(
+            &crate::t!("workspace-left-panel-ssh-manager-field-group"),
+            appearance,
+        );
+        Container::new(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_child(label)
+                .with_child(ChildView::new(&self.group_dropdown).finish())
+                .finish(),
+        )
+        .with_margin_bottom(FIELD_BLOCK_MARGIN_BOTTOM)
+        .finish()
+    }
 }
 
 fn make_editor(
@@ -907,7 +1050,6 @@ fn make_editor(
     placeholder: &str,
     ctx: &mut ViewContext<SshServerView>,
 ) -> ViewHandle<EditorView> {
-    // 在 add_typed_action_view 闭包内重新拿 appearance,避免外层借用占住 ctx。
     let placeholder = placeholder.to_string();
     ctx.add_typed_action_view(move |ctx| {
         let options = {
@@ -949,6 +1091,13 @@ impl TypedActionView for SshServerView {
             SshServerAction::SetAuthPassword => self.on_set_auth(AuthType::Password, ctx),
             SshServerAction::SetAuthKey => self.on_set_auth(AuthType::Key, ctx),
             SshServerAction::PickKeyFile => self.on_pick_key_file(ctx),
+            SshServerAction::SelectGroup(index) => {
+                let new_group_id = index.and_then(|i| self.folders.get(i).map(|(id, _)| id.clone()));
+                if new_group_id != self.current_group_id {
+                    self.current_group_id = new_group_id;
+                    ctx.notify();
+                }
+            }
         }
     }
 }
@@ -1036,6 +1185,10 @@ impl View for SshServerView {
             &self.name_editor,
             appearance,
         ));
+
+        // 分组下拉
+        col.add_child(self.render_group_field(appearance));
+
         col.add_child(self.render_text_field(
             &crate::t!("workspace-left-panel-ssh-manager-detail-host"),
             &self.host_editor,
@@ -1155,3 +1308,36 @@ impl BackingView for SshServerView {
         self.focus_handle = Some(focus_handle);
     }
 }
+
+/// 解析"测试连接"用的密码来源,优先级固化:
+/// 1. form 文本非空 → 用 form 值(用户已敲,**不要求**先 Save)
+/// 2. form 空 + keychain 有 → 用 keychain 存的值
+/// 3. form 空 + keychain 无/错 → `None`,后端会返 "Password not provided"
+///
+/// form 永远胜过 keychain — 用户改 host/port 后想测,正在敲的密码就是
+/// 新 host 的,不应被旧 keychain 值盖掉。
+///
+/// author: logic
+/// date: 2026-06-01
+fn resolve_test_password(
+    node_id: &str,
+    editor_text: &str,
+    store: &dyn SshSecretStore,
+) -> Option<Zeroizing<String>> {
+    if !editor_text.is_empty() {
+        return Some(Zeroizing::new(editor_text.to_string()));
+    }
+    match store.get(node_id, SecretKind::Password) {
+        Ok(Some(secret)) => Some(secret),
+        Ok(None) => None,
+        Err(SshSecretStoreError::NoBackend) => None,
+        Err(SshSecretStoreError::Keyring(msg)) => {
+            log::warn!("keychain 读取失败,fallback 失败: {msg}");
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "server_view_tests.rs"]
+mod tests;
