@@ -55,6 +55,7 @@ use genai::chat::{
 };
 use genai::resolver::{AuthData, Endpoint, ServiceTargetResolver};
 use genai::{Client, ModelIden, ServiceTarget, WebConfig};
+use http_client::current_proxy_config;
 
 use crate::ai::agent::api::{RequestParams, ResponseStream};
 use crate::ai::agent::{AIAgentActionResult, AIAgentInput, RunningCommand, UserQueryMode};
@@ -2347,8 +2348,11 @@ fn serialize_outgoing_tool_call(
     if tc.tool.is_none() {
         if let Some((fn_name, raw_args)) = server_message_data.split_once('\n') {
             if !fn_name.is_empty() {
-                let args_value = serde_json::from_str(raw_args)
-                    .unwrap_or_else(|_| Value::String(raw_args.to_owned()));
+                // When raw_args is invalid JSON (e.g. model emitted \e or \` escape),
+                // fall back to an empty object so the provider receives valid JSON
+                // rather than a JSON string wrapping the invalid content (which causes
+                // "Invalid \escape" 400 on the next turn).
+                let args_value = serde_json::from_str(raw_args).unwrap_or_else(|_| json!({}));
                 return (fn_name.to_owned(), args_value);
             }
         }
@@ -2869,11 +2873,22 @@ pub(super) fn build_client(
     if let Ok(value) = build_user_agent_header() {
         headers.insert(reqwest::header::USER_AGENT, value);
     }
-    let web_config = WebConfig {
+    let mut web_config = WebConfig {
         gzip: false,
         default_headers: Some(headers),
         ..WebConfig::default()
     };
+    let proxy_cfg = current_proxy_config();
+    if proxy_cfg.mode == http_client::ProxyMode::Custom && !proxy_cfg.url.is_empty() {
+        if let Err(err) = web_config.set_proxy_settings(
+            &proxy_cfg.url,
+            &proxy_cfg.username,
+            &proxy_cfg.password,
+            &proxy_cfg.no_proxy,
+        ) {
+            log::warn!("[byop] proxy URL '{}' 无效,跳过代理配置: {err}", proxy_cfg.url);
+        }
+    }
     Client::builder()
         .with_web_config(web_config)
         .with_service_target_resolver(resolver)
@@ -5993,6 +6008,55 @@ mod serializer_readiness_tests {
         assert!(
             contents[0].to_ascii_lowercase().contains("cancel"),
             "expected real cancellation content, got {}",
+            contents[0]
+        );
+    }
+
+    /// issue #147 / #222 回归:用户在工具执行中打断 AI,被打断的 tool call 因 cancel
+    /// 竞态 / future 被 drop 而从未产生结果,留下"有 tool_call 无 tool_result"的孤立缺口。
+    /// 此前 readiness 判为 MissingResultWithoutRepairSource 永久阻断对话。修复后,controller
+    /// preflight 会为这种缺口合成一条 cancellation 占位 ToolCallResult(server_message_data 携带
+    /// {"status":"cancelled",...},result oneof 留 None)落地历史。本测试验证该合成 message 一旦
+    /// 进入历史,readiness 即转为 Ready 且请求可正常 serialize,对话不再卡死。
+    #[test]
+    fn synthesized_cancellation_result_unblocks_interrupted_tool_call() {
+        let tool_call_message = make_tool_call_message("task-1", "req-1", "call-1", shell_tool());
+
+        // 缺口存在时必须阻断(回归前的卡死场景)。
+        assert_build_request_blocked(
+            request_params(
+                vec![tool_call_message.clone()],
+                vec![user_query_input("continue")],
+            ),
+            "MissingResultWithoutRepairSource",
+        );
+
+        // 合成 cancellation message 落地历史后,缺口被填补 → Ready。
+        let synthesized = make_tool_call_result_message(
+            "task-1",
+            "req-1",
+            "call-1".to_owned(),
+            serde_json::json!({
+                "status": "cancelled",
+                "reason": "interrupted_by_user",
+            })
+            .to_string(),
+        );
+        let params = request_params(
+            vec![tool_call_message, synthesized],
+            vec![user_query_input("continue")],
+        );
+        assert!(matches!(
+            classify_byop_controller_readiness(&params).state,
+            ReadinessState::Ready
+        ));
+        let request = build_openai_request(&params)
+            .expect("synthesized cancellation should let the request serialize");
+        let contents = tool_response_contents(&request, "call-1");
+        assert_eq!(contents.len(), 1);
+        assert!(
+            contents[0].to_ascii_lowercase().contains("cancel"),
+            "expected cancellation content, got {}",
             contents[0]
         );
     }

@@ -2280,6 +2280,66 @@ impl BlocklistAIController {
                     diagnostics.finish(&diagnostic_context, ReadinessDiagnosticLevel::Debug);
                     return Err(PendingByopToolResultsError::new(tool_calls.len()).into());
                 }
+                crate::ai::byop_readiness::ReadinessState::MissingResultWithoutRepairSource {
+                    tool_calls,
+                    reason: crate::ai::byop_readiness::MissingResultReason::NoResult,
+                } => {
+                    // 用户在工具执行中打断 AI(提交新对话)时,被打断的 tool call 可能因
+                    // cancel 竞态 / long-running command future 被 drop(见
+                    // action_model/execute/shell_command.rs cancel_execution)而永远不产生
+                    // cancelled result,留下"有 tool_call 无 tool_result"的孤立缺口。
+                    // 此前这里直接阻断,导致对话彻底卡死(issue #147 / #222)。
+                    // 缺失结果的唯一安全语义就是"该调用已被取消",因此为这些确认无结果的
+                    // tool call 合成一条 cancellation 占位结果落地历史,使对话自愈。
+                    let diagnostic_context = ReadinessDiagnosticContext::new(
+                        &conversation_id_for_log,
+                        &readiness_attempt_id,
+                        ReadinessTriggerLayer::ControllerPreflight,
+                    )
+                    .with_iteration(iteration);
+                    diagnostics.log_state(
+                        &crate::ai::byop_readiness::ReadinessState::MissingResultWithoutRepairSource {
+                            tool_calls: tool_calls.clone(),
+                            reason: crate::ai::byop_readiness::MissingResultReason::NoResult,
+                        },
+                        &diagnostic_context,
+                        ReadinessDiagnosticLevel::Debug,
+                    );
+                    let progress = self.synthesize_byop_missing_cancellation_results(
+                        conversation_data.id,
+                        &tool_calls,
+                        ctx,
+                    )?;
+                    if progress == 0 {
+                        diagnostics.finish(&diagnostic_context, ReadinessDiagnosticLevel::Error);
+                        log::error!(
+                            "[byop-readiness] controller preflight could not synthesize \
+                             cancellation result for missing tool call(s) \
+                             iteration={iteration} tool_calls={} conversation_id={} \
+                             request_attempt_id={}",
+                            tool_calls.len(),
+                            conversation_id_for_log,
+                            readiness_attempt_id
+                        );
+                        return Err(BlockedByopReadinessError::new(
+                            ReadinessCategory::MissingResultWithoutRepairSource,
+                        )
+                        .into());
+                    }
+                    log::info!(
+                        "[byop-readiness] controller synthesized cancellation result(s) for \
+                         interrupted tool call(s) progress={progress} iteration={iteration} \
+                         conversation_id={conversation_id_for_log}"
+                    );
+                    self.rebuild_request_after_byop_preflight(
+                        request_input,
+                        conversation_data,
+                        request_params,
+                        query_metadata.clone(),
+                        ctx,
+                    )?;
+                    request_params.byop_readiness_attempt_id = Some(readiness_attempt_id.clone());
+                }
                 state @ (crate::ai::byop_readiness::ReadinessState::DuplicateToolResults {
                     ..
                 }
@@ -2621,6 +2681,82 @@ impl BlocklistAIController {
 
         let removed = request_input.remove_action_results_by_tool_call_id(&keys_to_remove);
         Ok(appended + removed + already_persisted)
+    }
+
+    /// 为被用户打断、确认已无任何结果(既无 running action 也无 finished/persisted result)的
+    /// tool call 合成一条 cancellation 占位 `ToolCallResult` 落地历史。
+    ///
+    /// 仅在 readiness 判定为 `MissingResultWithoutRepairSource { NoResult }` 时调用:此时 history
+    /// 里存在孤立的 tool_call 但既不会再产生真实结果(future 已 drop / cancel 竞态丢失),
+    /// 也没有 RepairRecord 授权。补一条"已取消"是唯一安全且语义正确的修复,使 BYOP 请求
+    /// 能继续发送,而不是把整段对话永久阻断。
+    fn synthesize_byop_missing_cancellation_results(
+        &self,
+        conversation_id: AIConversationId,
+        tool_calls: &[crate::ai::byop_readiness::ToolCallRef],
+        ctx: &mut ModelContext<Self>,
+    ) -> anyhow::Result<usize> {
+        let request_id = format!("byop-preflight:{}", uuid::Uuid::new_v4());
+        let mut grouped_messages: HashMap<TaskId, Vec<warp_multi_agent_api::Message>> =
+            HashMap::new();
+        for tool_call in tool_calls {
+            let task_id = &tool_call.key.task_id;
+            let tool_call_id = &tool_call.key.tool_call_id;
+            // 防御:若该 (task_id, tool_call_id) 已有持久化结果则跳过,避免补出重复 result。
+            if self.has_persisted_tool_result(conversation_id, task_id, tool_call_id, ctx) {
+                continue;
+            }
+            grouped_messages
+                .entry(TaskId::new(task_id.clone()))
+                .or_default()
+                .push(Self::byop_synthetic_cancellation_message(
+                    &request_id,
+                    task_id,
+                    tool_call_id,
+                ));
+        }
+
+        let mut appended = 0;
+        for (task_id, messages) in grouped_messages {
+            appended +=
+                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                    history_model.append_byop_preflight_messages_to_task(
+                        conversation_id,
+                        task_id,
+                        messages,
+                        ctx,
+                    )
+                })?;
+        }
+        Ok(appended)
+    }
+
+    /// 构造一条不依赖 `AIAgentActionResult` 的 cancellation `ToolCallResult` message。
+    /// 被打断的 tool call 已无对应 action,因此无法走 `byop_action_result_message`;
+    /// 这里直接以 `server_message_data` 携带取消状态(与无结构化结果时的格式一致)。
+    fn byop_synthetic_cancellation_message(
+        request_id: &str,
+        task_id: &str,
+        tool_call_id: &str,
+    ) -> warp_multi_agent_api::Message {
+        let server_message_data = serde_json::json!({
+            "status": "cancelled",
+            "reason": "interrupted_by_user",
+        })
+        .to_string();
+        warp_multi_agent_api::Message {
+            id: uuid::Uuid::new_v4().to_string(),
+            task_id: task_id.to_owned(),
+            server_message_data,
+            citations: vec![],
+            message: Some(message::Message::ToolCallResult(message::ToolCallResult {
+                tool_call_id: tool_call_id.to_owned(),
+                context: None,
+                result: None,
+            })),
+            request_id: request_id.to_owned(),
+            timestamp: None,
+        }
     }
 
     fn has_persisted_tool_result(

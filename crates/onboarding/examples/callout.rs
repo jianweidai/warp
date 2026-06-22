@@ -147,6 +147,7 @@ fn mock_theme() -> WarpTheme {
         TerminalColors::new(normal, bright),
         None,
         Some("Onboarding Example".to_string()),
+        None,
     )
 }
 
@@ -169,6 +170,8 @@ fn build_appearance(
         1.4,
         ai_font_family,
         password_font_family,
+        12.0,
+        Default::default(),
     );
 
     appearance.set_ui_font_family(ui_font_family, ctx);

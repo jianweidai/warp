@@ -229,6 +229,7 @@ fn adeberry() -> WarpTheme {
         adeberry_colors(),
         None,
         Some("Adeberry".to_string()),
+        None,
     )
 }
 
@@ -245,6 +246,8 @@ fn build_appearance(theme: WarpTheme, ctx: &mut AppContext) -> Appearance {
         1.2,
         ui_font_family,
         ui_font_family,
+        12.0,
+        Default::default(),
     )
 }
 

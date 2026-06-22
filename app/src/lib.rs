@@ -1494,8 +1494,8 @@ fn initialize_app(
 
     timer.mark_interval_end("SUBSYSTEM_INITS_DONE");
 
-    // 后台检测系统安装的 CLI agent，不阻塞 UI
-    crate::terminal::CLIAgent::refresh_install_cache();
+    // 注册 CLI agent 安装状态 model（后台异步扫描 PATH，完成后自动同步 per-agent 设置）
+    ctx.add_singleton_model(crate::terminal::cli_agent::CLIAgentInstallModel::new);
 
     let display_count = ctx.windows().display_count();
     ctx.add_singleton_model(|_| DisplayCount(display_count));
@@ -2297,6 +2297,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::InBandGeneratorsForSSH,
         #[cfg(feature = "run_generators_with_cmd_exe")]
         FeatureFlag::RunGeneratorsWithCmdExe,
+        #[cfg(feature = "windows_high_performance_gpu_default")]
+        FeatureFlag::WindowsHighPerformanceGpuDefault,
         #[cfg(feature = "ligatures")]
         FeatureFlag::Ligatures,
         #[cfg(feature = "selectable_prompt")]
@@ -2683,5 +2685,10 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
 /// `ZAP_UNSTABLE_FEATURES` 接受的不稳定功能名 -> FeatureFlag 映射。
 /// 这里登记的功能在 release 构建下默认隐藏,设置对应 token 后才会出现;
 /// dev 构建走 debug_assertions 分支默认启用,无需该变量。
-const UNSTABLE_FEATURES: &[(&str, FeatureFlag)] =
-    &[("server_file_browser", FeatureFlag::ServerFileBrowser)];
+const UNSTABLE_FEATURES: &[(&str, FeatureFlag)] = &[
+    ("server_file_browser", FeatureFlag::ServerFileBrowser),
+    (
+        "windows_high_performance_gpu_default",
+        FeatureFlag::WindowsHighPerformanceGpuDefault,
+    ),
+];

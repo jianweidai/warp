@@ -30,8 +30,8 @@ use warpui::{
 };
 
 use warp_ssh_manager::{
-    AuthType, KeychainSecretStore, NodeKind, SecretKind, SshNode, SshRepository,
-    SshSecretStore, SshServerInfo,
+    AuthType, KeychainSecretStore, NodeKind, SecretKind, SshNode, SshRepository, SshSecretStore,
+    SshServerInfo,
 };
 
 use settings::Setting;
@@ -382,6 +382,7 @@ impl SshManagerPanel {
                 .identity_file
                 .as_ref()
                 .map(|p| p.to_string_lossy().into_owned()),
+            credential_id: None,
             startup_command: None,
             notes: Some(format!("Imported from {path_display}")),
             last_connected_at: None,
@@ -458,7 +459,11 @@ impl SshManagerPanel {
 
             let parent = source_node.parent_id;
             let cloned_info = SshServerInfo::clone_from_template(&source_info, String::new());
-            let name = unique_name(c, parent.as_deref(), &format!("{} (copy)", source_node.name))?;
+            let name = unique_name(
+                c,
+                parent.as_deref(),
+                &format!("{} (copy)", source_node.name),
+            )?;
 
             let new_node = SshRepository::create_server(c, parent.as_deref(), &name, &cloned_info)?;
 
@@ -695,7 +700,12 @@ impl SshManagerPanel {
         ctx.notify();
     }
 
-    fn enter_rename(&mut self, node_id: String, is_newly_created: bool, ctx: &mut ViewContext<Self>) {
+    fn enter_rename(
+        &mut self,
+        node_id: String,
+        is_newly_created: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
         let current_name = self
             .nodes
             .iter()
@@ -734,7 +744,11 @@ impl SshManagerPanel {
         });
 
         ctx.focus(&editor);
-        self.rename_state = Some(RenameState { node_id, editor, is_newly_created });
+        self.rename_state = Some(RenameState {
+            node_id,
+            editor,
+            is_newly_created,
+        });
         ctx.notify();
     }
 
@@ -1120,6 +1134,7 @@ impl SshManagerPanel {
         };
 
         // 整行:chevron + 标签(吃中间空间)+ count + Refresh 按钮。
+        // 使用 MainAxisSize::Max 让整行填满面板宽度,消除右侧留白。
         let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(ITEM_ICON_TEXT_SPACING)
@@ -1132,7 +1147,7 @@ impl SshManagerPanel {
                     .finish(),
             )
             .with_child(refresh_btn)
-            .with_main_axis_size(MainAxisSize::Min)
+            .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .finish();
 
@@ -1316,6 +1331,7 @@ impl SshManagerPanel {
             .finish()
         };
 
+        // 使用 MainAxisSize::Max 让候选行填满面板宽度,消除右侧留白。
         let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(ITEM_ICON_TEXT_SPACING)
@@ -1332,7 +1348,7 @@ impl SshManagerPanel {
                     .finish(),
             )
             .with_child(trailing)
-            .with_main_axis_size(MainAxisSize::Min)
+            .with_main_axis_size(MainAxisSize::Max)
             .finish();
 
         let row_state = self
@@ -1490,6 +1506,7 @@ impl SshManagerPanel {
             .finish()
         };
 
+        // 使用 MainAxisSize::Max 让树节点行填满面板宽度,消除右侧留白。
         let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(ITEM_ICON_TEXT_SPACING)
@@ -1501,7 +1518,7 @@ impl SshManagerPanel {
             .with_child(chevron_el)
             .with_child(icon_el)
             .with_child(label_or_editor)
-            .with_main_axis_size(MainAxisSize::Min)
+            .with_main_axis_size(MainAxisSize::Max)
             .finish();
 
         let state = self.row_states.get(&node.id).cloned().unwrap_or_default();
@@ -1733,9 +1750,7 @@ impl TypedActionView for SshManagerPanel {
 
     fn handle_action(&mut self, action: &SshManagerPanelAction, ctx: &mut ViewContext<Self>) {
         match action {
-            SshManagerPanelAction::AddRootFolder => {
-                self.on_add_folder_with_parent(None, ctx)
-            }
+            SshManagerPanelAction::AddRootFolder => self.on_add_folder_with_parent(None, ctx),
             SshManagerPanelAction::AddFolder => {
                 let parent = self.parent_for_new_node();
                 self.on_add_folder_with_parent(parent, ctx)
@@ -1797,8 +1812,7 @@ impl View for SshManagerPanel {
         // PRODUCT.md §2:Candidates 区段在已保存树**上方**,共享同一面板
         // 水平内边距。区段在 view-model 还没 refresh 时返回 Empty,不会占
         // 高度。自动发现关闭时不渲染区段。
-        let auto_discover =
-            *SshSettings::as_ref(app).enable_ssh_auto_discovery.value();
+        let auto_discover = *SshSettings::as_ref(app).enable_ssh_auto_discovery.value();
         let candidates_section = if auto_discover {
             Container::new(self.render_candidates(appearance, app))
                 .with_padding_left(PANEL_HORIZONTAL_PADDING - ITEM_PADDING_HORIZONTAL)
@@ -1855,10 +1869,7 @@ impl View for SshManagerPanel {
 /// - 选中文件夹 → 作为子节点创建在该文件夹下
 /// - 选中服务器 → 作为兄弟节点创建（继承服务器的父级）
 /// - 无选中 → 创建在根级（返回 None）
-fn resolve_parent_for_new_node(
-    selected_id: Option<&str>,
-    nodes: &[SshNode],
-) -> Option<String> {
+fn resolve_parent_for_new_node(selected_id: Option<&str>, nodes: &[SshNode]) -> Option<String> {
     let id = selected_id?;
     let node = nodes.iter().find(|n| n.id == id)?;
     match node.kind {
@@ -1868,7 +1879,8 @@ fn resolve_parent_for_new_node(
 }
 
 fn sort_for_display(nodes: Vec<SshNode>, depths: &HashMap<String, usize>) -> Vec<SshNode> {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashSet};
+    let ids: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
     let mut by_parent: BTreeMap<Option<String>, Vec<SshNode>> = BTreeMap::new();
     for n in nodes {
         by_parent.entry(n.parent_id.clone()).or_default().push(n);
@@ -1881,15 +1893,36 @@ fn sort_for_display(nodes: Vec<SshNode>, depths: &HashMap<String, usize>) -> Vec
         parent: Option<&String>,
         by_parent: &BTreeMap<Option<String>, Vec<SshNode>>,
         out: &mut Vec<SshNode>,
+        seen: &mut HashSet<String>,
     ) {
         if let Some(children) = by_parent.get(&parent.cloned()) {
             for c in children {
+                if !seen.insert(c.id.clone()) {
+                    continue;
+                }
                 out.push(c.clone());
-                walk(Some(&c.id), by_parent, out);
+                walk(Some(&c.id), by_parent, out, seen);
             }
         }
     }
-    walk(None, &by_parent, &mut out);
+    let root_parents: Vec<Option<String>> = by_parent
+        .keys()
+        .filter(|parent| parent.as_ref().is_none_or(|id| !ids.contains(id)))
+        .cloned()
+        .collect();
+    let mut seen = HashSet::new();
+    for parent in root_parents {
+        walk(parent.as_ref(), &by_parent, &mut out, &mut seen);
+    }
+    for children in by_parent.values() {
+        for child in children {
+            if !seen.insert(child.id.clone()) {
+                continue;
+            }
+            out.push(child.clone());
+            walk(Some(&child.id), &by_parent, &mut out, &mut seen);
+        }
+    }
     out
 }
 
@@ -1900,8 +1933,11 @@ fn compute_depths(nodes: &[SshNode]) -> HashMap<String, usize> {
         let mut d = 0;
         let mut p = n.parent_id.as_deref();
         while let Some(pid) = p {
+            let Some(parent) = by_id.get(pid) else {
+                break;
+            };
             d += 1;
-            p = by_id.get(pid).and_then(|nn| nn.parent_id.as_deref());
+            p = parent.parent_id.as_deref();
             if d > 64 {
                 break;
             }

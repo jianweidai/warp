@@ -301,6 +301,18 @@ jobs:
         with:
           ref: ${{ needs.prepare_metadata.outputs.release_branch }}
 
+      # GitHub-hosted ubuntu runner 的 / 余量有限,而本 job 先后在同一磁盘产出
+      # release-lto(GUI/AppImage/deb/rpm/arch)与 release-cli(musl CLI)两份完整
+      # target,叠加 cargo registry / docker 镜像 / zig 工具链后会撑爆磁盘,musl CLI
+      # 步骤报 "No space left on device"(见 run 27593938453)。先删掉与本构建无关的
+      # 预装工具链(Android SDK / .NET / GHC / CodeQL / Swift),腾出 ~25GB。
+      - name: Free up disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift || true
+          df -h /
+
       - uses: ./.github/actions/prepare_environment
         with:
           target_os: linux
@@ -431,6 +443,15 @@ jobs:
           path: ${{ steps.bundle_app.outputs.packages_dir }}
           if-no-files-found: error
           retention-days: 7
+
+      # release-lto 产物(GUI/deb/rpm/arch)已由上一步 "Upload package artifacts"
+      # 上传为 workflow artifact,本地不再需要;下面的 musl CLI 走独立的 release-cli
+      # profile,删掉 release-lto 给它腾磁盘,避免 "No space left on device"。
+      - name: Reclaim disk before musl CLI build
+        shell: bash
+        run: |
+          rm -rf target/release-lto
+          df -h /
 
       # CLI/remote-server tarball 用静态 musl 链接,产物不依赖宿主 glibc,
       # 可在任意 Linux x86_64 主机(含 CentOS 7 / Amazon Linux 2 等旧 glibc

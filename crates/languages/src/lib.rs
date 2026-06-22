@@ -228,6 +228,8 @@ pub struct Language {
     pub grammar: ParserGrammar,
     /// Query for syntax highlighting.
     pub highlight_query: Query,
+    /// Query for language injections (e.g., JS/CSS in Vue files).
+    pub injections_query: Option<Query>,
     /// Query for auto indent.
     pub indents_query: Option<Query>,
     /// Unit for each indent action.
@@ -331,6 +333,16 @@ fn get_arborium_highlight_query(lang: &str) -> Option<&str> {
     }
 }
 
+/// Get the bundled injections query from arborium for a given language.
+/// This enables embedded language highlighting (e.g., JS/CSS in Vue files).
+fn get_arborium_injections_query(lang: &str) -> Option<&str> {
+    match lang {
+        "vue" => Some(arborium::lang_vue::INJECTIONS_QUERY),
+        // Add other languages with injections support here as needed
+        _ => None,
+    }
+}
+
 fn load_language(lang: &str) -> Option<Language> {
     let arborium_name = to_arborium_name(lang);
     let grammar = arborium::get_language(arborium_name)?;
@@ -354,6 +366,10 @@ fn load_language(lang: &str) -> Option<Language> {
     let highlight_query = Query::new(&grammar, highlight_query_str)
         .expect("arborium highlight query should be valid");
 
+    // Load injections query for embedded language support (e.g., JS/CSS in Vue)
+    let injections_query = get_arborium_injections_query(lang)
+        .and_then(|query_str| Query::new(&grammar, query_str).ok());
+
     let indents_query_path = [lang, "indents.scm"].join("\\");
     let indents_query = load_query(&indents_query_path, &grammar);
 
@@ -362,6 +378,7 @@ fn load_language(lang: &str) -> Option<Language> {
 
     Some(Language {
         highlight_query,
+        injections_query,
         indents_query,
         grammar,
         indent_unit,

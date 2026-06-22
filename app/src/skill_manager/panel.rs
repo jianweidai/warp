@@ -25,6 +25,7 @@ use crate::editor::{
     EditorOptions, EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys,
     PropagateHorizontalNavigationKeys, TextOptions,
 };
+use crate::view_components::dropdown::{Dropdown, DropdownItem};
 
 const PANEL_PADDING: f32 = 8.0;
 const ROW_PADDING_VERTICAL: f32 = 5.0;
@@ -34,6 +35,10 @@ const ROW_PADDING_HORIZONTAL: f32 = 8.0;
 const FILTER_BUTTON_HEIGHT: f32 = 24.0;
 const FILTER_BUTTON_HORIZONTAL_PADDING: f32 = 8.0;
 const FILTER_BUTTON_CORNER_RADIUS: f32 = 4.0;
+// 来源 tab 平铺显示的最大数量;超过则折叠为「全部 + 来源下拉」。
+// 取 4:典型侧栏宽度下「全部」加约 4 个短来源名仍可平铺。布局引擎是单遍保留树,
+// 无法按实测像素宽度自适应折叠,故以来源数量作为折叠阈值。
+const FILTER_TABS_INLINE_MAX: usize = 4;
 
 #[derive(Clone, Debug)]
 pub enum SkillManagerPanelAction {
@@ -50,6 +55,8 @@ pub struct SkillManagerPanel {
     selected_path: Option<PathBuf>,
     provider_filter: Option<SkillProvider>,
     query_editor: ViewHandle<EditorView>,
+    // 折叠态(来源数 > FILTER_TABS_INLINE_MAX)收纳各来源 tab 的「来源」下拉。
+    source_dropdown: ViewHandle<Dropdown<SkillManagerPanelAction>>,
     filter_mouse_states: RefCell<HashMap<Option<SkillProvider>, MouseStateHandle>>,
     row_mouse_states: RefCell<HashMap<PathBuf, MouseStateHandle>>,
     list_scroll_state: ClippedScrollStateHandle,
@@ -101,18 +108,76 @@ impl SkillManagerPanel {
                 let query = me.query(ctx);
                 let items = Self::filter_inventory(&inventory, &query, me.provider_filter);
                 me.scroll_selected_path_into_view(&items);
+                // 来源集合随 inventory 变化,重建折叠态下拉的选项与选中态。
+                me.rebuild_source_dropdown(ctx);
                 ctx.notify();
             }
         });
 
-        Self {
+        // 折叠态使用的「来源」下拉。由本面板的 ViewContext 创建,其派发的
+        // SelectProviderFilter 会冒泡回本面板的 handle_action。
+        let source_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            // 下拉头紧贴文本宽度,与左侧「全部」按钮并排,不撑满整行。
+            dropdown.set_main_axis_size(MainAxisSize::Min, ctx);
+            // 选中「全部」项时,闭合态显示「来源」占位,避免与左侧独立「全部」按钮重复。
+            let all_label = crate::t!("skill-manager-filter-all").to_string();
+            let source_label = crate::t!("skill-manager-filter-provider").to_string();
+            dropdown.set_menu_header_text_override(move |label| {
+                if label == all_label {
+                    source_label.clone()
+                } else {
+                    label.to_string()
+                }
+            });
+            dropdown
+        });
+
+        let mut me = Self {
             selected_path: None,
             provider_filter: None,
             query_editor,
+            source_dropdown,
             filter_mouse_states: RefCell::new(HashMap::new()),
             row_mouse_states: RefCell::new(HashMap::new()),
             list_scroll_state: ClippedScrollStateHandle::default(),
+        };
+        me.rebuild_source_dropdown(ctx);
+        me
+    }
+
+    /// 重建「来源」下拉的选项与选中态。
+    ///
+    /// 首项「全部」对应清空过滤(index 0),其余项依次对应当前 inventory 中存在的
+    /// 各 provider。选中态由 `provider_filter` 驱动,与左侧「全部」按钮保持一致。
+    fn rebuild_source_dropdown(&mut self, ctx: &mut ViewContext<Self>) {
+        let inventory = SkillManager::as_ref(ctx).list_skill_inventory(ctx);
+        let providers = Self::providers_in_inventory(&inventory);
+
+        let mut items = vec![DropdownItem::new(
+            crate::t!("skill-manager-filter-all"),
+            SkillManagerPanelAction::SelectProviderFilter(None),
+        )];
+        for provider in &providers {
+            items.push(DropdownItem::new(
+                provider.to_string(),
+                SkillManagerPanelAction::SelectProviderFilter(Some(*provider)),
+            ));
         }
+
+        // 首项「全部」占据 index 0,故命中的 provider 需 +1。
+        let selected_index = match self.provider_filter {
+            None => 0,
+            Some(filter) => providers
+                .iter()
+                .position(|provider| *provider == filter)
+                .map_or(0, |position| position + 1),
+        };
+
+        self.source_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_items(items, ctx);
+            dropdown.set_selected_by_index(selected_index, ctx);
+        });
     }
 
     fn query(&self, app: &AppContext) -> String {
@@ -286,10 +351,16 @@ impl SkillManagerPanel {
         providers: &[SkillProvider],
         appearance: &Appearance,
     ) -> Box<dyn Element> {
+        // 来源过多时折叠为「全部 + 来源下拉」,避免窄侧栏放不下被裁断。
+        if providers.len() > FILTER_TABS_INLINE_MAX {
+            return self.render_collapsed_filter_rows(appearance);
+        }
+
         let active_filter = self.provider_filter;
 
+        // 使用 MainAxisSize::Max 让过滤标签行填满面板宽度,消除右侧留白。
         let mut filter_buttons = Flex::row()
-            .with_main_axis_size(MainAxisSize::Min)
+            .with_main_axis_size(MainAxisSize::Max)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(4.0)
             .with_child(self.render_filter_button(
@@ -310,9 +381,27 @@ impl SkillManagerPanel {
 
         // 不再外套 ClippedScrollable / 外壳容器:
         // 1. 横向滚动容器会拦截 mouse-down 用于拖拽判定,导致快速切换 tab 时点击响应延迟。
-        // 2. 大多数场景 provider 数 ≤ 3,250px 侧栏宽度即可容纳;真溢出时由 Clipped 裁切,
-        //    用户可拖宽侧栏。
+        // 2. 平铺态 provider 数 ≤ FILTER_TABS_INLINE_MAX,侧栏宽度可容纳;
+        //    更多来源走折叠下拉分支。
         Clipped::new(filter_buttons.finish()).finish()
+    }
+
+    /// 折叠态过滤行:左侧「全部」快捷按钮 + 右侧「来源 ▾」下拉。
+    ///
+    /// 绝不外套 `Clipped`:下拉展开的菜单是定位 overlay,被裁剪会丢失。
+    fn render_collapsed_filter_rows(&self, appearance: &Appearance) -> Box<dyn Element> {
+        Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(4.0)
+            .with_child(self.render_filter_button(
+                crate::t!("skill-manager-filter-all").into(),
+                self.provider_filter.is_none(),
+                None,
+                appearance,
+            ))
+            .with_child(ChildView::new(&self.source_dropdown).finish())
+            .finish()
     }
 
     fn render_search_input(&self, appearance: &Appearance) -> Box<dyn Element> {
@@ -389,21 +478,28 @@ impl SkillManagerPanel {
             } else {
                 None
             };
-            let mut row = Container::new(
-                Flex::column()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                    .with_spacing(2.0)
-                    .with_child(title)
-                    .with_child(description)
-                    .with_child(meta)
-                    .with_child(path)
-                    .finish(),
-            )
-            .with_padding_top(ROW_PADDING_VERTICAL)
-            .with_padding_bottom(ROW_PADDING_VERTICAL)
-            .with_padding_left(ROW_PADDING_HORIZONTAL)
-            .with_padding_right(ROW_PADDING_HORIZONTAL)
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.0)));
+            // 外层 Flex::row 使用 MainAxisSize::Max 填满面板宽度,
+            // 避免 Container 收缩到内容自然宽度导致高亮区域右侧留白。
+            let content = Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_child(
+                    Flex::column()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                        .with_spacing(2.0)
+                        .with_child(title)
+                        .with_child(description)
+                        .with_child(meta)
+                        .with_child(path)
+                        .finish(),
+                )
+                .finish();
+            let mut row = Container::new(content)
+                .with_padding_top(ROW_PADDING_VERTICAL)
+                .with_padding_bottom(ROW_PADDING_VERTICAL)
+                .with_padding_left(ROW_PADDING_HORIZONTAL)
+                .with_padding_right(ROW_PADDING_HORIZONTAL)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.0)));
             if let Some(background) = background {
                 row = row.with_background(background);
             }
@@ -481,6 +577,8 @@ impl TypedActionView for SkillManagerPanel {
                     return;
                 }
                 self.provider_filter = *provider;
+                // 同步折叠态下拉的选中项:点击左侧「全部」按钮时下拉并不知情。
+                self.rebuild_source_dropdown(ctx);
                 ctx.notify();
             }
             SkillManagerPanelAction::EditSkill(path) => {
