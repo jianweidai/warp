@@ -383,31 +383,26 @@ impl LocalRepoMetadataModel {
             ));
         }
 
-        #[cfg(feature = "local_fs")]
-        if is_unsafe_watch_root(&local_path) {
-            return Err(RepoMetadataError::InvalidPath(format!(
-                "Refusing to register {} as a repository root: path is the home directory \
-                 or one of its ancestors, which would recursively watch unrelated user data",
-                local_path.display(),
-            )));
-        }
-
-        // Register this path with the watcher if we have one
+        // Register this path with the watcher if we have one. Skip the home
+        // directory and its ancestors to avoid recursively watching unrelated
+        // user data; those paths can still be listed in the file tree.
         #[cfg(feature = "local_fs")]
         {
             if let Some(ref watcher) = self.watcher {
-                let watch_path = local_path.clone();
-                watcher.update(ctx, |watcher, _ctx| {
-                    use crate::entry::should_ignore_git_path;
-                    let watch_filter = WatchFilter::with_filter(Arc::new(move |watch_path| {
-                        !should_ignore_git_path(watch_path)
-                    }));
-                    std::mem::drop(watcher.register_path(
-                        &watch_path,
-                        watch_filter,
-                        RecursiveMode::Recursive,
-                    ));
-                });
+                if !is_unsafe_watch_root(&local_path) {
+                    let watch_path = local_path.clone();
+                    watcher.update(ctx, |watcher, _ctx| {
+                        use crate::entry::should_ignore_git_path;
+                        let watch_filter = WatchFilter::with_filter(Arc::new(move |watch_path| {
+                            !should_ignore_git_path(watch_path)
+                        }));
+                        std::mem::drop(watcher.register_path(
+                            &watch_path,
+                            watch_filter,
+                            RecursiveMode::Recursive,
+                        ));
+                    });
+                }
             }
         }
 
@@ -430,14 +425,17 @@ impl LocalRepoMetadataModel {
         ctx: &mut ModelContext<Self>,
     ) -> Result<(), RepoMetadataError> {
         if self.repositories.remove(repo_path).is_some() {
-            // Unregister from watcher
+            // Unregister from watcher, mirroring the guard in add_repository_internal:
+            // home directory and ancestors are never registered, so skip them here too.
             #[cfg(feature = "local_fs")]
             {
                 if let Some(ref watcher) = self.watcher {
                     if let Some(local_path) = repo_path.to_local_path() {
-                        watcher.update(ctx, |watcher, _ctx| {
-                            std::mem::drop(watcher.unregister_path(&local_path));
-                        });
+                        if !is_unsafe_watch_root(&local_path) {
+                            watcher.update(ctx, |watcher, _ctx| {
+                                std::mem::drop(watcher.unregister_path(&local_path));
+                            });
+                        }
                     }
                 }
             }

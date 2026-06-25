@@ -19,9 +19,11 @@ use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
     AcceptedByDropTarget, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, Dismiss, Draggable, DraggableState, DropTarget, DropTargetData, Element,
-    Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
-    ParentAnchor, ParentElement, ParentOffsetBounds, Radius, SavePosition, Stack, Text,
+    Empty, Fill as ElementFill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+    OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, SavePosition,
+    ScrollbarWidth, Stack, Text,
 };
+use warpui::elements::{ClippedScrollStateHandle, ClippedScrollable};
 use warpui::platform::Cursor;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{
@@ -194,6 +196,8 @@ pub struct SshManagerPanel {
     /// 区段头的 Refresh / Toggle 按钮 hover state。
     candidates_refresh_btn: MouseStateHandle,
     candidates_toggle_btn: MouseStateHandle,
+
+    content_scroll_state: ClippedScrollStateHandle,
 }
 
 impl SshManagerPanel {
@@ -220,6 +224,7 @@ impl SshManagerPanel {
             candidate_add_states: HashMap::new(),
             candidates_refresh_btn: MouseStateHandle::default(),
             candidates_toggle_btn: MouseStateHandle::default(),
+            content_scroll_state: ClippedScrollStateHandle::default(),
         };
         // 面板首次打开 → 立刻读一次 ssh_config(PRODUCT.md decision A)。
         me.candidates.update(ctx, |vm, ctx| vm.refresh(ctx));
@@ -1517,7 +1522,7 @@ impl SshManagerPanel {
             )
             .with_child(chevron_el)
             .with_child(icon_el)
-            .with_child(label_or_editor)
+            .with_child(warpui::elements::Shrinkable::new(1.0, label_or_editor).finish())
             .with_main_axis_size(MainAxisSize::Max)
             .finish();
 
@@ -1827,17 +1832,30 @@ impl View for SshManagerPanel {
             .with_padding_right(PANEL_HORIZONTAL_PADDING - ITEM_PADDING_HORIZONTAL)
             .finish();
 
-        // 让 tree 占满剩余垂直空间 — 这样 root DropTarget 覆盖到 panel 底部,
-        // 用户在树最底下空白处拖也能落到 root(`SshDropData{parent_id:None}`)。
-        let tree_filled = warpui::elements::Shrinkable::new(1.0, tree).finish();
+        let root_content = Flex::column()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_child(candidates_section)
+            .with_child(tree)
+            .finish();
+
+        let scrollable_content = ClippedScrollable::vertical_centered(
+            self.content_scroll_state.clone(),
+            root_content,
+            ScrollbarWidth::Custom(4.0),
+            appearance.theme().nonactive_ui_detail().into(),
+            appearance.theme().active_ui_detail().into(),
+            ElementFill::None,
+        )
+        .with_overlayed_scrollbar()
+        .finish();
 
         let panel_content = Container::new(
             Flex::column()
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_child(toolbar)
-                .with_child(candidates_section)
-                .with_child(tree_filled)
+                .with_child(warpui::elements::Shrinkable::new(1.0, scrollable_content).finish())
                 .finish(),
         )
         .finish();
