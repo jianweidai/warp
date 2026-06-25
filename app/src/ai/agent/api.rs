@@ -104,6 +104,8 @@ pub struct RequestParams {
 
     /// User-provided API keys for AI providers (BYO API Key).
     pub api_keys: Option<warp_multi_agent_api::request::settings::ApiKeys>,
+    /// Exa web 搜索 key 只在本地 BYOP `websearch` 工具中使用，不会发给云端 API。
+    pub exa_api_key: Option<String>,
     pub allow_use_of_warp_credits_with_byok: bool,
     pub autonomy_level: warp_multi_agent_api::AutonomyLevel,
     pub isolation_level: warp_multi_agent_api::IsolationLevel,
@@ -218,6 +220,7 @@ impl RequestParams {
             planning_enabled: true,
             should_redact_secrets: false,
             api_keys: None,
+            exa_api_key: None,
             allow_use_of_warp_credits_with_byok: false,
             autonomy_level: warp_multi_agent_api::AutonomyLevel::Supervised,
             isolation_level: warp_multi_agent_api::IsolationLevel::None,
@@ -332,6 +335,7 @@ impl RequestParams {
             user_workspaces.is_byo_api_key_enabled(),
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
         );
+        let exa_api_key = ApiKeyManager::as_ref(app).keys().exa.clone();
         let allow_use_of_warp_credits_with_byok =
             *AISettings::as_ref(app).can_use_warp_credits_with_byok;
 
@@ -418,6 +422,7 @@ impl RequestParams {
             planning_enabled: true,
             should_redact_secrets,
             api_keys,
+            exa_api_key,
             allow_use_of_warp_credits_with_byok,
             autonomy_level,
             isolation_level,

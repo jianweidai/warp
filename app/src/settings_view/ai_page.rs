@@ -1465,6 +1465,7 @@ impl AISettingsPageView {
                 }
                 widgets.push(Box::new(CLIAgentWidget::default()));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
+                widgets.push(Box::new(ExaWebSearchWidget::new(ctx)));
                 widgets.push(Box::new(AgentProvidersWidget::new(ctx)));
                 widgets.push(Box::new(OtherAIWidget::default()));
             }
@@ -1500,6 +1501,7 @@ impl AISettingsPageView {
                 widgets.push(Box::new(OtherAIWidget::default()));
             }
             Some(AISubpage::Providers) => {
+                widgets.push(Box::new(ExaWebSearchWidget::new(ctx)));
                 widgets.push(Box::new(AgentProvidersWidget::new(ctx)));
             }
             Some(AISubpage::Profiles) => {
@@ -6575,6 +6577,133 @@ impl CLIAgentWidget {
         }
 
         chip.finish()
+    }
+}
+
+struct ExaWebSearchWidget {
+    api_key_editor: ViewHandle<EditorView>,
+}
+
+impl ExaWebSearchWidget {
+    fn new(ctx: &mut ViewContext<<Self as SettingsWidget>::View>) -> Self {
+        let initial_api_key = ApiKeyManager::as_ref(ctx)
+            .keys()
+            .exa
+            .clone()
+            .unwrap_or_default();
+
+        let api_key_editor = ctx.add_typed_action_view(move |ctx| {
+            let appearance = Appearance::as_ref(ctx);
+            let options = SingleLineEditorOptions {
+                is_password: true,
+                text: TextOptions {
+                    font_size_override: Some(appearance.ui_font_size()),
+                    font_family_override: Some(appearance.monospace_font_family()),
+                    text_colors_override: Some(TextColors {
+                        default_color: appearance.theme().active_ui_text_color(),
+                        disabled_color: appearance.theme().disabled_ui_text_color(),
+                        hint_color: appearance.theme().disabled_ui_text_color(),
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text("未设置时回退到 EXA_API_KEY 环境变量", ctx);
+            editor.set_buffer_text(&initial_api_key, ctx);
+            editor
+        });
+
+        ctx.subscribe_to_view(&api_key_editor, |_, editor, event, ctx| {
+            if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
+                let raw = editor.as_ref(ctx).buffer_text(ctx);
+                let value = raw.trim().to_owned();
+                ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+                    manager.set_exa_key((!value.is_empty()).then_some(value), ctx);
+                });
+            }
+        });
+
+        Self { api_key_editor }
+    }
+}
+
+impl SettingsWidget for ExaWebSearchWidget {
+    type View = AISettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "exa web search websearch api key secure storage environment variable 联网 搜索"
+    }
+
+    fn render(
+        &self,
+        _view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let is_any_ai_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
+        let header = build_sub_header(
+            appearance,
+            "Exa Web Search",
+            Some(if is_any_ai_enabled {
+                appearance.theme().active_ui_text_color()
+            } else {
+                appearance.theme().disabled_ui_text_color()
+            }),
+        )
+        .finish();
+
+        let description = Text::new(
+            "给 Agent 的 Web 搜索配置 Exa API Key。这里保存到系统安全存储，双击 .app 启动时也能生效；留空时仍会回退到 EXA_API_KEY 环境变量。",
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_color(if is_any_ai_enabled {
+            appearance.theme().foreground().into()
+        } else {
+            appearance.theme().disabled_ui_text_color().into()
+        })
+        .soft_wrap(true)
+        .finish();
+
+        let input = appearance
+            .ui_builder()
+            .text_input(self.api_key_editor.clone())
+            .with_style(UiComponentStyles {
+                padding: Some(Coords {
+                    top: appearance.ui_font_size() * 5. / 6.,
+                    bottom: appearance.ui_font_size() * 5. / 6.,
+                    left: appearance.ui_font_size() * 4. / 3.,
+                    right: appearance.ui_font_size() * 4. / 3.,
+                }),
+                background: Some(appearance.theme().surface_2().into()),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        Container::new(
+            Flex::column()
+                .with_child(Container::new(header).with_padding_bottom(HEADER_PADDING).finish())
+                .with_child(Container::new(description).with_margin_bottom(12.).finish())
+                .with_child(
+                    Flex::column()
+                        .with_spacing(8.)
+                        .with_child(
+                            Text::new_inline(
+                                "Exa API Key",
+                                appearance.ui_font_family(),
+                                appearance.ui_font_body(),
+                            )
+                            .with_color(styles::header_font_color(is_any_ai_enabled, app).into())
+                            .finish(),
+                        )
+                        .with_child(input)
+                        .finish(),
+                )
+                .finish(),
+        )
+        .finish()
     }
 }
 

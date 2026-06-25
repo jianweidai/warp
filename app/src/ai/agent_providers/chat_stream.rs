@@ -3242,6 +3242,7 @@ pub async fn generate_byop_output(
     let client = build_client(api_type, base_url, api_key);
     let request_id = Uuid::new_v4().to_string();
     let mcp_context = params.mcp_context.clone();
+    let exa_api_key = params.exa_api_key.clone();
 
     // ⚠️ BYOP 持久化关键:warp 自家路径下,以下 ClientAction 都是 server 端 emit
     // 让 client 端把 UserQuery / ToolCallResult 等"非模型产出"的 message
@@ -4154,7 +4155,8 @@ pub async fn generate_byop_output(
                 loading_msg.id = web_msg_id.clone();
                 yield Ok(make_add_messages_event(&current_task_id, vec![loading_msg]));
 
-                let result_json = dispatch_byop_web_tool(&call.fn_name, &args_str).await;
+                let result_json =
+                    dispatch_byop_web_tool(&call.fn_name, &args_str, exa_api_key.as_deref()).await;
 
                 let mut done_msg = if is_search {
                     make_web_search_status_from_result(
@@ -4561,7 +4563,11 @@ fn make_append_event(task_id: &str, message_id: &str, kind: AppendKind) -> api::
 /// 不通过 protobuf executor —— 直接在本地用 reqwest 跑 HTTP,把结构化结果
 /// 序列化成 JSON Value 给上游 LLM。错误也序列化成 `{status:"error", ...}`,
 /// 让模型看到标准 tool_result。
-async fn dispatch_byop_web_tool(tool_name: &str, args_str: &str) -> Value {
+async fn dispatch_byop_web_tool(
+    tool_name: &str,
+    args_str: &str,
+    exa_api_key: Option<&str>,
+) -> Value {
     use tools::web_runtime;
     // 为 webfetch 构建带 SSRF 防护的 client：自定义重定向策略会校验每一跳目标。
     let client = match web_runtime::build_ssrf_safe_client() {
@@ -4589,7 +4595,11 @@ async fn dispatch_byop_web_tool(tool_name: &str, args_str: &str) -> Value {
         // websearch
         match serde_json::from_str::<web_runtime::SearchToolArgs>(args_str) {
             Ok(args) => {
-                let api_key = std::env::var("EXA_API_KEY").ok();
+                // 优先读设置页写入的 secure storage，再回退到环境变量，
+                // 兼容已有 shell / launchctl 注入方式。
+                let api_key = exa_api_key
+                    .map(str::to_owned)
+                    .or_else(|| std::env::var("EXA_API_KEY").ok());
                 match web_runtime::run_websearch(&client, args, api_key.as_deref(), None).await {
                     Ok(out) => web_runtime::search_output_to_json(&out),
                     Err(e) => {
