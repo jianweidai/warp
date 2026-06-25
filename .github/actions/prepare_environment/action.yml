@@ -203,4 +203,7 @@ runs:
         fi
         export DEVELOPER_DIR
         echo "Using DEVELOPER_DIR=$DEVELOPER_DIR"
+        echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
         xcodebuild -downloadComponent MetalToolchain
+        xcrun --find metal
+        xcrun --find metallib
