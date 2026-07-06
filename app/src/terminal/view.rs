@@ -3281,6 +3281,7 @@ impl TerminalView {
                 AppearanceEvent::MonospaceFontSizeChanged { .. }
                 | AppearanceEvent::LineHeightRatioChanged { .. }
                 | AppearanceEvent::MonospaceFontFamilyChanged { .. }
+                | AppearanceEvent::TerminalFallbackFontFamilyChanged { .. }
                 | AppearanceEvent::MonospaceFontWeightChanged { .. }
                 | AppearanceEvent::UiFontFamilyChanged { .. }
                 | AppearanceEvent::UiFontSizeChanged { .. } => {

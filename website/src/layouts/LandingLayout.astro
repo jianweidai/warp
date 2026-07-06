@@ -25,7 +25,7 @@ const {
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <Analytics />
     {/* FOUC 防护:在页面渲染前先设好 theme 与 locale */}
     <script is:inline>
@@ -50,6 +50,7 @@ const {
     </script>
   </head>
   <body data-locale="en">
+    <div class="scroll-progress" aria-hidden="true"><div id="scroll-progress"></div></div>
     <I18nScript />
     <Banner
       en="Early development · An independent product built on Warp · Not affiliated with Warp Inc."
@@ -177,35 +178,6 @@ const {
           });
         });
 
-        // 服务商标签页与动画轨道
-        document.querySelectorAll<HTMLElement>('.prov-tabs').forEach((tabs) => {
-          const rail = tabs.querySelector<HTMLElement>('[data-prov-rail]');
-          const moveRail = (b: HTMLButtonElement) => {
-            if (!rail) return;
-            const r = b.getBoundingClientRect();
-            const t = tabs.getBoundingClientRect();
-            rail.style.width = `${r.width}px`;
-            rail.style.transform = `translateX(${r.left - t.left - 4}px)`;
-          };
-          const buttons = tabs.querySelectorAll<HTMLButtonElement>('button');
-          const initial = tabs.querySelector<HTMLButtonElement>('button.active') ?? buttons[0];
-          if (initial) requestAnimationFrame(() => moveRail(initial));
-          window.addEventListener('resize', () => {
-            const a = tabs.querySelector<HTMLButtonElement>('button.active');
-            if (a) moveRail(a);
-          });
-          buttons.forEach((b) => {
-            b.addEventListener('click', () => {
-              const name = b.getAttribute('data-pf');
-              buttons.forEach((x) => x.classList.toggle('active', x === b));
-              moveRail(b);
-              document.querySelectorAll<HTMLElement>('[data-pf-pane]').forEach((p) => {
-                p.hidden = p.getAttribute('data-pf-pane') !== name;
-              });
-            });
-          });
-        });
-
         // 安装方式标签页
         document.querySelectorAll<HTMLElement>('.install-tabs').forEach((tabs) => {
           tabs.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
@@ -235,19 +207,41 @@ const {
           });
         });
 
-        // 滚动渐显
+        // 滚动渐显(支持 [data-stagger] 容器内子项依次错峰出现)
         const io = new IntersectionObserver(
           (entries) => {
             entries.forEach((e) => {
-              if (e.isIntersecting) {
-                e.target.classList.add('in');
-                io.unobserve(e.target);
+              if (!e.isIntersecting) return;
+              const target = e.target as HTMLElement;
+              if (target.hasAttribute('data-stagger')) {
+                target.classList.add('in');
+                const items = Array.from(target.querySelectorAll<HTMLElement>('.stagger-item')).filter((el) => el.offsetParent !== null || el.getClientRects().length > 0);
+                items.forEach((el, i) => {
+                  el.style.transitionDelay = `${Math.min(i * 70, 420)}ms`;
+                  el.classList.add('in');
+                });
+              } else {
+                target.classList.add('in');
               }
+              io.unobserve(target);
             });
           },
           { rootMargin: '0px 0px -10% 0px', threshold: 0.05 },
         );
         document.querySelectorAll('.fade-in').forEach((el) => io.observe(el));
+
+        // 顶部滚动进度条
+        const progress = document.getElementById('scroll-progress');
+        if (progress) {
+          const updateProgress = () => {
+            const h = document.documentElement;
+            const max = h.scrollHeight - h.clientHeight;
+            const pct = max > 0 ? (h.scrollTop / max) * 100 : 0;
+            progress.style.width = `${pct}%`;
+          };
+          document.addEventListener('scroll', updateProgress, { passive: true });
+          updateProgress();
+        }
       })();
     </script>
   </body>

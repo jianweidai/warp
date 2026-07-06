@@ -85,24 +85,49 @@ const providerChips = ['302.AI (97)', 'Abacus (65)', 'abliteration.ai (1)', 'AIH
 
 // Logos(信赖墙)— 我们没有真实合作伙伴,改成"原生支持的协议名"
 const protocols = ['OpenAI', 'Anthropic', 'Gemini', 'Ollama', 'DeepSeek', 'OpenAI-Response'];
+
+// Hero 装饰性均衡器条 — 纯视觉,数值确定性生成(避免 hydration 不一致)
+const eqColors = ['var(--grad-1)', 'var(--grad-2)', 'var(--grad-3)', 'var(--grad-4)'];
+function makeEqBars(count: number, seed: number) {
+  return Array.from({ length: count }, (_, i) => {
+    const h = 22 + Math.round(Math.abs(Math.sin(i * 0.7 + seed)) * 70);
+    const d = (i * 0.09 + seed * 0.13) % 1.6;
+    const c = eqColors[(i + seed) % eqColors.length];
+    return { h, d: d.toFixed(2), c };
+  });
+}
+const eqLeft = makeEqBars(16, 0);
+const eqRight = makeEqBars(16, 2);
 ---
 <LandingLayout>
   <!-- ============== HERO ============== -->
   <section class="hero">
+    <div class="hero-eq" aria-hidden="true">
+      <div class="col left">
+        {eqLeft.map((b) => (
+          <span class="bar" style={`--bar-h:${b.h}%; --bar-d:${b.d}s; --bar-c:${b.c};`}></span>
+        ))}
+      </div>
+      <div class="col right">
+        {eqRight.map((b) => (
+          <span class="bar" style={`--bar-h:${b.h}%; --bar-d:${b.d}s; --bar-c:${b.c};`}></span>
+        ))}
+      </div>
+    </div>
     <div class="wrap hero-grid">
-      <div class="fade-in">
-        <span class="hero-badge"><span class="pulse-dot"></span>
+      <div class="fade-in" data-stagger>
+        <span class="hero-badge stagger-item"><span class="pulse-dot"></span>
           <span data-lang="en">{t.hero.badge.en}</span><span data-lang="zh">{t.hero.badge.zh}</span><span data-lang="ja">{t.hero.badge.ja}</span>
         </span>
-        <h1>
+        <h1 class="stagger-item">
           <span data-lang="en">{t.hero.h1a.en}<br/><span class="em">{t.hero.h1b.en}</span></span>
           <span data-lang="zh">{t.hero.h1a.zh}<br/><span class="em">{t.hero.h1b.zh}</span></span>
           <span data-lang="ja">{t.hero.h1a.ja}<br/><span class="em">{t.hero.h1b.ja}</span></span>
         </h1>
-        <p class="lede" data-lang="en">{t.hero.lede.en}</p>
-        <p class="lede" data-lang="zh">{t.hero.lede.zh}</p>
-        <p class="lede" data-lang="ja">{t.hero.lede.ja}</p>
-        <div class="hero-cta">
+        <p class="lede stagger-item" data-lang="en">{t.hero.lede.en}</p>
+        <p class="lede stagger-item" data-lang="zh">{t.hero.lede.zh}</p>
+        <p class="lede stagger-item" data-lang="ja">{t.hero.lede.ja}</p>
+        <div class="hero-cta stagger-item">
           <a class="btn" href="#install">
             <span data-lang="en">{t.hero.primary.en}</span><span data-lang="zh">{t.hero.primary.zh}</span><span data-lang="ja">{t.hero.primary.ja}</span>
             <span class="arr">→</span>
@@ -147,33 +172,7 @@ const protocols = ['OpenAI', 'Anthropic', 'Gemini', 'Ollama', 'DeepSeek', 'OpenA
             </div>
           </div>
           <div class="app-body">
-            <!-- 左侧:快捷键提示卡 + 状态栏 -->
-            <div class="hero-side">
-              <div class="hero-hint">
-                <div class="hh-title">
-                  <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l4-4 4 4M3 7l4-4 4 4"/></svg>
-                  <span data-lang="en">New terminal session</span><span data-lang="zh">新建终端会话</span><span data-lang="ja">新しいセッション</span>
-                </div>
-                <div class="hh-row">
-                  <span class="kbds"><span class="kbd">ctrl</span><span class="kbd">shift</span><span class="kbd">↩</span></span>
-                  <span data-lang="en">New Agent chat</span><span data-lang="zh">新 Agent 对话</span><span data-lang="ja">新しい Agent 会話</span>
-                </div>
-                <div class="hh-row">
-                  <span class="kbds"><span class="kbd">↑</span></span>
-                  <span data-lang="en">History</span><span data-lang="zh">历史记录</span><span data-lang="ja">履歴</span>
-                </div>
-                <div class="hh-row">
-                  <span class="kbds"><span class="kbd">⌘</span><span class="kbd">K</span></span>
-                  <span data-lang="en">Command palette</span><span data-lang="zh">命令面板</span><span data-lang="ja">コマンドパレット</span>
-                </div>
-              </div>
-              <div class="hero-status">
-                <span class="ok">anthropic / claude-4-7</span>
-                <span>local · no telemetry</span>
-              </div>
-            </div>
-
-            <!-- 右侧:终端输出 + 可执行输入 -->
+            <!-- 单栏 Block 时间线:终端输出 + AI 对话 + 可交互输入 -->
             <div class="hero-main">
               <div class="term-stage"></div>
               <div class="term-input live">
@@ -216,19 +215,19 @@ const protocols = ['OpenAI', 'Anthropic', 'Gemini', 'Ollama', 'DeepSeek', 'OpenA
   </section>
 
   <!-- ============== LOGOS / PROTOCOLS ============== -->
-  <div class="logos fade-in">
-    <p class="logos-title">
+  <div class="logos fade-in" data-stagger>
+    <p class="logos-title stagger-item">
       <span data-lang="en">{t.logos.title.en}</span><span data-lang="zh">{t.logos.title.zh}</span><span data-lang="ja">{t.logos.title.ja}</span>
     </p>
     <div class="logos-track">
-      {protocols.map((p) => <span class="item">{p}</span>)}
+      {protocols.map((p) => <span class="item stagger-item">{p}</span>)}
     </div>
   </div>
 
   <!-- ============== FEAT 1: 终端 ============== -->
   <section class="section" id="how">
     <div class="wrap">
-      <article class="feat-card fade-in">
+      <article class="feat-card fade-in slide-l">
         <div class="feat-text">
           <div class="feat-eyebrow">
             <span data-lang="en">{t.feat1.eyebrow.en}</span><span data-lang="zh">{t.feat1.eyebrow.zh}</span><span data-lang="ja">{t.feat1.eyebrow.ja}</span>
@@ -281,7 +280,7 @@ const protocols = ['OpenAI', 'Anthropic', 'Gemini', 'Ollama', 'DeepSeek', 'OpenA
   <!-- ============== FEAT 2: 服务商(reverse 布局) ============== -->
   <section class="section" id="adapt">
     <div class="wrap">
-      <article class="feat-card reverse fade-in">
+      <article class="feat-card reverse fade-in slide-r">
         <div class="feat-text">
           <div class="feat-eyebrow">
             <span data-lang="en">{t.feat2.eyebrow.en}</span><span data-lang="zh">{t.feat2.eyebrow.zh}</span><span data-lang="ja">{t.feat2.eyebrow.ja}</span>
@@ -391,7 +390,7 @@ const protocols = ['OpenAI', 'Anthropic', 'Gemini', 'Ollama', 'DeepSeek', 'OpenA
   <!-- ============== FEAT 3: 本地化 ============== -->
   <section class="section" id="privacy">
     <div class="wrap">
-      <article class="feat-card fade-in">
+      <article class="feat-card fade-in slide-l">
         <div class="feat-text">
           <div class="feat-eyebrow">
             <span data-lang="en">{t.feat3.eyebrow.en}</span><span data-lang="zh">{t.feat3.eyebrow.zh}</span><span data-lang="ja">{t.feat3.eyebrow.ja}</span>
@@ -459,7 +458,7 @@ const protocols = ['OpenAI', 'Anthropic', 'Gemini', 'Ollama', 'DeepSeek', 'OpenA
   </section>
 
   <!-- ============== QUOTE(单条) ============== -->
-  <section class="quote fade-in">
+  <section class="quote fade-in scale-in">
     <div class="wrap">
       <blockquote data-lang="en">{t.quote.text.en}</blockquote>
       <blockquote data-lang="zh">{t.quote.text.zh}</blockquote>
@@ -566,24 +565,47 @@ git clone https://github.com/zerx-lab/zap.git zap
 
     // 初始动画行(页面刚加载时) — 按当前 locale 渲染
     // 命令本身保留英文(真实 shell 也是英文),只本地化人类语言部分
+    // 叙事:构建失败 → AI 用 block 上下文(cwd/exit code)诊断并给出修复建议
+    // 呼应 feat1 文案 "Every Block — cwd, env, exit code — feeds an AI conversation"
     const initLinesByLocale: Record<'en' | 'zh' | 'ja', string[]> = {
       en: [
-        `<span class="p">$</span> npm run build`,
-        `<span class="dim">› vite v5.4 · production</span>`,
-        `<span class="dim">› 248 modules transformed</span>`,
-        `<span class="ok">✓ built in 1.24s</span>`,
+        `<span class="p">$</span> cargo build --release`,
+        `<span class="dim">   Compiling zap v0.1.0</span>`,
+        `<span class="err">error[E0433]: failed to resolve: use of undeclared crate \`openssl\`</span>`,
+        `<span class="err">  --&gt; src/tls.rs:4:5</span>`,
+        `<div class="stage-turn">
+          <div class="st-chip">block · cwd ~/zap · exit 101</div>
+          <div class="st-prompt">▌ Why did this fail?</div>
+          <div class="st-think">Reading block context <span class="dots"><span></span><span></span><span></span></span></div>
+          <div class="st-answer"><code>openssl</code> isn't in Cargo.toml. Run <code>cargo add openssl --features vendored</code>, then rebuild.</div>
+          <div class="st-meta"><span class="ok">anthropic / claude-opus-4-7</span><span>local · no telemetry</span></div>
+        </div>`,
       ],
       zh: [
-        `<span class="p">$</span> npm run build`,
-        `<span class="dim">› vite v5.4 · 生产构建</span>`,
-        `<span class="dim">› 已转换 248 个模块</span>`,
-        `<span class="ok">✓ 1.24s 内构建完成</span>`,
+        `<span class="p">$</span> cargo build --release`,
+        `<span class="dim">   正在编译 zap v0.1.0</span>`,
+        `<span class="err">error[E0433]: 无法解析:未声明的 crate \`openssl\`</span>`,
+        `<span class="err">  --&gt; src/tls.rs:4:5</span>`,
+        `<div class="stage-turn">
+          <div class="st-chip">block · cwd ~/zap · exit 101</div>
+          <div class="st-prompt">▌ 为什么会失败?</div>
+          <div class="st-think">正在读取 block 上下文 <span class="dots"><span></span><span></span><span></span></span></div>
+          <div class="st-answer">Cargo.toml 里没有 <code>openssl</code>。运行 <code>cargo add openssl --features vendored</code> 后重新构建即可。</div>
+          <div class="st-meta"><span class="ok">anthropic / claude-opus-4-7</span><span>本地 · 无遥测</span></div>
+        </div>`,
       ],
       ja: [
-        `<span class="p">$</span> npm run build`,
-        `<span class="dim">› vite v5.4 · 本番ビルド</span>`,
-        `<span class="dim">› 248 モジュールを変換</span>`,
-        `<span class="ok">✓ 1.24 秒でビルド完了</span>`,
+        `<span class="p">$</span> cargo build --release`,
+        `<span class="dim">   zap v0.1.0 をコンパイル中</span>`,
+        `<span class="err">error[E0433]: 解決できません: 宣言されていないクレート \`openssl\`</span>`,
+        `<span class="err">  --&gt; src/tls.rs:4:5</span>`,
+        `<div class="stage-turn">
+          <div class="st-chip">block · cwd ~/zap · exit 101</div>
+          <div class="st-prompt">▌ なぜ失敗したの?</div>
+          <div class="st-think">block コンテキストを読み取り中 <span class="dots"><span></span><span></span><span></span></span></div>
+          <div class="st-answer">Cargo.toml に <code>openssl</code> がありません。<code>cargo add openssl --features vendored</code> を実行して再ビルドしてください。</div>
+          <div class="st-meta"><span class="ok">anthropic / claude-opus-4-7</span><span>ローカル · テレメトリなし</span></div>
+        </div>`,
       ],
     };
     function renderInitLines() {
@@ -869,5 +891,38 @@ git clone https://github.com/zerx-lab/zap.git zap
       renderInitLines();
     });
     localeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-locale'] });
+  })();
+</script>
+
+<script>
+  // Hero 装饰性均衡器条 — 轻量视差(仅位移,GPU 合成,不触发 layout)
+  (function () {
+    const eq = document.querySelector<HTMLElement>('.hero-eq');
+    if (!eq) return;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) return;
+    const cols = Array.from(eq.querySelectorAll<HTMLElement>('.col'));
+    let ticking = false;
+    function apply() {
+      const y = window.scrollY;
+      const heroH = (eq.closest('.hero') as HTMLElement | null)?.offsetHeight || 800;
+      const progress = Math.min(y / heroH, 1);
+      cols.forEach((col, i) => {
+        const dir = i % 2 === 0 ? 1 : -1;
+        col.style.transform = `translateY(${progress * 40 * dir}px)`;
+      });
+      ticking = false;
+    }
+    document.addEventListener(
+      'scroll',
+      () => {
+        if (!ticking) {
+          requestAnimationFrame(apply);
+          ticking = true;
+        }
+      },
+      { passive: true },
+    );
+    apply();
   })();
 </script>
