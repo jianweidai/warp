@@ -14,7 +14,7 @@
 //! | OpenAi         | OpenAI       | https://api.openai.com/v1                      |
 //! | OpenAiResp     | OpenAIResp   | https://api.openai.com/v1 (走 /v1/responses)   |
 //! | Gemini         | Gemini       | https://generativelanguage.googleapis.com/v1beta |
-//! | Anthropic      | Anthropic    | https://api.anthropic.com                      |
+//! | Anthropic      | Anthropic    | https://api.anthropic.com/v1 (走 /v1/messages) |
 //! | Ollama         | Ollama       | http://localhost:11434                         |
 //!
 //! 用户填的 `base_url` 始终覆盖默认。这样:
@@ -1183,6 +1183,7 @@ fn build_chat_request(
     let plan_mode = is_plan_mode_turn(&params.input);
     let tool_names = available_tool_names(params);
     let mut system_text = prompt_renderer::render_system(
+        api_type,
         &params.model,
         agent_ctx,
         &tool_names,
@@ -1309,6 +1310,13 @@ fn build_chat_request(
     // `unexpected tool_use_id ... no corresponding tool_use block`。
     let mut skipped_subagent_call_ids: std::collections::HashSet<String> =
         std::collections::HashSet::new();
+    // Zap:仅在"同一 task_id 下真的落地过结构化 ToolCall"时才允许剥离 AgentOutput
+    // 里的疑似 tool JSON——避免用全历史范围的证据误伤跨轮(不同 task_id)的纯文本回答。
+    let tasks_with_tool_call: std::collections::HashSet<&str> = all_msgs
+        .iter()
+        .filter(|msg| matches!(msg.message, Some(api::message::Message::ToolCall(_))))
+        .map(|msg| msg.task_id.as_str())
+        .collect();
 
     for (idx, msg) in all_msgs.iter().enumerate() {
         // 摘要请求:tail 区间不送上游(只送 head + 末尾追加 SUMMARY_TEMPLATE)
@@ -1399,6 +1407,22 @@ fn build_chat_request(
                 }
             }
             api::message::Message::AgentOutput(a) => {
+                // Ollama 本地模型常把 tool JSON 当 AgentOutput 文本落地;同一轮后面还有
+                // 结构化 ToolCall + ToolCallResult。再发给上游会淹没真实摘要,导致 C3 失忆。
+                // 仅在(a)同一 task_id 下已经落地过结构化 ToolCall,且(b)这段文本本身能被
+                // extract_tool_calls_from_assistant_text 提取出可执行调用时才剥离——
+                // `contains_tool_shaped_json` 只要求出现 string `name` 键就返回 true(比如
+                // 粘贴的 package.json 内容),会把合法回答误判成 tool JSON 噪音删掉。
+                if api_type == AgentProviderApiType::Ollama
+                    && tasks_with_tool_call.contains(msg.task_id.as_str())
+                    && !super::content_tool_calls::extract_tool_calls_from_assistant_text(
+                        &a.text,
+                        &tool_names,
+                    )
+                    .is_empty()
+                {
+                    continue;
+                }
                 if buf.text.is_some() || !buf.tool_calls.is_empty() {
                     flush_assistant_buffer(&mut buf, &mut messages, &mut outbound_tool_groups);
                 }
@@ -1808,6 +1832,7 @@ fn log_chat_request_details(
     chat_req: &ChatRequest,
     model_id: &str,
     api_type: AgentProviderApiType,
+    base_url: &str,
 ) {
     let system_in_head = matches!(api_type, AgentProviderApiType::Anthropic)
         && chat_req
@@ -1825,7 +1850,7 @@ fn log_chat_request_details(
         "[byop-diag] request summary: adapter={:?} model={} system_len={} \
          system_in_messages_head={} messages={} tools={} tool_names={:?} \
          previous_response_id_present={} store={:?} system_snippet={:?}",
-        adapter_kind_for(api_type),
+        effective_adapter_kind_for(api_type, model_id, base_url),
         model_id,
         chat_req.system.as_deref().map(str::len).unwrap_or(0),
         system_in_head,
@@ -2559,10 +2584,7 @@ fn serialize_outgoing_tool_call(
                 Some(SkillReference::BundledSkillId(id)) => format!("@warp-skill:{id}"),
                 None => String::new(),
             };
-            (
-                "read_skill".to_owned(),
-                json!({ "name": name }).to_string(),
-            )
+            ("read_skill".to_owned(), json!({ "name": name }).to_string())
         }
         Some(Tool::ReadShellCommandOutput(r)) => {
             use api::message::tool_call::read_shell_command_output::Delay;
@@ -2786,6 +2808,59 @@ fn adapter_kind_for(api_type: AgentProviderApiType) -> AdapterKind {
     }
 }
 
+/// OpenAI 官方 gpt-5 / codex 系在带 function tools + reasoning_effort 时
+/// 只接受 `/v1/responses`,`/v1/chat/completions` 会 400。
+fn openai_model_requires_responses_api(model_id: &str) -> bool {
+    let id = model_id.to_ascii_lowercase();
+    id.starts_with("gpt-5") || id.starts_with("codex")
+}
+
+/// Claude model id 启发式(容忍 `anthropic/claude-sonnet-4-6` 等 namespace 前缀)。
+fn is_claude_model(model_id: &str) -> bool {
+    let id = model_id.to_ascii_lowercase();
+    let bare = id.rsplit('/').next().unwrap_or(&id);
+    bare.contains("claude-") || bare.starts_with("claude")
+}
+
+/// `base_url` 是否指向 Anthropic 官方 Messages API host。
+fn is_anthropic_api_host(base_url: &str) -> bool {
+    url::Url::parse(base_url.trim())
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host == "api.anthropic.com" || host.ends_with(".anthropic.com"))
+}
+
+/// `base_url` 是否指向 OpenAI 官方 API host。自动升级 `/v1/responses` 只对官方
+/// host 生效:one-api / LiteLLM 等 chat-completions-only 中转常保留官方 model id,
+/// 强制切 Responses API 会 404。
+fn is_openai_api_host(base_url: &str) -> bool {
+    url::Url::parse(base_url.trim())
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host == "api.openai.com" || host.ends_with(".openai.com"))
+}
+
+/// 按用户配置的 `api_type`、model id 与 `base_url` 解析实际应使用的 genai adapter。
+///
+/// - `OpenAi` + 官方 host + gpt-5.4 等 → `OpenAIResp`(`/v1/responses`)
+/// - `OpenAi` + `api.anthropic.com` + claude 模型 → `Anthropic`(`/v1/messages`)
+fn effective_adapter_kind_for(
+    api_type: AgentProviderApiType,
+    model_id: &str,
+    base_url: &str,
+) -> AdapterKind {
+    let base = adapter_kind_for(api_type);
+    if api_type == AgentProviderApiType::OpenAi {
+        if is_anthropic_api_host(base_url) && is_claude_model(model_id) {
+            return AdapterKind::Anthropic;
+        }
+        if is_openai_api_host(base_url) && openai_model_requires_responses_api(model_id) {
+            return AdapterKind::OpenAIResp;
+        }
+    }
+    base
+}
+
 /// 规范化用户填写的 `base_url`,产出供 genai adapter 拼接 service path 的 endpoint URL。
 ///
 /// genai 0.6.x 所有 adapter 都假设 endpoint 以 `/` 结尾、且已经包含版本路径段:
@@ -2800,6 +2875,9 @@ fn adapter_kind_for(api_type: AgentProviderApiType) -> AdapterKind {
 ///    Gemini→`/v1beta/`,Ollama 不补)。
 /// 2. 完整带版本路径(`https://ai.zerx.dev/v1`)— 仅补尾 `/`,不动 path。
 /// 3. 留空 — 用 [`AgentProviderApiType::default_base_url`]。
+///
+/// Anthropic 额外容错:用户若粘贴完整 endpoint(`…/v1/messages`),剥掉尾部的
+/// `messages` 段,避免 genai 再拼一次变成 `…/messages/messages`。
 fn normalize_endpoint_url(api_type: AgentProviderApiType, base_url: &str) -> String {
     let trimmed = base_url.trim();
     if trimmed.is_empty() {
@@ -2807,13 +2885,32 @@ fn normalize_endpoint_url(api_type: AgentProviderApiType, base_url: &str) -> Str
     }
 
     // 解析失败(用户填了畸形 URL)→ 退化到原"补尾 /"行为,让上游报错而不是这里 panic。
-    let parsed = match url::Url::parse(trimmed) {
+    let mut parsed = match url::Url::parse(trimmed) {
         Ok(u) => u,
         Err(_) => {
             let stripped = trimmed.trim_end_matches('/');
             return format!("{stripped}/");
         }
     };
+
+    if api_type == AgentProviderApiType::Anthropic || is_anthropic_api_host(trimmed) {
+        let path = parsed.path().trim_end_matches('/');
+        if let Some(prefix) = path.strip_suffix("/messages") {
+            let new_path = if prefix.is_empty() { "/" } else { prefix };
+            parsed.set_path(&format!("{new_path}/"));
+        }
+    }
+
+    // Ollama 原生 API 在 host 根 `/api/chat`,没有 `/v1/` 前缀。历史 default_base_url
+    // 误填 `/v1/` 或用户从 OpenAI 习惯带入的 `/v1` 在这里剥掉,避免拼成 `/v1/api/chat`。
+    if api_type == AgentProviderApiType::Ollama {
+        let path = parsed.path().trim_end_matches('/');
+        if path.is_empty() || path == "/" || path == "/v1" {
+            let mut normalized = parsed.clone();
+            normalized.set_path("/");
+            return normalized.to_string();
+        }
+    }
 
     // path == "/" 或为空 → 用户只填了 host,自动补上 api_type 默认版本路径段。
     if parsed.path() == "/" || parsed.path().is_empty() {
@@ -2827,7 +2924,8 @@ fn normalize_endpoint_url(api_type: AgentProviderApiType, base_url: &str) -> Str
     }
 
     // 用户已自带 path → 仅确保尾随 `/`(genai format!/Url::join 都依赖)。
-    let stripped = trimmed.trim_end_matches('/');
+    let normalized = parsed.to_string();
+    let stripped = normalized.trim_end_matches('/');
     format!("{stripped}/")
 }
 
@@ -2836,18 +2934,31 @@ fn normalize_endpoint_url(api_type: AgentProviderApiType, base_url: &str) -> Str
 /// 都强制路由到指定 AdapterKind,完全绕过 genai 默认的"按模型名识别"。
 pub(super) fn build_client(
     api_type: AgentProviderApiType,
-    base_url: String,
+    base_url: &str,
     api_key: String,
 ) -> Client {
-    let adapter_kind = adapter_kind_for(api_type);
-    let endpoint_url = normalize_endpoint_url(api_type, &base_url);
-    log::info!("[byop] build_client: adapter={adapter_kind:?} endpoint_url={endpoint_url}");
+    let endpoint_url = normalize_endpoint_url(api_type, base_url);
+    log::info!("[byop] build_client: api_type={api_type:?} endpoint_url={endpoint_url}");
     let key_for_resolver = api_key.clone();
     let resolver = ServiceTargetResolver::from_resolver_fn(
         move |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
             let ServiceTarget { model, .. } = service_target;
             let endpoint = Endpoint::from_owned(endpoint_url.clone());
             let auth = AuthData::from_single(key_for_resolver.clone());
+            let model_name = model.model_name.as_str();
+            let adapter_kind = effective_adapter_kind_for(api_type, model_name, &endpoint_url);
+            if api_type == AgentProviderApiType::OpenAi && adapter_kind == AdapterKind::OpenAIResp {
+                log::info!(
+                    "[byop] auto-upgrade OpenAi → OpenAIResp for model={model_name} \
+                     (function tools + reasoning_effort require /v1/responses)"
+                );
+            }
+            if api_type == AgentProviderApiType::OpenAi && adapter_kind == AdapterKind::Anthropic {
+                log::info!(
+                    "[byop] auto-upgrade OpenAi → Anthropic for model={model_name} \
+                     (official Anthropic host requires /v1/messages)"
+                );
+            }
             // 用我们指定的 AdapterKind 覆盖 genai 的"按模型名"识别结果,
             // 但保留 model_name 以便上游服务正确寻址模型。
             let model = ModelIden::new(adapter_kind, model.model_name);
@@ -2898,7 +3009,10 @@ pub(super) fn build_client(
                     &proxy_cfg.password,
                     &proxy_cfg.no_proxy,
                 ) {
-                    log::warn!("[byop] proxy URL '{}' 无效,跳过代理配置: {err}", proxy_cfg.url);
+                    log::warn!(
+                        "[byop] proxy URL '{}' 无效,跳过代理配置: {err}",
+                        proxy_cfg.url
+                    );
                 }
             }
         }
@@ -3235,7 +3349,23 @@ pub async fn generate_byop_output(
     // 仅对已知把 reasoning 夹在 <think> 标签里的模型(如 MiniMax M3)激活流式提取。
     // 其他模型保持原始 Chunk 输出行为,避免误吞含字面量 <think> 的正常文本。
     let use_think_extraction = super::reasoning::model_uses_think_tags_in_content(&model_id);
-    let chat_req = build_chat_request(&params, force_echo_reasoning, api_type, attachment_caps)?;
+    // Zap:请求 shaping(Anthropic cache_control / system-in-messages 布局)必须跟随
+    // 实际出线的 adapter 而非用户配置的 api_type——OpenAi + 官方 Anthropic host + claude
+    // 模型会被 effective_adapter_kind_for 路由到 Anthropic adapter,若仍按 OpenAi shaping
+    // 则丢掉全部 prompt cache breakpoint,agentic 多轮成本显著上升。对 Ollama 等其余
+    // api_type,effective adapter 恒等于原始 adapter,shaping_api_type == api_type。
+    let shaping_api_type =
+        if effective_adapter_kind_for(api_type, &model_id, &base_url) == AdapterKind::Anthropic {
+            AgentProviderApiType::Anthropic
+        } else {
+            api_type
+        };
+    let chat_req = build_chat_request(
+        &params,
+        force_echo_reasoning,
+        shaping_api_type,
+        attachment_caps,
+    )?;
     let conversation_id = params
         .conversation_token
         .as_ref()
@@ -3253,10 +3383,11 @@ pub async fn generate_byop_output(
             Some(conversation_id.as_str())
         },
     );
-    let client = build_client(api_type, base_url, api_key);
+    let client = build_client(api_type, &base_url, api_key);
     let request_id = Uuid::new_v4().to_string();
     let mcp_context = params.mcp_context.clone();
     let exa_api_key = params.exa_api_key.clone();
+    let tool_names_for_extract = available_tool_names(&params);
 
     // ⚠️ BYOP 持久化关键:warp 自家路径下,以下 ClientAction 都是 server 端 emit
     // 让 client 端把 UserQuery / ToolCallResult 等"非模型产出"的 message
@@ -3298,7 +3429,7 @@ pub async fn generate_byop_output(
     // 推到 messages[0] 以便打 `cache_control`，所以 `chat_req.system` 会是 None、`system_len`
     // 显示为 0；实际 system 内容仍然在 messages[0] 里(看下面逐条报告)。为避免误
     // 导诊断者，这里加上 `system_in_messages_head` 提示。
-    log_chat_request_details(&chat_req, &model_id, api_type);
+    log_chat_request_details(&chat_req, &model_id, shaping_api_type, &base_url);
 
     // 诊断:构造包含 system / messages / tools 的完整 ChatRequest JSON dump,保存到
     // stream 闭包。真实 Anthropic wire body 会由 genai adapter 再转换一层,但这里已经
@@ -3610,6 +3741,11 @@ pub async fn generate_byop_output(
         let mut tool_chunk_count: u32 = 0;
         let mut end_count: u32 = 0;
         let mut other_count: u32 = 0;
+        let mut captured_assistant_text: Option<String> = None;
+        // Ollama 等 provider 的 End.captured_content 有时为空,但 Chunk 事件已送达正文;
+        // 流式累积作为 content→tool 提取的可靠来源(仅 assistant 正文;reasoning 中的
+        // 假设性命令描述不应被当作可执行 tool call,见下方 extract_sources)。
+        let mut streamed_assistant_text = String::new();
         // 累积本轮 token 使用量。genai 在 ChatStreamEvent::End 事件里携带
         // captured_usage(Option<Usage>),其 prompt_tokens 是本轮整段 history
         // (Anthropic / OpenAI 都按"完整请求 prompt"计),completion_tokens 是模型输出。
@@ -3666,6 +3802,7 @@ pub async fn generate_byop_output(
                 ChatStreamEvent::Chunk(c) if !c.content.is_empty() => {
                     chunk_count += 1;
                     chunk_bytes += c.content.len();
+                    streamed_assistant_text.push_str(&c.content);
                     if use_think_extraction {
                         // <think> 标签流式提取:仅对 THINK_TAG_IN_CONTENT_MODELS 白名单内的模型激活。
                         // 把 /delta/content 中的 <think>...</think> 段路由到 reasoning 通道,
@@ -3860,6 +3997,11 @@ pub async fn generate_byop_output(
                     // 优先用 captured_content 里的 tool_calls(更完整),
                     // 否则用 streaming 中累积的 tool_bufs。
                     if let Some(content) = end.captured_content.as_ref() {
+                        if let Some(text) = content.first_text() {
+                            if !text.is_empty() {
+                                captured_assistant_text = Some(text.to_owned());
+                            }
+                        }
                         let mut captured_order: Vec<String> = Vec::new();
                         for call in content.tool_calls() {
                             if !captured_order.contains(&call.call_id) {
@@ -3910,12 +4052,64 @@ pub async fn generate_byop_output(
             }
         }
 
+        // Zap:content→tool 提取 fallback 只对 Ollama 生效,与 :1412 的历史过滤对称——
+        // 云端 provider(OpenAI/Anthropic/...)的正文如果恰好长得像 tool JSON(比如模型在
+        // 讲解一段 JSON 示例),不应该被误当成真实 ToolCall 执行。
+        if tool_bufs.is_empty() && api_type == AgentProviderApiType::Ollama {
+            let extract_sources: [&str; 2] = [
+                streamed_assistant_text.as_str(),
+                captured_assistant_text.as_deref().unwrap_or(""),
+            ];
+            let mut parsed_any_text = false;
+            for text in extract_sources.into_iter().filter(|t| !t.is_empty()) {
+                parsed_any_text = true;
+                let extracted = super::content_tool_calls::extract_tool_calls_from_assistant_text(
+                    text,
+                    &tool_names_for_extract,
+                );
+                if extracted.is_empty() {
+                    continue;
+                }
+                log::info!(
+                    "[byop] content_tool_extract: found={} names={:?} source_len={}",
+                    extracted.len(),
+                    extracted
+                        .iter()
+                        .map(|call| call.fn_name.as_str())
+                        .collect::<Vec<_>>(),
+                    text.len()
+                );
+                for call in extracted {
+                    let call_id = call.call_id.clone();
+                    if !tool_bufs.contains_key(&call_id) {
+                        tool_order.push(call_id.clone());
+                    }
+                    tool_bufs.insert(call_id, call);
+                }
+                break;
+            }
+            if tool_bufs.is_empty() && parsed_any_text {
+                let preview: String = streamed_assistant_text.chars().take(240).collect();
+                log::info!(
+                    "[byop] content_tool_extract: no tools parsed (streamed={}B captured={}B) \
+                     preview={preview:?}",
+                    streamed_assistant_text.len(),
+                    captured_assistant_text.as_ref().map(|t| t.len()).unwrap_or(0),
+                );
+            } else if tool_bufs.is_empty() {
+                log::warn!(
+                    "[byop] content_tool_extract: skipped — no assistant text in stream \
+                     (chunks={chunk_count} reasoning={reasoning_count})"
+                );
+            }
+        }
+
         // 流统计 INFO log。chunk_count=0 && tool_count=0 时上游返回为空,
         // 大概率是 model_id 不被识别 / max_tokens 缺失 / Anthropic API 兼容代理返回 200 但 body 空。
         let total_tools = tool_bufs.len();
         log::info!(
             "[byop] stream stats: start={start_count} chunks={chunk_count} ({chunk_bytes}B) \
-             reasoning={reasoning_count} ({reasoning_bytes}B) tool_chunks={tool_chunk_count} \
+             reasoning={reasoning_count} ({reasoning_bytes}B) native_tool_chunks={tool_chunk_count} \
              ends={end_count} other={other_count} captured_tools={total_tools}"
         );
         // P0-6 prompt cache 命中率日志(只在 provider 返回 cache 字段时打)。
@@ -5472,6 +5666,152 @@ mod build_chat_options_off_tests {
     }
 }
 
+#[cfg(test)]
+mod adapter_routing_tests {
+    use super::*;
+    use genai::adapter::AdapterKind;
+
+    const OPENAI_HOST: &str = "https://api.openai.com/v1/";
+    const ANTHROPIC_HOST: &str = "https://api.anthropic.com/v1/";
+    const OPENROUTER_HOST: &str = "https://openrouter.ai/api/v1/";
+
+    #[test]
+    fn openai_gpt54_auto_upgrades_to_responses_api() {
+        assert_eq!(
+            effective_adapter_kind_for(AgentProviderApiType::OpenAi, "gpt-5.4", OPENAI_HOST),
+            AdapterKind::OpenAIResp
+        );
+    }
+
+    #[test]
+    fn openai_gpt4o_stays_on_chat_completions() {
+        assert_eq!(
+            effective_adapter_kind_for(AgentProviderApiType::OpenAi, "gpt-4o", OPENAI_HOST),
+            AdapterKind::OpenAI
+        );
+    }
+
+    #[test]
+    fn openai_resp_api_type_unchanged() {
+        assert_eq!(
+            effective_adapter_kind_for(AgentProviderApiType::OpenAiResp, "gpt-5.4", OPENAI_HOST),
+            AdapterKind::OpenAIResp
+        );
+    }
+
+    #[test]
+    fn openai_claude_on_anthropic_host_auto_upgrades() {
+        assert_eq!(
+            effective_adapter_kind_for(
+                AgentProviderApiType::OpenAi,
+                "claude-sonnet-4-6",
+                ANTHROPIC_HOST
+            ),
+            AdapterKind::Anthropic
+        );
+    }
+
+    #[test]
+    fn openai_claude_on_openrouter_stays_openai() {
+        assert_eq!(
+            effective_adapter_kind_for(
+                AgentProviderApiType::OpenAi,
+                "anthropic/claude-sonnet-4-6",
+                OPENROUTER_HOST
+            ),
+            AdapterKind::OpenAI
+        );
+    }
+
+    #[test]
+    fn openai_gpt54_on_relay_host_stays_on_chat_completions() {
+        // one-api / LiteLLM 等 chat-completions-only 中转会保留官方 model id,
+        // 自动升级 Responses API 必须只对官方 host 生效,否则 404。
+        assert_eq!(
+            effective_adapter_kind_for(AgentProviderApiType::OpenAi, "gpt-5.4", OPENROUTER_HOST),
+            AdapterKind::OpenAI
+        );
+    }
+
+    #[test]
+    fn anthropic_api_type_unchanged() {
+        assert_eq!(
+            effective_adapter_kind_for(
+                AgentProviderApiType::Anthropic,
+                "claude-opus-4-7",
+                ANTHROPIC_HOST
+            ),
+            AdapterKind::Anthropic
+        );
+    }
+}
+
+#[cfg(test)]
+mod anthropic_endpoint_tests {
+    use super::*;
+
+    #[test]
+    fn host_only_gets_v1_prefix() {
+        assert_eq!(
+            normalize_endpoint_url(AgentProviderApiType::Anthropic, "https://api.anthropic.com"),
+            "https://api.anthropic.com/v1/"
+        );
+    }
+
+    #[test]
+    fn strips_trailing_messages_path() {
+        assert_eq!(
+            normalize_endpoint_url(
+                AgentProviderApiType::Anthropic,
+                "https://api.anthropic.com/v1/messages"
+            ),
+            "https://api.anthropic.com/v1/"
+        );
+    }
+
+    #[test]
+    fn strips_messages_even_when_api_type_openai_but_host_is_anthropic() {
+        assert_eq!(
+            normalize_endpoint_url(
+                AgentProviderApiType::OpenAi,
+                "https://api.anthropic.com/v1/messages"
+            ),
+            "https://api.anthropic.com/v1/"
+        );
+    }
+}
+
+#[cfg(test)]
+mod ollama_endpoint_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_v1_default_base_url_is_rescued() {
+        // 历史 default_base_url 曾是 `http://localhost:11434/v1/` 并已持久化到存量
+        // settings;normalize 必须把 `/v1` 剥回 host 根,否则拼成 `/v1/api/chat` 404。
+        assert_eq!(
+            normalize_endpoint_url(AgentProviderApiType::Ollama, "http://localhost:11434/v1/"),
+            "http://localhost:11434/"
+        );
+    }
+
+    #[test]
+    fn host_only_passes_through_with_trailing_slash() {
+        assert_eq!(
+            normalize_endpoint_url(AgentProviderApiType::Ollama, "http://localhost:11434"),
+            "http://localhost:11434/"
+        );
+    }
+
+    #[test]
+    fn custom_path_is_preserved() {
+        assert_eq!(
+            normalize_endpoint_url(AgentProviderApiType::Ollama, "http://box:11434/ollama"),
+            "http://box:11434/ollama/"
+        );
+    }
+}
+
 /// **端到端 cache 边界稳定性测试**:验证多轮对话模拟下,prompt cache
 /// 需要的“前缀字节级一致”保证。这些测试并不调用上游 API,仅检查
 /// `apply_caching_anthropic` 与 `build_chat_options` 输出的确定性。
@@ -5930,7 +6270,12 @@ mod serializer_readiness_tests {
     }
 
     fn build_openai_request(params: &RequestParams) -> Result<ChatRequest, ConvertToAPITypeError> {
-        build_chat_request(params, false, AgentProviderApiType::OpenAi, attachment_caps::AttachmentCaps::default())
+        build_chat_request(
+            params,
+            false,
+            AgentProviderApiType::OpenAi,
+            attachment_caps::AttachmentCaps::default(),
+        )
     }
 
     fn assert_request_has_no_repair_placeholder(request: &ChatRequest) {
@@ -6788,6 +7133,61 @@ mod serializer_readiness_tests {
         params.compaction_state = Some(compaction_state);
 
         assert_build_request_blocked(params, "MissingResultWithoutRepairSource");
+    }
+
+    #[test]
+    fn smoke_build_chat_request_simple_user_query_succeeds() {
+        let params = request_params(
+            vec![make_user_query_message(
+                "task-1",
+                "req-1",
+                "hello".to_owned(),
+                &[],
+            )],
+            vec![user_query_input("hello")],
+        );
+        let request = build_openai_request(&params).expect("simple user query should serialize");
+        assert!(
+            !request.messages.is_empty(),
+            "expected at least one chat message"
+        );
+        assert_request_has_no_repair_placeholder(&request);
+    }
+
+    #[test]
+    fn smoke_build_chat_request_pending_live_tool_call_is_pending_not_blocked() {
+        let user_message = make_user_query_message("task-1", "req-1", "hi".to_owned(), &[]);
+        let tool_call_message = make_tool_call_message("task-1", "req-1", "call-1", shell_tool());
+        let assistant_message_id = tool_call_message.id.clone();
+        let params = request_params(
+            vec![user_message, tool_call_message],
+            vec![user_query_input("continue")],
+        );
+
+        let pending_report = classify_byop_controller_readiness_with_live_tool_calls(
+            &params,
+            vec![LiveToolCall::new(
+                ToolCallRef::new(
+                    ToolCallKey::new("task-1", assistant_message_id, "call-1"),
+                    kind(),
+                ),
+                LiveToolCallState::Running,
+            )],
+        );
+        assert!(
+            matches!(
+                pending_report.state,
+                ReadinessState::PendingToolResults { .. }
+            ),
+            "running tool should wait, not block: {:?}",
+            pending_report.state
+        );
+
+        let build_result = build_openai_request(&params);
+        assert!(
+            build_result.is_err(),
+            "serializer must not send while tool is still running"
+        );
     }
 }
 
