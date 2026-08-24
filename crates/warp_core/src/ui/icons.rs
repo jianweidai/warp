@@ -595,7 +595,7 @@ impl From<Icon> for &'static str {
             Icon::CursorLogo => "bundled/svg/cursor.svg",
             Icon::GooseLogo => "bundled/svg/goose.svg",
             Icon::DeepSeekLogo => "bundled/svg/deepseek.svg",
-            Icon::AntigravityLogo => "bundled/svg/antigravity.svg",
+            Icon::AntigravityLogo => "bundled/svg/antigravity-monochrome.svg",
             Icon::OmpLogo => "bundled/svg/omp.svg",
             Icon::NLD => "bundled/svg/nld.svg",
             Icon::Oz => "bundled/svg/oz.svg",
