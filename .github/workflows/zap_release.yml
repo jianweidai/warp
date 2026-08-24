@@ -3,7 +3,7 @@
 # 与上游 create_release.yml 的差异:
 # - 仅 macOS arm64 + macOS Intel + Windows x64 + Linux x86_64,
 #   Web/CLI/Universal/Win-arm64 全砍
-#   (macOS 双架构分别产单架构 DMG 与 CLI tarball;Linux 产 AppImage/deb/rpm
+#   (macOS 双架构分别产单架构 DMG;Linux 产 AppImage/deb/rpm
 #    以及尽力而为的 Arch 包,不发布上游 Zap 仓库源或签名 key)
 # - 单 channel: preview(由 release_configurations.json 提供配置)
 # - 不签名:不传 --read-passwords-from-env(macOS) / 不设 SIGN_TOOL_CMD(Windows)
@@ -223,30 +223,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Build CLI
-        id: bundle_cli
-        run: |
-          script/bundle --channel "$CHANNEL" --arch ${{ matrix.arch }} --artifact cli --nosign
-        shell: bash
-        env:
-          GIT_RELEASE_TAG: ${{ needs.prepare_metadata.outputs.release_tag }}
-
-      - name: Package CLI tarball
-        run: |
-          cp "${{ steps.bundle_cli.outputs.binary_path }}" zap-oss
-          tar czf zap-macos-${{ matrix.arch }}.tar.gz \
-            zap-oss \
-            -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
-        shell: bash
-
-      - name: Upload CLI artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: zap-cli-macos-${{ matrix.arch }}
-          path: zap-macos-${{ matrix.arch }}.tar.gz
-          if-no-files-found: error
-          retention-days: 7
-
   release_windows:
     name: Build Release (Windows x64)
     if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/release' }}
@@ -441,78 +417,6 @@ jobs:
           name: zap-linux-x86_64
           # packages_dir 是 target/release-lto/bundle/linux,AppImage/deb/Arch 都落在这里
           path: ${{ steps.bundle_app.outputs.packages_dir }}
-          if-no-files-found: error
-          retention-days: 7
-
-      # release-lto 产物(GUI/deb/rpm/arch)已由上一步 "Upload package artifacts"
-      # 上传为 workflow artifact,本地不再需要;下面的 musl CLI 走独立的 release-cli
-      # profile,删掉 release-lto 给它腾磁盘,避免 "No space left on device"。
-      - name: Reclaim disk before musl CLI build
-        shell: bash
-        run: |
-          rm -rf target/release-lto
-          df -h /
-
-      # CLI/remote-server tarball 用静态 musl 链接,产物不依赖宿主 glibc,
-      # 可在任意 Linux x86_64 主机(含 CentOS 7 / Amazon Linux 2 等旧 glibc
-      # 以及 Alpine 等 musl 发行版)上运行。GUI AppImage/deb 仍走上面的
-      # glibc 链接构建,不受影响。
-      #
-      # 用 `cargo zigbuild` 做 musl 交叉编译:zig 自带完整的 C/C++ musl
-      # 工具链(`zig cc` / `zig c++`),不依赖宿主的 `musl-gcc` 或手写的
-      # `musl-g++` wrapper —— 历史上为 freetype-sys / harfbuzz-sys 等 *-sys
-      # 依赖准备的「宿主 g++ + musl specs」hack 因此整条移除。
-      # 本地 dev 自动构建路径(`ssh_transport.rs`)也优先用 zigbuild,两边
-      # 工具链统一。
-      - name: Install zig + cargo-zigbuild for static musl CLI build
-        run: |
-          set -euo pipefail
-          rustup target add x86_64-unknown-linux-musl
-          # zig:用官方预编译 tarball,固定版本以保证构建可复现。
-          # 0.13.0 与 cargo-zigbuild >= 0.19 兼容。
-          ZIG_VERSION="0.13.0"
-          ZIG_DIR="$HOME/.local/zig-${ZIG_VERSION}"
-          if [ ! -x "${ZIG_DIR}/zig" ]; then
-            mkdir -p "${ZIG_DIR}"
-            curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" \
-              | tar -xJ -C "${ZIG_DIR}" --strip-components=1
-          fi
-          echo "${ZIG_DIR}" >> "$GITHUB_PATH"
-          # cargo-zigbuild:走 cargo install,首次安装在缓存里之后会复用。
-          cargo install --locked cargo-zigbuild --version ^0.19
-        shell: bash
-
-      - name: Build CLI (static musl via zigbuild)
-        id: bundle_cli
-        run: |
-          script/bundle --channel "$CHANNEL" --arch x86_64 --artifact cli --packages none \
-            --target x86_64-unknown-linux-musl
-        shell: bash
-        env:
-          GIT_RELEASE_TAG: ${{ needs.prepare_metadata.outputs.release_tag }}
-          APPIMAGE_EXTRACT_AND_RUN: 1
-          # 让 script/linux/bundle 把 `cargo build` 切到 `cargo zigbuild`。
-          USE_ZIGBUILD: "true"
-          # libc(musl)被 +crt-static 静态链接进二进制 —— 这是让产物摆脱
-          # 宿主 glibc 下限的关键。`libdbus-sys` 现在通过 keyring 的
-          # `vendored` feature 从源码内嵌编译(见 Cargo.toml),不再用 pkg-config
-          # 探测宿主 `dbus-1`;`PKG_CONFIG_ALLOW_CROSS=1` 保留作兜底,
-          # 万一某个新引入的 -sys crate 还在用 pkg-config 也不会卡。
-          PKG_CONFIG_ALLOW_CROSS: 1
-
-      - name: Package CLI tarball
-        run: |
-          cp "${{ steps.bundle_cli.outputs.executable_path }}" zap-oss
-          tar czf zap-linux-x86_64.tar.gz \
-            zap-oss \
-            -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
-        shell: bash
-
-      - name: Upload CLI artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: zap-cli-linux-x86_64
-          path: zap-linux-x86_64.tar.gz
           if-no-files-found: error
           retention-days: 7
 
