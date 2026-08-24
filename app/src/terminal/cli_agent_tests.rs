@@ -252,6 +252,7 @@ fn test_detect_known_agents() {
                 ("claude", CLIAgent::Claude),
                 ("gemini", CLIAgent::Gemini),
                 ("codex", CLIAgent::Codex),
+                ("grok", CLIAgent::Grok),
                 ("deepseek", CLIAgent::DeepSeek),
                 ("deepseek-tui", CLIAgent::DeepSeek),
                 ("agy", CLIAgent::Antigravity),

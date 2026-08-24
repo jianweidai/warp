@@ -68,6 +68,7 @@ pub fn is_agent_supported(agent: &CLIAgent) -> bool {
             | CLIAgent::Pi
             | CLIAgent::DeepSeek
             | CLIAgent::Antigravity
+            | CLIAgent::Grok
     )
 }
 
@@ -86,6 +87,7 @@ fn create_handler(agent: &CLIAgent) -> Option<Box<dyn CLIAgentSessionHandler>> {
         | CLIAgent::Pi
         | CLIAgent::Antigravity => Some(Box::new(DefaultSessionListener)),
         CLIAgent::Codex => Some(Box::new(CodexSessionHandler)),
+        CLIAgent::Grok => Some(Box::new(GrokSessionHandler)),
         CLIAgent::DeepSeek => Some(Box::new(DeepSeekSessionHandler)),
         CLIAgent::Amp
         | CLIAgent::Droid
@@ -122,27 +124,31 @@ impl CLIAgentSessionHandler for DefaultSessionListener {
 /// notification title in the UI.
 struct CodexSessionHandler;
 
+fn parse_plain_text_osc9(agent: CLIAgent, body: &str) -> Option<CLIAgentEvent> {
+    let body = body.trim();
+    if body.is_empty() {
+        return None;
+    }
+
+    Some(CLIAgentEvent {
+        v: 1,
+        agent,
+        event: CLIAgentEventType::Stop,
+        session_id: None,
+        cwd: None,
+        project: None,
+        payload: CLIAgentEventPayload {
+            query: Some(body.to_owned()),
+            ..Default::default()
+        },
+    })
+}
+
 impl CodexSessionHandler {
     /// Parse a plain-text OSC 9 notification body into a `CLIAgentEvent`.
     /// Returns `None` only for empty bodies.
     fn parse_osc9_text(body: &str) -> Option<CLIAgentEvent> {
-        let body = body.trim();
-        if body.is_empty() {
-            return None;
-        }
-
-        Some(CLIAgentEvent {
-            v: 1,
-            agent: CLIAgent::Codex,
-            event: CLIAgentEventType::Stop,
-            session_id: None,
-            cwd: None,
-            project: None,
-            payload: CLIAgentEventPayload {
-                query: Some(body.to_owned()),
-                ..Default::default()
-            },
-        })
+        parse_plain_text_osc9(CLIAgent::Codex, body)
     }
 }
 
@@ -161,6 +167,29 @@ impl CLIAgentSessionHandler for CodexSessionHandler {
             return None;
         }
         Self::parse_osc9_text(body)
+    }
+
+    fn handle_event(&mut self, event: CLIAgentEvent) -> Option<CLIAgentEvent> {
+        Some(event)
+    }
+
+    fn supports_rich_status(&self) -> bool {
+        false
+    }
+}
+
+/// Grok Build 使用纯文本 OSC 9 通知报告回合完成。
+struct GrokSessionHandler;
+
+impl CLIAgentSessionHandler for GrokSessionHandler {
+    fn try_parse(&self, title: Option<&str>, body: &str) -> Option<CLIAgentEvent> {
+        if let Some(parsed) = parse_event(title, body) {
+            return Some(parsed);
+        }
+        if title.is_some() {
+            return None;
+        }
+        parse_plain_text_osc9(CLIAgent::Grok, body)
     }
 
     fn handle_event(&mut self, event: CLIAgentEvent) -> Option<CLIAgentEvent> {
@@ -338,6 +367,16 @@ mod tests {
         let handler = CodexSessionHandler;
         let event = handler.try_parse(None, "Agent turn complete").unwrap();
         assert_eq!(event.event, CLIAgentEventType::Stop);
+    }
+
+    #[test]
+    fn grok_osc9_notification_is_supported() {
+        assert!(is_agent_supported(&CLIAgent::Grok));
+        let handler = GrokSessionHandler;
+        let event = handler.try_parse(None, "Turn complete").unwrap();
+        assert_eq!(event.agent, CLIAgent::Grok);
+        assert_eq!(event.event, CLIAgentEventType::Stop);
+        assert_eq!(event.payload.query.as_deref(), Some("Turn complete"));
     }
 
     #[test]

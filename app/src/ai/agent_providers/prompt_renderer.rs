@@ -443,7 +443,9 @@ fn fallback_system(model_id: &str) -> String {
         "You are the AI coding agent inside Zap, an AI Development Environment (ADE). \
          Model: {model_id}. \
          Use the registered tools (run_shell_command / read_files / apply_file_diffs / grep / file_glob / ...) \
-         to take actions on the user's behalf. Be concise."
+         to take actions on the user's behalf. For multi-line Python validation, create a temporary \
+         .py file with apply_file_diffs, run it with run_shell_command, and delete it after a \
+         successful verification. Be concise."
     )
 }
 

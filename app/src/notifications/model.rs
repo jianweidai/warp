@@ -144,6 +144,7 @@ impl NotificationsModel {
                         .unwrap_or_else(|| format!("{} completed", agent.display_name()));
                     let message = match agent {
                         CLIAgent::Codex => "Notification from Codex",
+                        CLIAgent::Grok => "Notification from Grok",
                         CLIAgent::DeepSeek => "Notification from DeepSeek",
                         CLIAgent::Antigravity => "Notification from Antigravity",
                         _ => "Task completed.",

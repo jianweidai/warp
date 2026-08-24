@@ -1,3 +1,5 @@
+临时 Python 验证脚本应通过本工具的 `create` 操作创建，并在验证成功后通过 `delete` 操作清理。脚本应使用路径唯一的临时 `.py` 文件；验证失败时可保留脚本用于继续诊断，确认完成后不要把临时文件留在工作区。
+
 Batch-edit files. Each entry in `operations` is one of:
 
 - `edit` — Perform an exact string replacement in an existing file. Provide the file path, the existing string to replace (`old_string`), the new string (`new_string`), and `replace_all` if every occurrence should be replaced.

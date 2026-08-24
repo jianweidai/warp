@@ -439,6 +439,7 @@ pub enum CLIAgentType {
     Claude,
     Gemini,
     Codex,
+    Grok,
     Amp,
     Droid,
     OpenCode,

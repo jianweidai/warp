@@ -10045,7 +10045,10 @@ impl TerminalView {
 
                                     // 使用 OSC 9 通知的 agent 不会发结构化 SessionStart 事件，
                                     // 因此在命令检测时主动创建监听器。
-                                    if let Some((agent @ (CLIAgent::Codex | CLIAgent::DeepSeek), _)) =
+                                    if let Some((
+                                        agent @ (CLIAgent::Codex | CLIAgent::DeepSeek | CLIAgent::Grok),
+                                        _,
+                                    )) =
                                         detection
                                     {
                                         me.register_cli_agent_listener_without_session_start_event(
@@ -10878,7 +10881,10 @@ impl TerminalView {
                     let has_osc9_listener = CLIAgentSessionsModel::as_ref(ctx)
                         .session(self.view_id)
                         .is_some_and(|s| {
-                            matches!(s.agent, CLIAgent::Codex | CLIAgent::DeepSeek)
+                            matches!(
+                                s.agent,
+                                CLIAgent::Codex | CLIAgent::DeepSeek | CLIAgent::Grok
+                            )
                                 && s.listener.is_some()
                         });
                     if has_osc9_listener {

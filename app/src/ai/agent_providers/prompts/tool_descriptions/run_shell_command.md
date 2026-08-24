@@ -43,6 +43,10 @@ Avoid using shell with these — use the dedicated tool instead:
 
 NEVER use `echo` / `printf` to communicate with the user. Output normal text in your reply instead.
 
+# 多行 Python 调试
+
+需要调试或验证多行 Python 代码时，不要把代码塞进 `python -c` 或内联 shell 命令。先使用 `apply_file_diffs` 创建路径唯一的临时 `.py` 脚本，再用本工具执行 `python3 <脚本路径>` 并检查结果；验证成功后，必须使用 `apply_file_diffs` 的 `delete` 操作删除临时脚本。验证失败时可以暂时保留脚本继续定位问题，但任务结束前不要留下临时文件。
+
 # Git safety
 
 - NEVER run `git config`, `git push --force`, `git reset --hard`, `git checkout --`, `git rebase -i`, or commit hook bypass flags (`--no-verify`, `--no-gpg-sign`) unless the user explicitly requested them.

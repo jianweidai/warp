@@ -1,7 +1,7 @@
 //! CLI agent detection and configuration.
 //!
 //! This module provides types for detecting and working with CLI-based AI agents
-//! like Claude Code, Gemini CLI, Codex, Amp, and Droid.
+//! like Claude Code, Gemini CLI, Codex, Grok, Amp, and Droid.
 
 use ai::skills::SkillProvider;
 use enum_iterator::Sequence;
@@ -44,6 +44,14 @@ pub(crate) const GEMINI_BLUE: ColorU = ColorU {
 
 /// OpenAI brand color (dark gray/black)
 const OPENAI_COLOR: ColorU = ColorU {
+    r: 0,
+    g: 0,
+    b: 0,
+    a: 255,
+};
+
+/// Grok 品牌色（黑色，单色图标）
+const GROK_COLOR: ColorU = ColorU {
     r: 0,
     g: 0,
     b: 0,
@@ -137,12 +145,13 @@ const OMP_COLOR: ColorU = ColorU {
     a: 255,
 };
 
-/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose)
+/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Grok, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
 pub enum CLIAgent {
     Claude,
     Gemini,
     Codex,
+    Grok,
     Amp,
     Droid,
     OpenCode,
@@ -165,6 +174,7 @@ impl CLIAgent {
             CLIAgent::Claude => "claude",
             CLIAgent::Gemini => "gemini",
             CLIAgent::Codex => "codex",
+            CLIAgent::Grok => "grok",
             CLIAgent::Amp => "amp",
             CLIAgent::Droid => "droid",
             CLIAgent::OpenCode => "opencode",
@@ -210,6 +220,7 @@ impl CLIAgent {
             CLIAgent::Claude => "Claude Code",
             CLIAgent::Gemini => "Gemini",
             CLIAgent::Codex => "Codex",
+            CLIAgent::Grok => "Grok",
             CLIAgent::Amp => "Amp",
             CLIAgent::Droid => "Droid",
             CLIAgent::OpenCode => "OpenCode",
@@ -231,6 +242,7 @@ impl CLIAgent {
             CLIAgent::Claude => Some(Icon::ClaudeLogo),
             CLIAgent::Gemini => Some(Icon::GeminiLogo),
             CLIAgent::Codex => Some(Icon::OpenAILogo),
+            CLIAgent::Grok => Some(Icon::GrokLogo),
             CLIAgent::Amp => Some(Icon::AmpLogo),
             CLIAgent::Droid => Some(Icon::DroidLogo),
             CLIAgent::OpenCode => Some(Icon::OpenCodeLogo),
@@ -257,6 +269,7 @@ impl CLIAgent {
                 SkillProvider::Claude,
                 SkillProvider::Codex,
             ],
+            CLIAgent::Grok => &[SkillProvider::Agents],
             CLIAgent::OpenCode => &[
                 SkillProvider::OpenCode,
                 SkillProvider::Agents,
@@ -305,6 +318,7 @@ impl CLIAgent {
             CLIAgent::Claude => Some(CLAUDE_ORANGE),
             CLIAgent::Gemini => Some(GEMINI_BLUE),
             CLIAgent::Codex => Some(OPENAI_COLOR),
+            CLIAgent::Grok => Some(GROK_COLOR),
             CLIAgent::Amp => Some(AMP_COLOR),
             CLIAgent::Droid => Some(DROID_COLOR),
             CLIAgent::OpenCode => Some(OPENCODE_COLOR),
@@ -569,6 +583,7 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Claude => CLIAgentType::Claude,
             CLIAgent::Gemini => CLIAgentType::Gemini,
             CLIAgent::Codex => CLIAgentType::Codex,
+            CLIAgent::Grok => CLIAgentType::Grok,
             CLIAgent::Amp => CLIAgentType::Amp,
             CLIAgent::Droid => CLIAgentType::Droid,
             CLIAgent::OpenCode => CLIAgentType::OpenCode,
