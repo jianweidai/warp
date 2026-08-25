@@ -10,7 +10,7 @@ use warpui::elements::{
     Shrinkable, Text,
 };
 use warpui::r#async::SpawnedFutureHandle;
-use warpui::{AppContext, Entity, View, ViewContext};
+use warpui::{AppContext, Entity, SingletonEntity, View, ViewContext};
 
 #[derive(Clone, Debug)]
 pub enum GitHistoryDiffEvent {

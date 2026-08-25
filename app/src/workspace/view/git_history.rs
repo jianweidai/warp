@@ -23,7 +23,8 @@ use warpui::elements::{
 };
 use warpui::platform::Cursor;
 use warpui::{
-    AppContext, Entity, ModelContext, ModelHandle, TypedActionView, View, ViewContext, ViewHandle,
+    AppContext, Entity, ModelContext, ModelHandle, SingletonEntity, TypedActionView, View,
+    ViewContext, ViewHandle,
 };
 
 const PAGE_SIZE: usize = 50;
@@ -33,7 +34,15 @@ const PAGE_SIZE: usize = 50;
 pub enum GitHistoryAction {
     Refresh,
     LoadMore,
-    ToggleCommit { hash: String },
+    ToggleCommit {
+        hash: String,
+    },
+    OpenFileDiff {
+        repo_path: PathBuf,
+        commit_hash: String,
+        commit_subject: String,
+        file_path: String,
+    },
 }
 
 /// Git 历史模型发生变化时通知视图重新渲染。
@@ -337,6 +346,10 @@ pub struct GitHistoryView {
     load_more_button: ViewHandle<ActionButton>,
 }
 
+impl Entity for GitHistoryView {
+    type Event = GitHistoryEvent;
+}
+
 impl GitHistoryView {
     pub fn new(
         working_directories_model: ModelHandle<WorkingDirectoriesModel>,
@@ -615,7 +628,7 @@ impl GitHistoryView {
                         })
                         .on_click(move |ctx, _, _| {
                             if let Some(repo_path) = repo_path.clone() {
-                                ctx.emit(GitHistoryEvent::OpenFileDiff {
+                                ctx.dispatch_typed_action(GitHistoryAction::OpenFileDiff {
                                     repo_path,
                                     commit_hash: commit_hash.clone(),
                                     commit_subject: commit_subject.clone(),
@@ -649,18 +662,36 @@ impl TypedActionView for GitHistoryView {
     type Action = GitHistoryAction;
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
-        let Some(history_model) = self.history_model.as_ref() else {
-            return;
-        };
-
         match action {
+            GitHistoryAction::OpenFileDiff {
+                repo_path,
+                commit_hash,
+                commit_subject,
+                file_path,
+            } => {
+                ctx.emit(GitHistoryEvent::OpenFileDiff {
+                    repo_path: repo_path.clone(),
+                    commit_hash: commit_hash.clone(),
+                    commit_subject: commit_subject.clone(),
+                    file_path: file_path.clone(),
+                });
+            }
             GitHistoryAction::Refresh => {
+                let Some(history_model) = self.history_model.as_ref() else {
+                    return;
+                };
                 history_model.update(ctx, |model, ctx| model.refresh(ctx));
             }
             GitHistoryAction::LoadMore => {
+                let Some(history_model) = self.history_model.as_ref() else {
+                    return;
+                };
                 history_model.update(ctx, |model, ctx| model.load_more(ctx));
             }
             GitHistoryAction::ToggleCommit { hash } => {
+                let Some(history_model) = self.history_model.as_ref() else {
+                    return;
+                };
                 if !self.expanded_commits.insert(hash.clone()) {
                     self.expanded_commits.remove(hash);
                 } else {
