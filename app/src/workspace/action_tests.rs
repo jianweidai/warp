@@ -26,6 +26,11 @@ fn toggle_skill_manager_saves_workspace_state() {
 }
 
 #[test]
+fn toggle_git_history_saves_workspace_state() {
+    assert!(WorkspaceAction::ToggleGitHistory.should_save_app_state_on_action());
+}
+
+#[test]
 fn settings_popup_toggle_does_not_save_workspace_state() {
     assert!(!WorkspaceAction::ToggleVerticalTabsSettingsPopup.should_save_app_state_on_action());
 }

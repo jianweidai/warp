@@ -25,6 +25,7 @@ use crate::code::editor_management::CodeSource;
 use crate::code::file_tree::FileTreeEvent;
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
 use crate::drive::panel::{DrivePanel, DrivePanelEvent};
+use crate::features::FeatureFlag;
 use crate::pane_group::working_directories::WorkingDirectory;
 use crate::pane_group::{PaneGroup, WorkingDirectoriesEvent, WorkingDirectoriesModel};
 #[cfg(feature = "local_fs")]
@@ -45,11 +46,15 @@ use crate::workspace::view::conversation_list::view::{
 use crate::workspace::view::global_search::view::{
     Event as GlobalSearchViewEvent, GlobalSearchEntryFocus, GlobalSearchView,
 };
+use crate::workspace::view::git_history::GitHistoryView;
+#[cfg(feature = "local_fs")]
+use crate::workspace::view::git_history::GitHistoryEvent;
 use crate::workspace::view::server_file_browser::{
     ServerFileBrowserEvent, ServerFileBrowserView,
 };
 use crate::workspace::view::{
     LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME, LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME,
+    LEFT_PANEL_GIT_HISTORY_BINDING_NAME,
     LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME, LEFT_PANEL_SKILL_MANAGER_BINDING_NAME,
     LEFT_PANEL_SSH_MANAGER_BINDING_NAME, LEFT_PANEL_WARP_DRIVE_BINDING_NAME,
     OPEN_GLOBAL_SEARCH_BINDING_NAME, TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME,
@@ -80,6 +85,7 @@ struct MouseStateHandles {
     ssh_manager_button: MouseStateHandle,
     server_file_browser_button: MouseStateHandle,
     skill_manager_button: MouseStateHandle,
+    git_history_button: MouseStateHandle,
 }
 
 #[derive(Clone, Debug)]
@@ -91,6 +97,7 @@ pub enum LeftPanelAction {
     SshManager,
     ServerFileBrowser,
     SkillManager,
+    GitHistory,
 }
 
 pub enum LeftPanelEvent {
@@ -103,6 +110,13 @@ pub enum LeftPanelEvent {
         path: PathBuf,
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
+    },
+    #[cfg(feature = "local_fs")]
+    OpenGitHistoryDiff {
+        repo_path: PathBuf,
+        commit_hash: String,
+        commit_subject: String,
+        file_path: String,
     },
     OpenSkillFile {
         source: CodeSource,
@@ -150,6 +164,7 @@ pub enum ToolPanelView {
     SshManager,
     ServerFileBrowser,
     SkillManager,
+    GitHistory,
 }
 
 /// Encapsulates the active view state to enforce that all mutations go through
@@ -348,12 +363,11 @@ impl LeftPanelView {
             },
         );
 
-        ctx.subscribe_to_model(&working_directories_model, |me, _, event, ctx| {
-            if let WorkingDirectoriesEvent::DirectoriesChanged {
+        ctx.subscribe_to_model(&working_directories_model, |me, _, event, ctx| match event {
+            WorkingDirectoriesEvent::DirectoriesChanged {
                 pane_group_id,
                 directories,
-            } = event
-            {
+            } => {
                 let Some(active_pane_group) = &me.active_pane_group else {
                     return;
                 };
@@ -395,6 +409,30 @@ impl LeftPanelView {
                 });
                 ctx.notify();
             }
+            WorkingDirectoriesEvent::FocusedRepoChanged {
+                pane_group_id,
+                focused_repo,
+                ..
+            } => {
+                if !FeatureFlag::GitHistorySidebar.is_enabled() {
+                    return;
+                }
+                let Some(active_pane_group) = &me.active_pane_group else {
+                    return;
+                };
+                let Some(active_pane_group) = active_pane_group.upgrade(ctx) else {
+                    return;
+                };
+                if active_pane_group.id() != *pane_group_id {
+                    return;
+                }
+                let git_history_view =
+                    me.get_or_create_git_history_view_for_pane_group(*pane_group_id, ctx);
+                git_history_view.update(ctx, |view, ctx| {
+                    view.set_repository(focused_repo.clone(), ctx);
+                });
+            }
+            WorkingDirectoriesEvent::RepositoriesChanged { .. } => {}
         });
 
         let mut view = Self {
@@ -577,6 +615,18 @@ impl LeftPanelView {
                     tooltip_keybinding_names,
                 }
             }
+            ToolPanelView::GitHistory => {
+                let tooltip_keybinding_names = vec![LEFT_PANEL_GIT_HISTORY_BINDING_NAME];
+                ToolbeltButtonConfig {
+                    icon: Icon::GitBranch,
+                    active_icon: None,
+                    tooltip_text: crate::t!("workspace-left-panel-git-history"),
+                    action: LeftPanelAction::GitHistory,
+                    render_with_active_state: false,
+                    tooltip_keybinding: toolbelt_tooltip_keybinding(&tooltip_keybinding_names, ctx),
+                    tooltip_keybinding_names,
+                }
+            }
         }
     }
 
@@ -633,6 +683,49 @@ impl LeftPanelView {
         file_tree_view
     }
 
+    fn get_or_create_git_history_view_for_pane_group(
+        &mut self,
+        pane_group_id: warpui::EntityId,
+        ctx: &mut ViewContext<Self>,
+    ) -> ViewHandle<GitHistoryView> {
+        if let Some(view) = self
+            .working_directories_model
+            .as_ref(ctx)
+            .get_git_history_view(pane_group_id)
+        {
+            return view;
+        }
+
+        let working_directories_model = self.working_directories_model.clone();
+        let git_history_view = ctx.add_typed_action_view(move |ctx| {
+            GitHistoryView::new(working_directories_model.clone(), ctx)
+        });
+
+        #[cfg(feature = "local_fs")]
+        ctx.subscribe_to_view(&git_history_view, |_me, _, event, ctx| {
+            if let GitHistoryEvent::OpenFileDiff {
+                repo_path,
+                commit_hash,
+                commit_subject,
+                file_path,
+            } = event
+            {
+                ctx.emit(LeftPanelEvent::OpenGitHistoryDiff {
+                    repo_path: repo_path.clone(),
+                    commit_hash: commit_hash.clone(),
+                    commit_subject: commit_subject.clone(),
+                    file_path: file_path.clone(),
+                });
+            }
+        });
+
+        self.working_directories_model.update(ctx, |model, _ctx| {
+            model.store_git_history_view(pane_group_id, git_history_view.clone());
+        });
+
+        git_history_view
+    }
+
     pub fn active_global_search_view(
         &self,
         app: &AppContext,
@@ -656,6 +749,17 @@ impl LeftPanelView {
         self.working_directories_model
             .as_ref(app)
             .get_file_tree_view(pane_group_id)
+    }
+
+    fn active_git_history_view(&self, app: &AppContext) -> Option<ViewHandle<GitHistoryView>> {
+        let pane_group_id = self
+            .active_pane_group
+            .as_ref()
+            .and_then(|pane_group| pane_group.upgrade(app))
+            .map(|pane_group| pane_group.id())?;
+        self.working_directories_model
+            .as_ref(app)
+            .get_git_history_view(pane_group_id)
     }
 
     pub fn set_server_file_browser_root(
@@ -781,6 +885,17 @@ impl LeftPanelView {
             }
         });
 
+        if FeatureFlag::GitHistorySidebar.is_enabled() {
+            let focused_repo = working_directories_model
+                .as_ref(ctx)
+                .focused_repo_for_pane_group(pane_group_id);
+            let git_history_view =
+                self.get_or_create_git_history_view_for_pane_group(pane_group_id, ctx);
+            git_history_view.update(ctx, |view, ctx| {
+                view.set_repository(focused_repo, ctx);
+            });
+        }
+
         self.on_left_panel_visibility_changed(left_panel_open, ctx);
 
         ctx.notify();
@@ -854,6 +969,11 @@ impl LeftPanelView {
             }
             ToolPanelView::SkillManager => {
                 ctx.focus(&self.skill_manager_view);
+            }
+            ToolPanelView::GitHistory => {
+                if let Some(view) = self.active_git_history_view(ctx) {
+                    ctx.focus(&view);
+                }
             }
         }
     }
@@ -1030,6 +1150,7 @@ impl LeftPanelView {
                 LeftPanelAction::SkillManager => {
                     self.active_view.get() == ToolPanelView::SkillManager
                 }
+                LeftPanelAction::GitHistory => self.active_view.get() == ToolPanelView::GitHistory,
             };
         }
     }
@@ -1102,7 +1223,8 @@ impl LeftPanelView {
             | LeftPanelAction::ConversationListView
             | LeftPanelAction::SshManager
             | LeftPanelAction::ServerFileBrowser
-            | LeftPanelAction::SkillManager => {
+            | LeftPanelAction::SkillManager
+            | LeftPanelAction::GitHistory => {
                 ctx.dispatch_typed_action(action.clone());
             }
         })
@@ -1189,6 +1311,9 @@ impl LeftPanelView {
             }
             LeftPanelAction::SkillManager => {
                 active_view_state::set(self, ToolPanelView::SkillManager, ctx);
+            }
+            LeftPanelAction::GitHistory => {
+                active_view_state::set(self, ToolPanelView::GitHistory, ctx);
             }
         }
     }
@@ -1292,6 +1417,11 @@ impl View for LeftPanelView {
                 ToolPanelView::SshManager => ctx.focus(&self.ssh_manager_view),
                 ToolPanelView::ServerFileBrowser => ctx.focus(&self.server_file_browser_view),
                 ToolPanelView::SkillManager => ctx.focus(&self.skill_manager_view),
+                ToolPanelView::GitHistory => {
+                    if let Some(view) = self.active_git_history_view(ctx) {
+                        ctx.focus(&view);
+                    }
+                }
             }
         }
     }
@@ -1309,6 +1439,7 @@ impl View for LeftPanelView {
             self.mouse_state_handles.ssh_manager_button.clone(),
             self.mouse_state_handles.server_file_browser_button.clone(),
             self.mouse_state_handles.skill_manager_button.clone(),
+            self.mouse_state_handles.git_history_button.clone(),
         ];
 
         // If there is only one button in the toolbelt row,
@@ -1391,6 +1522,20 @@ impl View for LeftPanelView {
                     .finish(),
             )
             .finish(),
+            ToolPanelView::GitHistory => {
+                if let Some(git_history_view) = self.active_git_history_view(app) {
+                    Shrinkable::new(
+                        1.0,
+                        Container::new(ChildView::new(&git_history_view).finish())
+                            .with_padding_left(2.)
+                            .with_padding_right(2.)
+                            .finish(),
+                    )
+                    .finish()
+                } else {
+                    Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
+                }
+            }
         };
 
         let panel_content = Container::new({

@@ -3,6 +3,9 @@ pub mod conversation_list;
 #[cfg(enable_crash_recovery)]
 mod crash_recovery;
 pub mod global_search;
+pub mod git_history;
+#[cfg(feature = "local_fs")]
+pub mod git_history_diff;
 pub(crate) mod launch_modal;
 pub(crate) mod left_panel;
 pub(crate) mod onboarding;
@@ -583,6 +586,7 @@ pub(crate) const LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME: &str =
     "workspace:left_panel_agent_conversations";
 pub(crate) const LEFT_PANEL_SSH_MANAGER_BINDING_NAME: &str = "workspace:left_panel_ssh_manager";
 pub(crate) const LEFT_PANEL_SKILL_MANAGER_BINDING_NAME: &str = "workspace:left_panel_skill_manager";
+pub(crate) const LEFT_PANEL_GIT_HISTORY_BINDING_NAME: &str = "workspace:left_panel_git_history";
 
 const KEYBINDINGS_TO_CACHE: [&str; 4] = [
     ASK_AI_ASSISTANT_KEYBINDING_NAME,
@@ -3555,6 +3559,7 @@ impl Workspace {
                 LeftPanelDisplayedTab::SshManager => ToolPanelView::SshManager,
                 LeftPanelDisplayedTab::ServerFileBrowser => ToolPanelView::ServerFileBrowser,
                 LeftPanelDisplayedTab::SkillManager => ToolPanelView::SkillManager,
+                LeftPanelDisplayedTab::GitHistory => ToolPanelView::GitHistory,
             };
             lp.restore_active_view_from_snapshot(active_view, ctx);
             lp.set_active_pane_group(pane_group.clone(), &self.working_directories_model, ctx);
@@ -5287,6 +5292,21 @@ impl Workspace {
                     target.clone(),
                     *line_col,
                     CodeSource::FileTree { path: path.clone() },
+                    ctx,
+                );
+            }
+            #[cfg(feature = "local_fs")]
+            LeftPanelEvent::OpenGitHistoryDiff {
+                repo_path,
+                commit_hash,
+                commit_subject,
+                file_path,
+            } => {
+                self.open_git_history_diff(
+                    repo_path.clone(),
+                    commit_hash.clone(),
+                    commit_subject.clone(),
+                    file_path.clone(),
                     ctx,
                 );
             }
@@ -8075,6 +8095,65 @@ impl Workspace {
                 right_panel.update_selected_repo(repo_path.clone(), ctx);
             });
         }
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn open_git_history_diff(
+        &mut self,
+        repo_path: PathBuf,
+        commit_hash: String,
+        commit_subject: String,
+        file_path: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let pane_group = self.active_tab_pane_group().clone();
+        let right_panel_is_open = pane_group.as_ref(ctx).right_panel_open;
+        let terminal_view = pane_group.read(ctx, |pane_group, ctx| {
+            pane_group
+                .active_session_view(ctx)
+                .map(|terminal_view| terminal_view.downgrade())
+        });
+
+        if let Some(terminal_view) = terminal_view {
+            let diff_state_model = self.working_directories_model.update(ctx, |model, ctx| {
+                model.get_or_create_diff_state_model(repo_path.clone(), ctx)
+            });
+            if let Some(diff_state_model) = diff_state_model {
+                let context = CodeReviewPaneContext {
+                    repo_path: Some(repo_path.clone()),
+                    diff_state_model,
+                    terminal_view,
+                };
+                self.open_right_panel(
+                    &context,
+                    &pane_group,
+                    CodeReviewPaneEntrypoint::RightPanel,
+                    None,
+                    ctx,
+                );
+            }
+        } else if !right_panel_is_open {
+            self.update_right_panel_open_state(
+                RightPanelUpdateParams {
+                    pane_group: &pane_group,
+                    target_open_state: true,
+                    entrypoint: Some(CodeReviewPaneEntrypoint::RightPanel),
+                    cli_agent: None,
+                    review_pane_context: None,
+                },
+                ctx,
+            );
+        }
+
+        self.right_panel_view.update(ctx, |right_panel, ctx| {
+            right_panel.open_git_history_diff(
+                repo_path,
+                commit_hash,
+                commit_subject,
+                file_path,
+                ctx,
+            );
+        });
     }
 
     #[cfg(not(feature = "local_fs"))]
@@ -15888,6 +15967,9 @@ impl Workspace {
                         ToolPanelView::SkillManager => {
                             crate::t!("workspace-left-panel-skill-manager")
                         }
+                        ToolPanelView::GitHistory => {
+                            crate::t!("workspace-left-panel-git-history")
+                        }
                     }
                 } else {
                     crate::t!("workspace-tools-panel-tooltip")
@@ -15957,6 +16039,7 @@ impl Workspace {
                 ToolPanelView::SkillManager => {
                     crate::t!("workspace-left-panel-skill-manager")
                 }
+                ToolPanelView::GitHistory => crate::t!("workspace-left-panel-git-history"),
             }
         } else {
             crate::t!("workspace-tools-panel-tooltip")
@@ -18766,6 +18849,9 @@ impl Workspace {
         if cfg!(feature = "local_fs") {
             views.push(ToolPanelView::SkillManager);
         }
+        if cfg!(feature = "local_fs") && FeatureFlag::GitHistorySidebar.is_enabled() {
+            views.push(ToolPanelView::GitHistory);
+        }
         views
     }
 
@@ -20381,6 +20467,13 @@ impl TypedActionView for Workspace {
                 let is_showing =
                     self.left_panel_view.as_ref(ctx).active_view() == ToolPanelView::SkillManager;
                 self.toggle_left_panel_view(&LeftPanelAction::SkillManager, is_showing, ctx);
+            }
+            ToggleGitHistory => {
+                if cfg!(feature = "local_fs") && FeatureFlag::GitHistorySidebar.is_enabled() {
+                    let is_showing =
+                        self.left_panel_view.as_ref(ctx).active_view() == ToolPanelView::GitHistory;
+                    self.toggle_left_panel_view(&LeftPanelAction::GitHistory, is_showing, ctx);
+                }
             }
             ToggleGlobalSearch => {
                 if FeatureFlag::GlobalSearch.is_enabled()

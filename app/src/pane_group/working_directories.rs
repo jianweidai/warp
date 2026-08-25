@@ -21,6 +21,7 @@ use crate::code_review::{
     diff_state::{DiffMode, DiffStateModel},
 };
 use crate::workspace::view::global_search::view::GlobalSearchView;
+use crate::workspace::view::git_history::{GitHistoryModel, GitHistoryView};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WorkingDirectory {
@@ -89,6 +90,9 @@ pub struct WorkingDirectoriesModel {
     /// Like the DiffStateModel mapping, comments are inherently tied to git diffs
     /// and are shared across all pane groups viewing the same repo.
     comment_models: HashMap<PathBuf, ModelHandle<ReviewCommentBatch>>,
+    /// 按仓库根路径共享 Git 历史模型。
+    /// 多个左侧面板查看同一仓库时共用历史缓存和仓库监听器。
+    git_history_models: HashMap<PathBuf, ModelHandle<GitHistoryModel>>,
     /// Per-pane-group mapping from repository root paths to their CodeReviewView.
     /// This allows reusing code review views across multiple requests for the same repo.
     code_review_views: HashMap<EntityId, HashMap<PathBuf, ViewHandle<CodeReviewView>>>,
@@ -96,6 +100,7 @@ pub struct WorkingDirectoriesModel {
     focused_repo: HashMap<EntityId, Option<PathBuf>>,
     global_search_views: HashMap<EntityId, ViewHandle<GlobalSearchView>>,
     file_tree_views: HashMap<EntityId, ViewHandle<FileTreeView>>,
+    git_history_views: HashMap<EntityId, ViewHandle<GitHistoryView>>,
 }
 
 #[derive(Default)]
@@ -193,6 +198,22 @@ impl WorkingDirectoriesModel {
         Some(diff_state_model)
     }
 
+    /// 获取或创建仓库对应的共享 Git 历史模型。
+    pub fn get_or_create_git_history_model(
+        &mut self,
+        repo_path: PathBuf,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<ModelHandle<GitHistoryModel>> {
+        if let Some(model) = self.git_history_models.get(&repo_path) {
+            return Some(model.clone());
+        }
+
+        let history_model = ctx.add_model(|ctx| GitHistoryModel::new(repo_path.clone(), ctx));
+        self.git_history_models
+            .insert(repo_path, history_model.clone());
+        Some(history_model)
+    }
+
     /// DiffStateModels are shared across tabs. When you delete repos from one tab,
     /// we should check if its still in use in any tab. If not, stop its watcher and delete it.
     fn drop_unused_diff_state_models(
@@ -207,6 +228,27 @@ impl WorkingDirectoriesModel {
                 .all(|tab| !tab.contains(&repo_path))
             {
                 if let Some(model) = self.diff_state_models.remove(&repo_path) {
+                    model.update(ctx, |model, ctx| {
+                        model.stop_active_watcher(ctx);
+                    });
+                }
+            }
+        }
+    }
+
+    /// 删除已不再被任何面板组使用的 Git 历史模型。
+    fn drop_unused_git_history_models(
+        &mut self,
+        removed_repos: impl Iterator<Item = PathBuf>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        for repo_path in removed_repos {
+            if self
+                .repository_roots
+                .values()
+                .all(|tab| !tab.contains(&repo_path))
+            {
+                if let Some(model) = self.git_history_models.remove(&repo_path) {
                     model.update(ctx, |model, ctx| {
                         model.stop_active_watcher(ctx);
                     });
@@ -298,6 +340,25 @@ impl WorkingDirectoriesModel {
         self.file_tree_views.get(&pane_group_id).cloned()
     }
 
+    pub fn store_git_history_view(
+        &mut self,
+        pane_group_id: EntityId,
+        view: ViewHandle<GitHistoryView>,
+    ) {
+        self.git_history_views.insert(pane_group_id, view);
+    }
+
+    pub fn get_git_history_view(
+        &self,
+        pane_group_id: EntityId,
+    ) -> Option<ViewHandle<GitHistoryView>> {
+        self.git_history_views.get(&pane_group_id).cloned()
+    }
+
+    pub fn focused_repo_for_pane_group(&self, pane_group_id: EntityId) -> Option<PathBuf> {
+        self.focused_repo.get(&pane_group_id).cloned().flatten()
+    }
+
     /// Permanently removes all state associated with a pane group.
     /// This should be called when a tab is closed (pane group is destroyed),
     /// as opposed to handle_empty_pane_group which is called when working directories
@@ -310,6 +371,7 @@ impl WorkingDirectoriesModel {
         // but need to be removed when the pane group is destroyed
         self.global_search_views.remove(&pane_group_id);
         self.file_tree_views.remove(&pane_group_id);
+        self.git_history_views.remove(&pane_group_id);
         self.code_review_views.remove(&pane_group_id);
         self.focused_repo.remove(&pane_group_id);
     }
@@ -321,7 +383,9 @@ impl WorkingDirectoriesModel {
         let did_remove_repos = removed_repos.is_some();
 
         if let Some(removed_repos) = removed_repos {
-            self.drop_unused_diff_state_models(removed_repos.into_iter(), ctx);
+            let removed_repos: Vec<PathBuf> = removed_repos.into_iter().collect();
+            self.drop_unused_diff_state_models(removed_repos.iter().cloned(), ctx);
+            self.drop_unused_git_history_models(removed_repos.into_iter(), ctx);
         }
 
         if did_remove_dirs {
@@ -492,12 +556,12 @@ impl WorkingDirectoriesModel {
         }
 
         if old_repos != new_deduplicated_repos {
-            self.drop_unused_diff_state_models(
-                old_repos
-                    .into_iter()
-                    .filter(|repo| !new_deduplicated_repos.contains(repo)),
-                ctx,
-            );
+            let removed_repos: Vec<PathBuf> = old_repos
+                .into_iter()
+                .filter(|repo| !new_deduplicated_repos.contains(repo))
+                .collect();
+            self.drop_unused_diff_state_models(removed_repos.iter().cloned(), ctx);
+            self.drop_unused_git_history_models(removed_repos.into_iter(), ctx);
             self.emit_repositories_changed(pane_group_id, ctx);
         }
 
@@ -649,6 +713,14 @@ impl WorkingDirectoriesModel {
         None
     }
 
+    pub fn get_or_create_git_history_model(
+        &mut self,
+        _repo_path: PathBuf,
+        _ctx: &mut ModelContext<Self>,
+    ) -> Option<ModelHandle<GitHistoryModel>> {
+        None
+    }
+
     pub fn get_or_create_code_review_comments(
         &mut self,
         _repo_path: &Path,
@@ -698,6 +770,24 @@ impl WorkingDirectoriesModel {
         &self,
         _pane_group_id: EntityId,
     ) -> Option<ViewHandle<crate::code::file_tree::FileTreeView>> {
+        None
+    }
+
+    pub fn store_git_history_view(
+        &mut self,
+        _pane_group_id: EntityId,
+        _view: ViewHandle<GitHistoryView>,
+    ) {
+    }
+
+    pub fn get_git_history_view(
+        &self,
+        _pane_group_id: EntityId,
+    ) -> Option<ViewHandle<GitHistoryView>> {
+        None
+    }
+
+    pub fn focused_repo_for_pane_group(&self, _pane_group_id: EntityId) -> Option<PathBuf> {
         None
     }
 

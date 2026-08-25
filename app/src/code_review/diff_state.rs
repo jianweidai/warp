@@ -2707,7 +2707,7 @@ impl DiffStateModel {
     }
 
     /// Check for hidden bidirectional characters in diff output
-    fn check_for_hidden_bidi_chars(diff_output: &str) -> bool {
+    pub(crate) fn check_for_hidden_bidi_chars(diff_output: &str) -> bool {
         diff_output.chars().any(|c| BIDI_CHARS.contains(&c))
     }
 

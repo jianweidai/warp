@@ -320,12 +320,38 @@ pub struct Commit {
     pub deletions: usize,
 }
 
+/// Git 提交历史中用于左侧面板展示的提交摘要。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitHistoryCommit {
+    pub hash: String,
+    pub short_hash: String,
+    pub subject: String,
+    pub author: String,
+    pub committed_at: String,
+}
+
+/// 一页提交历史及其分页状态。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitHistoryPage {
+    pub commits: Vec<GitHistoryCommit>,
+    pub has_more: bool,
+}
+
 /// A single changed file with per-file addition/deletion counts.
 #[derive(Debug, Clone)]
 pub struct FileChangeEntry {
     pub path: String,
     pub additions: usize,
     pub deletions: usize,
+}
+
+/// 指定提交中单个文件的历史差异原文。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitHistoryFileDiff {
+    pub path: String,
+    pub patch: String,
+    pub is_binary: bool,
+    pub is_too_large: bool,
 }
 
 /// Returns per-file change entries. When `include_unstaged` is true, returns all
@@ -464,6 +490,67 @@ fn parse_commit_log(output: &str) -> Result<Vec<Commit>> {
     Ok(commits)
 }
 
+/// 解析 `git log` 为提交历史摘要。
+#[cfg(any(feature = "local_fs", test))]
+fn parse_commit_history(output: &str) -> Vec<GitHistoryCommit> {
+    output
+        .split('\x01')
+        .filter_map(|record| {
+            let record = record.trim_matches(['\r', '\n']);
+            if record.is_empty() {
+                return None;
+            }
+
+            let mut fields = record.split('\0');
+            Some(GitHistoryCommit {
+                hash: fields.next()?.to_string(),
+                short_hash: fields.next()?.to_string(),
+                author: fields.next()?.to_string(),
+                committed_at: fields.next()?.to_string(),
+                subject: fields.next()?.to_string(),
+            })
+        })
+        .collect()
+}
+
+/// 返回当前分支按第一父提交路径排列的提交历史。
+///
+/// 命令会额外读取一条记录，让调用方无需单独统计数量即可判断是否存在下一页。
+#[cfg(feature = "local_fs")]
+pub async fn get_commit_history(
+    repo_path: &Path,
+    skip: usize,
+    limit: usize,
+) -> Result<GitHistoryPage> {
+    let limit = limit.max(1);
+    let fetch_limit = limit.saturating_add(1);
+    let max_count = format!("--max-count={fetch_limit}");
+    let skip = format!("--skip={skip}");
+    let format = "--format=%H%x00%h%x00%an%x00%aI%x00%s%x01";
+    let output = run_git_command(
+        repo_path,
+        &["log", "--first-parent", "HEAD", &max_count, &skip, format],
+    )
+    .await?;
+
+    let mut commits = parse_commit_history(&output);
+    let has_more = commits.len() > limit;
+    if has_more {
+        commits.truncate(limit);
+    }
+
+    Ok(GitHistoryPage { commits, has_more })
+}
+
+#[cfg(not(feature = "local_fs"))]
+pub async fn get_commit_history(
+    _repo_path: &Path,
+    _skip: usize,
+    _limit: usize,
+) -> Result<GitHistoryPage> {
+    Err(anyhow!("Not supported on wasm"))
+}
+
 #[cfg(not(feature = "local_fs"))]
 pub async fn get_unpushed_commits(
     _repo_path: &Path,
@@ -476,18 +563,7 @@ pub async fn get_unpushed_commits(
 /// Returns the list of files changed in a specific commit, with per-file stats.
 #[cfg(feature = "local_fs")]
 pub async fn get_commit_files(repo_path: &Path, hash: &str) -> Result<Vec<FileChangeEntry>> {
-    let output = run_git_command(
-        repo_path,
-        &[
-            "diff-tree",
-            "--root",
-            "--no-commit-id",
-            "-r",
-            "--numstat",
-            hash,
-        ],
-    )
-    .await?;
+    let output = run_commit_diff(repo_path, hash, &[], &["--numstat", "--find-renames"]).await?;
 
     let mut entries = Vec::new();
     for line in output.lines() {
@@ -507,8 +583,135 @@ pub async fn get_commit_files(repo_path: &Path, hash: &str) -> Result<Vec<FileCh
     Ok(entries)
 }
 
+/// 历史 Diff 的最大字节数，与代码评审使用的不可渲染上限保持一致。
+#[cfg(feature = "local_fs")]
+const MAX_GIT_HISTORY_DIFF_BYTES: usize = 4_375_000;
+
+/// 返回指定提交相对于第一父提交的单文件差异。
+///
+/// 这里比较的是两个提交对象，而不是当前工作区，避免用户在历史侧栏点击文件时
+/// 看到当前未提交内容。根提交和合并提交分别使用 Git 的根提交模式和第一父提交。
+#[cfg(feature = "local_fs")]
+pub async fn get_commit_file_diff(
+    repo_path: &Path,
+    hash: &str,
+    path: &str,
+) -> Result<GitHistoryFileDiff> {
+    let diff_paths = commit_file_diff_paths(path);
+    let numstat = run_commit_diff(
+        repo_path,
+        hash,
+        &diff_paths,
+        &["--numstat", "--find-renames"],
+    )
+    .await?;
+    let is_binary = numstat.lines().any(|line| line.starts_with("-\t-\t"));
+
+    let patch = run_commit_diff(
+        repo_path,
+        hash,
+        &diff_paths,
+        &["--patch", "--unified=3", "--find-renames"],
+    )
+    .await?;
+    let is_too_large = patch.len() > MAX_GIT_HISTORY_DIFF_BYTES;
+
+    Ok(GitHistoryFileDiff {
+        path: path.to_string(),
+        patch: if is_too_large { String::new() } else { patch },
+        is_binary,
+        is_too_large,
+    })
+}
+
+/// 执行相对于第一父提交的 Diff；没有父提交时使用 Git 的根提交模式。
+#[cfg(feature = "local_fs")]
+async fn run_commit_diff(
+    repo_path: &Path,
+    hash: &str,
+    paths: &[String],
+    options: &[&str],
+) -> Result<String> {
+    let parent = commit_parent(repo_path, hash).await;
+    let mut args = if let Some(parent) = &parent {
+        vec!["diff", "--no-ext-diff", "--no-color"]
+            .into_iter()
+            .map(str::to_owned)
+            .chain(options.iter().map(|option| (*option).to_owned()))
+            .chain([parent.clone(), hash.to_owned()])
+            .collect::<Vec<_>>()
+    } else {
+        vec![
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "-r",
+            "--no-ext-diff",
+            "--no-color",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .chain(options.iter().map(|option| (*option).to_owned()))
+        .chain([hash.to_owned()])
+        .collect::<Vec<_>>()
+    };
+
+    args.push("--".to_owned());
+    args.extend(paths.iter().cloned());
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    run_git_command(repo_path, &arg_refs).await
+}
+
+/// 返回提交的第一父提交。根提交没有第一父提交，返回 `None`。
+#[cfg(feature = "local_fs")]
+async fn commit_parent(repo_path: &Path, hash: &str) -> Option<String> {
+    let parent_ref = format!("{hash}^1");
+    run_git_command(repo_path, &["rev-parse", &parent_ref])
+        .await
+        .ok()
+        .map(|parent| parent.trim().to_string())
+        .filter(|parent| !parent.is_empty())
+}
+
+/// 将 Git 的重命名展示路径转换为旧路径和新路径。
+///
+/// Git 可能把重命名路径展示为 `old => new` 或 `dir/{old => new}/file`。
+/// 两个路径都作为 pathspec 传入，才能让 Git 找到完整的重命名 Diff。
+#[cfg(any(feature = "local_fs", test))]
+fn commit_file_diff_paths(path: &str) -> Vec<String> {
+    let Some(separator) = path.find(" => ") else {
+        return vec![path.to_string()];
+    };
+
+    if let Some(open_brace) = path[..separator].rfind('{') {
+        let Some(close_offset) = path[separator + 4..].find('}') else {
+            return vec![path.to_string()];
+        };
+        let close_brace = separator + 4 + close_offset;
+        let prefix = &path[..open_brace];
+        let suffix = &path[close_brace + 1..];
+        let old_path = format!("{prefix}{}{suffix}", &path[open_brace + 1..separator]);
+        let new_path = format!("{prefix}{}{suffix}", &path[separator + 4..close_brace]);
+        vec![old_path, new_path]
+    } else {
+        vec![
+            path[..separator].to_string(),
+            path[separator + 4..].to_string(),
+        ]
+    }
+}
+
 #[cfg(not(feature = "local_fs"))]
 pub async fn get_commit_files(_repo_path: &Path, _hash: &str) -> Result<Vec<FileChangeEntry>> {
+    Err(anyhow!("Not supported on wasm"))
+}
+
+#[cfg(not(feature = "local_fs"))]
+pub async fn get_commit_file_diff(
+    _repo_path: &Path,
+    _hash: &str,
+    _path: &str,
+) -> Result<GitHistoryFileDiff> {
     Err(anyhow!("Not supported on wasm"))
 }
 

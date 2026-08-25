@@ -151,6 +151,8 @@ pub enum WorkspaceAction {
     ToggleSshManager,
     /// 打开/关闭左侧 panel 的 Skill 管理器视图(openWarp 独有)。
     ToggleSkillManager,
+    /// 打开/关闭左侧面板的 Git 提交历史视图。
+    ToggleGitHistory,
     AddTabWithShell {
         shell: AvailableShell,
         source: AddTabWithShellSource,
@@ -677,6 +679,7 @@ impl WorkspaceAction {
             | OpenSshTerminal { .. }
             | ToggleSshManager
             | ToggleSkillManager
+            | ToggleGitHistory
             | AddTabWithShell { .. }
             | AddGetStartedTab
             | AddAgentTab

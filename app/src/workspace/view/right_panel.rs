@@ -22,6 +22,8 @@ use crate::view_components::action_button::{ActionButton, PaneHeaderTheme};
 #[cfg(feature = "local_fs")]
 use crate::view_components::action_button::{NakedTheme, TooltipAlignment};
 use crate::view_components::{Dropdown, DropdownItem};
+#[cfg(feature = "local_fs")]
+use crate::workspace::view::git_history_diff::GitHistoryDiffView;
 use crate::workspace::view::TOGGLE_RIGHT_PANEL_BINDING_NAME;
 use crate::workspace::WorkspaceAction;
 use crate::{
@@ -328,6 +330,10 @@ pub struct RightPanelView {
     file_navigation_button_mouse_state: MouseStateHandle,
     #[cfg(feature = "local_fs")]
     open_repository_button: ViewHandle<ActionButton>,
+    #[cfg(feature = "local_fs")]
+    git_history_diff_view: ViewHandle<GitHistoryDiffView>,
+    #[cfg(feature = "local_fs")]
+    git_history_diff_open: bool,
     pub active_pane_group: Option<ViewHandle<PaneGroup>>,
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     working_directories_model: ModelHandle<WorkingDirectoriesModel>,
@@ -421,12 +427,19 @@ impl RightPanelView {
             .on_click(|ctx| ctx.dispatch_typed_action(RightPanelAction::OpenRepository))
         });
 
+        #[cfg(feature = "local_fs")]
+        let git_history_diff_view = ctx.add_view(GitHistoryDiffView::new);
+
         Self {
             resizable_state_handle,
             close_button_mouse_state: Default::default(),
             file_navigation_button_mouse_state: Default::default(),
             #[cfg(feature = "local_fs")]
             open_repository_button,
+            #[cfg(feature = "local_fs")]
+            git_history_diff_view,
+            #[cfg(feature = "local_fs")]
+            git_history_diff_open: false,
             active_pane_group: None,
             working_directories_model,
             maximize_button,
@@ -480,6 +493,34 @@ impl RightPanelView {
         );
     }
 
+    #[cfg(feature = "local_fs")]
+    pub fn open_git_history_diff(
+        &mut self,
+        repo_path: PathBuf,
+        commit_hash: String,
+        commit_subject: String,
+        file_path: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.git_history_diff_open = true;
+        self.git_history_diff_view.update(ctx, |view, ctx| {
+            view.open(repo_path, commit_hash, commit_subject, file_path, ctx);
+        });
+        ctx.notify();
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn clear_git_history_diff(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.git_history_diff_open {
+            return;
+        }
+
+        self.git_history_diff_open = false;
+        self.git_history_diff_view
+            .update(ctx, |view, ctx| view.clear(ctx));
+        ctx.notify();
+    }
+
     fn handle_working_directories_event(
         &mut self,
         event: &WorkingDirectoriesEvent,
@@ -496,6 +537,8 @@ impl RightPanelView {
                 if active_pane_group.id() != *pane_group_id {
                     return;
                 }
+                #[cfg(feature = "local_fs")]
+                self.clear_git_history_diff(ctx);
                 let old_selected = self
                     .code_review_state
                     .as_ref()
@@ -536,6 +579,9 @@ impl RightPanelView {
                     return;
                 }
 
+                #[cfg(feature = "local_fs")]
+                self.clear_git_history_diff(ctx);
+
                 // When the focused terminal changes repos (via CD or pane focus),
                 // update the dropdown to match the focused terminal's repo
                 if let Some(state) = self.code_review_state.as_mut() {
@@ -556,6 +602,16 @@ impl RightPanelView {
         ctx: &mut ViewContext<Self>,
     ) {
         let pane_group_id = pane_group.id();
+
+        #[cfg(feature = "local_fs")]
+        let pane_group_changed = self
+            .active_pane_group
+            .as_ref()
+            .is_some_and(|active| active.id() != pane_group_id);
+        #[cfg(feature = "local_fs")]
+        if pane_group_changed {
+            self.clear_git_history_diff(ctx);
+        }
 
         // Unsubscribe from the previous pane group before subscribing to the
         // new one. Without this, every tab switch appends a duplicate
@@ -610,6 +666,8 @@ impl RightPanelView {
         terminal_view: WeakViewHandle<TerminalView>,
         ctx: &mut ViewContext<Self>,
     ) {
+        #[cfg(feature = "local_fs")]
+        self.clear_git_history_diff(ctx);
         let Some(repo_dropdown_state) = &mut self.code_review_state else {
             return;
         };
@@ -682,6 +740,8 @@ impl RightPanelView {
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     pub fn close_code_review(&mut self, ctx: &mut ViewContext<Self>) {
+        #[cfg(feature = "local_fs")]
+        self.clear_git_history_diff(ctx);
         self.close_active_code_review_view(ctx);
 
         // Views are cached in WorkingDirectoriesModel, so we just update the UI state
@@ -767,6 +827,17 @@ impl RightPanelView {
     fn render_panel_content(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let close_button = self.close_button(appearance, app);
+
+        #[cfg(feature = "local_fs")]
+        if self.git_history_diff_open {
+            let simple_header = self.render_simple_header(close_button);
+            let diff_content =
+                Shrinkable::new(1.0, ChildView::new(&self.git_history_diff_view).finish()).finish();
+            return Flex::column()
+                .with_child(simple_header)
+                .with_child(diff_content)
+                .finish();
+        }
 
         let Some(state) = &self.code_review_state else {
             let simple_header = self.render_simple_header(close_button);
@@ -1070,6 +1141,12 @@ impl RightPanelView {
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     pub fn focus_active_code_review_view(&self, ctx: &mut ViewContext<Self>) {
+        #[cfg(feature = "local_fs")]
+        if self.git_history_diff_open {
+            ctx.focus(&self.git_history_diff_view);
+            return;
+        }
+
         let Some(state) = &self.code_review_state else {
             return;
         };
@@ -1672,6 +1749,7 @@ impl TypedActionView for RightPanelView {
                 repo_path,
                 from_dropdown,
             } => {
+                self.clear_git_history_diff(ctx);
                 // Only close the old view if we're actually switching to a different repo.
                 let is_switching = self
                     .code_review_state
