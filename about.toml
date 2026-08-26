@@ -33,6 +33,18 @@ workarounds = [
     "rustls",
 ]
 
+# nix 的测试目录包含 Linux 内核模块测试文件,其中使用了旧式的
+# `GPL-2.0+ or MIT` SPDX 标识。cargo-about 0.8.4 会把该测试文件误当成
+# 许可证文件并输出弃用标识错误;依赖清单和正式 LICENSE 文件均声明为 MIT。
+# 通过校验正式 LICENSE 文件,只对当前许可证内容稳定的 nix 包应用该澄清。
+[nix.clarify]
+license = "MIT"
+
+[[nix.clarify.files]]
+path = "LICENSE"
+license = "MIT"
+checksum = "66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70"
+
 # These are Warp's own private crates, sourced via git from the warpdotdev
 # organization. They are not part of this workspace and do not have explicit
 # licenses yet (they will be open-sourced soon). cargo-about will skip them

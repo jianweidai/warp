@@ -117,6 +117,8 @@ CODESIGN=true
 SELFSIGN=false
 OPEN_AFTER_BUNDLE=false
 READ_PASSWORDS_FROM_ENV=false
+# 发布工作流可通过该变量在日常构建与正式构建 profile 之间切换。
+BUNDLE_PROFILE_OVERRIDE="${ZAP_CARGO_PROFILE:-}"
 
 PARAMS=""
 while (( "$#" )); do
@@ -253,8 +255,19 @@ done
 # set positional arguments in their proper place
 eval set -- "$PARAMS"
 
-# Infer a cargo profile from the bundle configuration.
-if [[ $DEBUG = true ]]; then
+# 如果调用方没有明确指定日常或正式发布 profile,则根据 bundle 配置推断。
+if [[ -n "$BUNDLE_PROFILE_OVERRIDE" ]]; then
+  case "$BUNDLE_PROFILE_OVERRIDE" in
+    release|release-lto)
+      CARGO_PROFILE="$BUNDLE_PROFILE_OVERRIDE"
+      echo "Using explicit Cargo profile: $CARGO_PROFILE"
+      ;;
+    *)
+      echo "Error: ZAP_CARGO_PROFILE must be release or release-lto, got '$BUNDLE_PROFILE_OVERRIDE'" >&2
+      exit 1
+      ;;
+  esac
+elif [[ $DEBUG = true ]]; then
   CARGO_PROFILE="dev"
 elif [[ $RELEASE_CHANNEL = "local" || $RELEASE_CHANNEL = "dev" ]]; then
   # For dev bundles, we want to enable debug assertions to
