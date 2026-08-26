@@ -6,7 +6,9 @@ use tempfile::TempDir;
 
 use super::{
     commit_file_diff_paths, detect_current_branch, detect_current_branch_display,
-    get_commit_file_diff, get_commit_files, get_commit_history, parse_commit_history,
+    get_commit_file_diff, get_commit_files, get_commit_history, get_working_tree_changes,
+    get_working_tree_file_diff, parse_commit_history, parse_working_tree_changes,
+    GitWorkingTreeArea, GitWorkingTreeChangeStatus,
 };
 
 /// Helper: run a git command inside the given repo directory.
@@ -102,6 +104,79 @@ fn parses_commit_history_records() {
     assert_eq!(commits[0].subject, "Add history");
 }
 
+#[test]
+fn parses_staged_unstaged_untracked_and_renamed_changes() {
+    let output = concat!(
+        "1 M. N... 100644 100644 100644 a b staged.txt\0",
+        "1 .M N... 100644 100644 100644 a b unstaged.txt\0",
+        "1 MM N... 100644 100644 100644 a b both.txt\0",
+        "2 R. N... 100644 100644 100644 a b R100 new name.txt\0",
+        "old name.txt\0",
+        "u UU N... 100644 100644 100644 100644 a b c conflict.txt\0",
+        "? untracked.txt\0",
+    );
+
+    let changes = parse_working_tree_changes(output);
+
+    assert_eq!(changes.staged.len(), 3);
+    assert_eq!(changes.unstaged.len(), 4);
+    assert_eq!(changes.staged[0].path, "both.txt");
+    assert_eq!(changes.unstaged[0].path, "both.txt");
+    assert_eq!(
+        changes.staged[1].status,
+        GitWorkingTreeChangeStatus::Renamed {
+            old_path: "old name.txt".to_string(),
+        }
+    );
+    assert_eq!(
+        changes.unstaged[1].status,
+        GitWorkingTreeChangeStatus::Conflicted
+    );
+    assert_eq!(
+        changes.unstaged[3].status,
+        GitWorkingTreeChangeStatus::Untracked
+    );
+}
+
+#[tokio::test]
+async fn working_tree_changes_and_diffs_keep_staged_and_unstaged_content_separate() {
+    let (_dir, repo) = init_repo().await;
+    fs::write(repo.join("tracked.txt"), "original\n").expect("failed to write tracked file");
+    git(&repo, &["add", "tracked.txt"]).await;
+    git(&repo, &["commit", "-m", "add tracked file"]).await;
+
+    fs::write(repo.join("staged.txt"), "staged content\n").expect("failed to write staged file");
+    git(&repo, &["add", "staged.txt"]).await;
+    fs::write(repo.join("tracked.txt"), "working content\n")
+        .expect("failed to update tracked file");
+    fs::write(repo.join("untracked.txt"), "untracked content\n")
+        .expect("failed to write untracked file");
+
+    let changes = get_working_tree_changes(&repo).await.unwrap();
+    let staged = changes
+        .staged
+        .iter()
+        .find(|change| change.path == "staged.txt")
+        .unwrap();
+    let unstaged = changes
+        .unstaged
+        .iter()
+        .find(|change| change.path == "tracked.txt")
+        .unwrap();
+
+    let staged_diff = get_working_tree_file_diff(&repo, GitWorkingTreeArea::Staged, staged)
+        .await
+        .unwrap();
+    let unstaged_diff = get_working_tree_file_diff(&repo, GitWorkingTreeArea::Unstaged, unstaged)
+        .await
+        .unwrap();
+
+    assert!(staged_diff.patch.contains("+staged content"));
+    assert!(!staged_diff.patch.contains("working content"));
+    assert!(unstaged_diff.patch.contains("+working content"));
+    assert!(!unstaged_diff.patch.contains("staged content"));
+}
+
 #[tokio::test]
 async fn commit_history_supports_first_page_and_pagination() {
     let (_dir, repo) = init_repo().await;
@@ -167,7 +242,7 @@ async fn commit_files_use_first_parent_for_merge_commits() {
     )
     .await;
 
-    let merge_hash = git(&repo, &["rev-parse", "HEAD"]);
+    let merge_hash = git(&repo, &["rev-parse", "HEAD"]).await;
     let files = get_commit_files(&repo, &merge_hash).await.unwrap();
 
     assert_eq!(files.len(), 1);
@@ -185,7 +260,7 @@ async fn commit_files_and_diff_support_root_commits() {
     git(&repo, &["add", "root.txt"]).await;
     git(&repo, &["commit", "-m", "root commit"]).await;
 
-    let root_hash = git(&repo, &["rev-parse", "HEAD"]);
+    let root_hash = git(&repo, &["rev-parse", "HEAD"]).await;
     let files = get_commit_files(&repo, &root_hash).await.unwrap();
     let diff = get_commit_file_diff(&repo, &root_hash, "root.txt")
         .await

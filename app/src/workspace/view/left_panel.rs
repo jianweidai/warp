@@ -38,17 +38,19 @@ use crate::terminal::model::session::Session;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
+use crate::util::git::{GitWorkingTreeArea, GitWorkingTreeChange};
+#[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::resolve_file_target_with_editor_choice;
 use crate::util::openable_file_type::FileTarget;
 use crate::workspace::view::conversation_list::view::{
     ConversationListView, Event as ConversationListViewEvent,
 };
+#[cfg(feature = "local_fs")]
+use crate::workspace::view::git_history::GitHistoryEvent;
+use crate::workspace::view::git_history::GitHistoryView;
 use crate::workspace::view::global_search::view::{
     Event as GlobalSearchViewEvent, GlobalSearchEntryFocus, GlobalSearchView,
 };
-use crate::workspace::view::git_history::GitHistoryView;
-#[cfg(feature = "local_fs")]
-use crate::workspace::view::git_history::GitHistoryEvent;
 use crate::workspace::view::server_file_browser::{
     ServerFileBrowserEvent, ServerFileBrowserView,
 };
@@ -117,6 +119,12 @@ pub enum LeftPanelEvent {
         commit_hash: String,
         commit_subject: String,
         file_path: String,
+    },
+    #[cfg(feature = "local_fs")]
+    OpenGitWorkingTreeDiff {
+        repo_path: PathBuf,
+        area: GitWorkingTreeArea,
+        change: GitWorkingTreeChange,
     },
     OpenSkillFile {
         source: CodeSource,
@@ -702,19 +710,30 @@ impl LeftPanelView {
         });
 
         #[cfg(feature = "local_fs")]
-        ctx.subscribe_to_view(&git_history_view, |_me, _, event, ctx| {
-            if let GitHistoryEvent::OpenFileDiff {
+        ctx.subscribe_to_view(&git_history_view, |_me, _, event, ctx| match event {
+            GitHistoryEvent::Updated => {}
+            GitHistoryEvent::OpenFileDiff {
                 repo_path,
                 commit_hash,
                 commit_subject,
                 file_path,
-            } = event
-            {
+            } => {
                 ctx.emit(LeftPanelEvent::OpenGitHistoryDiff {
                     repo_path: repo_path.clone(),
                     commit_hash: commit_hash.clone(),
                     commit_subject: commit_subject.clone(),
                     file_path: file_path.clone(),
+                });
+            }
+            GitHistoryEvent::OpenWorkingTreeDiff {
+                repo_path,
+                area,
+                change,
+            } => {
+                ctx.emit(LeftPanelEvent::OpenGitWorkingTreeDiff {
+                    repo_path: repo_path.clone(),
+                    area: *area,
+                    change: change.clone(),
                 });
             }
         });

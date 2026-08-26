@@ -345,6 +345,39 @@ pub struct FileChangeEntry {
     pub deletions: usize,
 }
 
+/// 工作区变更所在的 Git 区域。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GitWorkingTreeArea {
+    Staged,
+    Unstaged,
+}
+
+/// 工作区文件的 Git 状态。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitWorkingTreeChangeStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed { old_path: String },
+    Copied { old_path: String },
+    Untracked,
+    Conflicted,
+}
+
+/// 工作区中的单个文件变更。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitWorkingTreeChange {
+    pub path: String,
+    pub status: GitWorkingTreeChangeStatus,
+}
+
+/// 当前仓库的已暂存和未暂存变更快照。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GitWorkingTreeChanges {
+    pub staged: Vec<GitWorkingTreeChange>,
+    pub unstaged: Vec<GitWorkingTreeChange>,
+}
+
 /// 指定提交中单个文件的历史差异原文。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitHistoryFileDiff {
@@ -352,6 +385,138 @@ pub struct GitHistoryFileDiff {
     pub patch: String,
     pub is_binary: bool,
     pub is_too_large: bool,
+}
+
+/// 解析 `git status --porcelain=2 -z` 输出，并保留暂存区与工作区的双重状态。
+#[cfg(any(feature = "local_fs", test))]
+fn parse_working_tree_changes(output: &str) -> GitWorkingTreeChanges {
+    let mut changes = GitWorkingTreeChanges::default();
+    let tokens = output.split('\0').collect::<Vec<_>>();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        let token = tokens[index];
+        if token.is_empty() || token.starts_with("# ") {
+            index += 1;
+            continue;
+        }
+
+        match token.chars().next() {
+            Some('1') => {
+                let parts = token.splitn(9, ' ').collect::<Vec<_>>();
+                if parts.len() == 9 {
+                    append_working_tree_change(&mut changes, parts[1], parts[8], None);
+                }
+            }
+            Some('2') => {
+                let parts = token.splitn(10, ' ').collect::<Vec<_>>();
+                if parts.len() == 10 {
+                    let old_path = tokens.get(index + 1).copied().unwrap_or_default();
+                    append_working_tree_change(&mut changes, parts[1], parts[9], Some(old_path));
+                    index += 1;
+                }
+            }
+            Some('u') => {
+                let parts = token.splitn(11, ' ').collect::<Vec<_>>();
+                if parts.len() == 11 {
+                    changes.unstaged.push(GitWorkingTreeChange {
+                        path: parts[10].to_string(),
+                        status: GitWorkingTreeChangeStatus::Conflicted,
+                    });
+                }
+            }
+            Some('?') => {
+                if let Some(path) = token.strip_prefix("? ") {
+                    changes.unstaged.push(GitWorkingTreeChange {
+                        path: path.to_string(),
+                        status: GitWorkingTreeChangeStatus::Untracked,
+                    });
+                }
+            }
+            Some('!') | None => {}
+            Some(_) => {
+                log::debug!("Unknown git status entry: {token}");
+            }
+        }
+
+        index += 1;
+    }
+
+    changes
+        .staged
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    changes
+        .unstaged
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    changes
+}
+
+#[cfg(any(feature = "local_fs", test))]
+fn append_working_tree_change(
+    changes: &mut GitWorkingTreeChanges,
+    status_code: &str,
+    path: &str,
+    old_path: Option<&str>,
+) {
+    let mut status_chars = status_code.chars();
+    let staged_status = status_chars.next().unwrap_or('.');
+    let unstaged_status = status_chars.next().unwrap_or('.');
+
+    if let Some(status) = working_tree_change_status(staged_status, old_path) {
+        changes.staged.push(GitWorkingTreeChange {
+            path: path.to_string(),
+            status,
+        });
+    }
+    if let Some(status) = working_tree_change_status(unstaged_status, old_path) {
+        changes.unstaged.push(GitWorkingTreeChange {
+            path: path.to_string(),
+            status,
+        });
+    }
+}
+
+#[cfg(any(feature = "local_fs", test))]
+fn working_tree_change_status(
+    status: char,
+    old_path: Option<&str>,
+) -> Option<GitWorkingTreeChangeStatus> {
+    match status {
+        '.' | ' ' => None,
+        'A' => Some(GitWorkingTreeChangeStatus::Added),
+        'M' | 'T' => Some(GitWorkingTreeChangeStatus::Modified),
+        'D' => Some(GitWorkingTreeChangeStatus::Deleted),
+        'R' => Some(GitWorkingTreeChangeStatus::Renamed {
+            old_path: old_path.unwrap_or_default().to_string(),
+        }),
+        'C' => Some(GitWorkingTreeChangeStatus::Copied {
+            old_path: old_path.unwrap_or_default().to_string(),
+        }),
+        'U' => Some(GitWorkingTreeChangeStatus::Conflicted),
+        _ => Some(GitWorkingTreeChangeStatus::Modified),
+    }
+}
+
+/// 返回当前仓库的已暂存和未暂存文件变更。
+#[cfg(feature = "local_fs")]
+pub async fn get_working_tree_changes(repo_path: &Path) -> Result<GitWorkingTreeChanges> {
+    let output = run_git_command(
+        repo_path,
+        &[
+            "--no-optional-locks",
+            "status",
+            "--untracked-files=all",
+            "--porcelain=2",
+            "-z",
+        ],
+    )
+    .await?;
+    Ok(parse_working_tree_changes(&output))
+}
+
+#[cfg(not(feature = "local_fs"))]
+pub async fn get_working_tree_changes(_repo_path: &Path) -> Result<GitWorkingTreeChanges> {
+    Err(anyhow!("Not supported on wasm"))
 }
 
 /// Returns per-file change entries. When `include_unstaged` is true, returns all
@@ -583,7 +748,7 @@ pub async fn get_commit_files(repo_path: &Path, hash: &str) -> Result<Vec<FileCh
     Ok(entries)
 }
 
-/// 历史 Diff 的最大字节数，与代码评审使用的不可渲染上限保持一致。
+/// 只读 Git Diff 的最大字节数，与代码评审使用的不可渲染上限保持一致。
 #[cfg(feature = "local_fs")]
 const MAX_GIT_HISTORY_DIFF_BYTES: usize = 4_375_000;
 
@@ -622,6 +787,85 @@ pub async fn get_commit_file_diff(
         is_binary,
         is_too_large,
     })
+}
+
+/// 返回当前工作区中指定文件的只读差异。
+///
+/// 已暂存文件比较 `HEAD` 与 index，未暂存文件比较 index 与工作区；未跟踪文件
+/// 使用空文件作为基线，因此整个文件内容会显示为新增。
+#[cfg(feature = "local_fs")]
+pub async fn get_working_tree_file_diff(
+    repo_path: &Path,
+    area: GitWorkingTreeArea,
+    change: &GitWorkingTreeChange,
+) -> Result<GitHistoryFileDiff> {
+    let numstat = run_working_tree_diff(repo_path, area, change, &["--numstat"]).await?;
+    let is_binary = numstat.lines().any(|line| line.starts_with("-\t-\t"));
+    let patch = run_working_tree_diff(repo_path, area, change, &["--patch", "--unified=3"]).await?;
+    let is_too_large = patch.len() > MAX_GIT_HISTORY_DIFF_BYTES;
+
+    Ok(GitHistoryFileDiff {
+        path: change.path.clone(),
+        patch: if is_too_large { String::new() } else { patch },
+        is_binary,
+        is_too_large,
+    })
+}
+
+#[cfg(not(feature = "local_fs"))]
+pub async fn get_working_tree_file_diff(
+    _repo_path: &Path,
+    _area: GitWorkingTreeArea,
+    _change: &GitWorkingTreeChange,
+) -> Result<GitHistoryFileDiff> {
+    Err(anyhow!("Not supported on wasm"))
+}
+
+#[cfg(feature = "local_fs")]
+async fn run_working_tree_diff(
+    repo_path: &Path,
+    area: GitWorkingTreeArea,
+    change: &GitWorkingTreeChange,
+    options: &[&str],
+) -> Result<String> {
+    let is_untracked = matches!(&change.status, GitWorkingTreeChangeStatus::Untracked);
+    let mut args = vec![
+        "diff".to_string(),
+        "--no-ext-diff".to_string(),
+        "--no-color".to_string(),
+    ];
+
+    if is_untracked {
+        args.push("--no-index".to_string());
+    } else if matches!(area, GitWorkingTreeArea::Staged) {
+        args.push("--cached".to_string());
+    }
+    args.extend(options.iter().map(|option| (*option).to_string()));
+    args.push("--".to_string());
+
+    if is_untracked {
+        args.push("/dev/null".to_string());
+    } else {
+        match &change.status {
+            GitWorkingTreeChangeStatus::Renamed { old_path }
+            | GitWorkingTreeChangeStatus::Copied { old_path }
+                if !old_path.is_empty() =>
+            {
+                args.push(old_path.clone());
+            }
+            GitWorkingTreeChangeStatus::Added
+            | GitWorkingTreeChangeStatus::Modified
+            | GitWorkingTreeChangeStatus::Deleted
+            | GitWorkingTreeChangeStatus::Renamed { .. }
+            | GitWorkingTreeChangeStatus::Copied { .. }
+            | GitWorkingTreeChangeStatus::Untracked
+            | GitWorkingTreeChangeStatus::Conflicted => {}
+        }
+    }
+    args.push(change.path.clone());
+
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    run_git_command(repo_path, &arg_refs).await
 }
 
 /// 执行相对于第一父提交的 Diff；没有父提交时使用 Git 的根提交模式。

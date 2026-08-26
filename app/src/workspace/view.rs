@@ -5310,6 +5310,19 @@ impl Workspace {
                     ctx,
                 );
             }
+            #[cfg(feature = "local_fs")]
+            LeftPanelEvent::OpenGitWorkingTreeDiff {
+                repo_path,
+                area,
+                change,
+            } => {
+                self.open_git_working_tree_diff(
+                    repo_path.clone(),
+                    *area,
+                    change.clone(),
+                    ctx,
+                );
+            }
             #[cfg(feature = "local_tty")]
             LeftPanelEvent::OpenRemoteFile { remote_path } => {
                 self.open_remote_file(remote_path.clone(), ctx);
@@ -8153,6 +8166,58 @@ impl Workspace {
                 file_path,
                 ctx,
             );
+        });
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn open_git_working_tree_diff(
+        &mut self,
+        repo_path: PathBuf,
+        area: crate::util::git::GitWorkingTreeArea,
+        change: crate::util::git::GitWorkingTreeChange,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let pane_group = self.active_tab_pane_group().clone();
+        let right_panel_is_open = pane_group.as_ref(ctx).right_panel_open;
+        let terminal_view = pane_group.read(ctx, |pane_group, ctx| {
+            pane_group
+                .active_session_view(ctx)
+                .map(|terminal_view| terminal_view.downgrade())
+        });
+
+        if let Some(terminal_view) = terminal_view {
+            let diff_state_model = self.working_directories_model.update(ctx, |model, ctx| {
+                model.get_or_create_diff_state_model(repo_path.clone(), ctx)
+            });
+            if let Some(diff_state_model) = diff_state_model {
+                let context = CodeReviewPaneContext {
+                    repo_path: Some(repo_path.clone()),
+                    diff_state_model,
+                    terminal_view,
+                };
+                self.open_right_panel(
+                    &context,
+                    &pane_group,
+                    CodeReviewPaneEntrypoint::RightPanel,
+                    None,
+                    ctx,
+                );
+            }
+        } else if !right_panel_is_open {
+            self.update_right_panel_open_state(
+                RightPanelUpdateParams {
+                    pane_group: &pane_group,
+                    target_open_state: true,
+                    entrypoint: Some(CodeReviewPaneEntrypoint::RightPanel),
+                    cli_agent: None,
+                    review_pane_context: None,
+                },
+                ctx,
+            );
+        }
+
+        self.right_panel_view.update(ctx, |right_panel, ctx| {
+            right_panel.open_git_working_tree_diff(repo_path, area, change, ctx);
         });
     }
 

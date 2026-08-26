@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use crate::appearance::Appearance;
 use crate::code::editor::{add_color, remove_color};
 use crate::code_review::diff_state::{DiffHunk, DiffLineType, DiffStateModel};
-use crate::util::git::{get_commit_file_diff, GitHistoryFileDiff};
+use crate::util::git::{
+    get_commit_file_diff, get_working_tree_file_diff, GitHistoryFileDiff, GitWorkingTreeArea,
+    GitWorkingTreeChange,
+};
 use warpui::elements::{
     Border, ClippedScrollStateHandle, ClippedScrollable, Container, CornerRadius,
     CrossAxisAlignment, Element, Fill, Flex, MainAxisSize, ParentElement, ScrollbarWidth,
@@ -20,9 +23,20 @@ pub enum GitHistoryDiffEvent {
 #[derive(Clone, Debug)]
 struct GitHistoryDiffSelection {
     repo_path: PathBuf,
-    commit_hash: String,
-    commit_subject: String,
     file_path: String,
+    source: GitHistoryDiffSource,
+}
+
+#[derive(Clone, Debug)]
+enum GitHistoryDiffSource {
+    Commit {
+        commit_hash: String,
+        commit_subject: String,
+    },
+    WorkingTree {
+        area: GitWorkingTreeArea,
+        change: GitWorkingTreeChange,
+    },
 }
 
 enum GitHistoryDiffState {
@@ -71,20 +85,44 @@ impl GitHistoryDiffView {
         file_path: String,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.open_selection(
+            GitHistoryDiffSelection {
+                repo_path,
+                file_path,
+                source: GitHistoryDiffSource::Commit {
+                    commit_hash,
+                    commit_subject,
+                },
+            },
+            ctx,
+        );
+    }
+
+    pub fn open_working_tree(
+        &mut self,
+        repo_path: PathBuf,
+        area: GitWorkingTreeArea,
+        change: GitWorkingTreeChange,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.open_selection(
+            GitHistoryDiffSelection {
+                repo_path,
+                file_path: change.path.clone(),
+                source: GitHistoryDiffSource::WorkingTree { area, change },
+            },
+            ctx,
+        );
+    }
+
+    fn open_selection(&mut self, selection: GitHistoryDiffSelection, ctx: &mut ViewContext<Self>) {
         self.abort_request();
         self.request_generation = self.request_generation.wrapping_add(1);
         let request_generation = self.request_generation;
-        let selection = GitHistoryDiffSelection {
-            repo_path,
-            commit_hash,
-            commit_subject,
-            file_path,
-        };
-        let request_selection = selection.clone();
-        let error_selection = selection.clone();
+        let request_file_path = selection.file_path.clone();
+        let completion_selection = selection.clone();
         let repo_path = selection.repo_path.clone();
-        let commit_hash = selection.commit_hash.clone();
-        let file_path = selection.file_path.clone();
+        let source = selection.source.clone();
 
         self.state = GitHistoryDiffState::Loading(selection);
         ctx.emit(GitHistoryDiffEvent::Updated);
@@ -92,7 +130,14 @@ impl GitHistoryDiffView {
 
         self.request_abort_handle = Some(ctx.spawn(
             async move {
-                let diff = get_commit_file_diff(&repo_path, &commit_hash, &file_path).await?;
+                let diff = match source {
+                    GitHistoryDiffSource::Commit { commit_hash, .. } => {
+                        get_commit_file_diff(&repo_path, &commit_hash, &request_file_path).await?
+                    }
+                    GitHistoryDiffSource::WorkingTree { area, change } => {
+                        get_working_tree_file_diff(&repo_path, area, &change).await?
+                    }
+                };
                 let has_hidden_bidi_chars =
                     DiffStateModel::check_for_hidden_bidi_chars(&diff.patch);
                 let hunks = if diff.is_binary || diff.is_too_large {
@@ -114,14 +159,14 @@ impl GitHistoryDiffView {
                 view.request_abort_handle = None;
                 view.state = match result {
                     Ok((diff, hunks, has_hidden_bidi_chars)) => GitHistoryDiffState::Loaded {
-                        selection: request_selection,
+                        selection: completion_selection.clone(),
                         hunks,
                         is_binary: diff.is_binary,
                         is_too_large: diff.is_too_large,
                         has_hidden_bidi_chars,
                     },
                     Err(error) => GitHistoryDiffState::Error {
-                        selection: error_selection,
+                        selection: completion_selection,
                         message: error.to_string(),
                     },
                 };
@@ -161,21 +206,31 @@ impl GitHistoryDiffView {
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let short_hash: String = selection.commit_hash.chars().take(8).collect();
-        let title = Text::new_inline(
-            crate::t!("git-history-diff-title"),
-            appearance.ui_font_family(),
-            14.,
-        )
-        .with_color(theme.main_text_color(theme.background()).into())
-        .finish();
-        let commit = Text::new_inline(
-            format!("{short_hash} · {}", selection.commit_subject),
-            appearance.ui_font_family(),
-            11.,
-        )
-        .with_color(theme.sub_text_color(theme.background()).into())
-        .finish();
+        let (title, source_label) = match &selection.source {
+            GitHistoryDiffSource::Commit {
+                commit_hash,
+                commit_subject,
+            } => {
+                let short_hash = commit_hash.chars().take(8).collect::<String>();
+                (
+                    crate::t!("git-history-diff-title"),
+                    format!("{short_hash} · {commit_subject}"),
+                )
+            }
+            GitHistoryDiffSource::WorkingTree { area, .. } => {
+                let area_label = match area {
+                    GitWorkingTreeArea::Staged => crate::t!("git-working-tree-staged"),
+                    GitWorkingTreeArea::Unstaged => crate::t!("git-working-tree-unstaged"),
+                };
+                (crate::t!("git-working-tree-diff-title"), area_label)
+            }
+        };
+        let title = Text::new_inline(title, appearance.ui_font_family(), 14.)
+            .with_color(theme.main_text_color(theme.background()).into())
+            .finish();
+        let source = Text::new_inline(source_label, appearance.ui_font_family(), 11.)
+            .with_color(theme.sub_text_color(theme.background()).into())
+            .finish();
         let path = Text::new(
             selection.file_path.clone(),
             appearance.monospace_font_family(),
@@ -189,7 +244,7 @@ impl GitHistoryDiffView {
             Flex::column()
                 .with_main_axis_size(MainAxisSize::Min)
                 .with_child(title)
-                .with_child(commit)
+                .with_child(source)
                 .with_child(path)
                 .finish(),
         )

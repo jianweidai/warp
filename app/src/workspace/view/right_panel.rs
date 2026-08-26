@@ -17,6 +17,8 @@ use crate::terminal::CLIAgent;
 use crate::ui_components::{buttons::icon_button_with_color, icons};
 use crate::util::bindings::{keybinding_name_to_display_string, CustomAction};
 #[cfg(feature = "local_fs")]
+use crate::util::git::{GitWorkingTreeArea, GitWorkingTreeChange};
+#[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::FileTarget;
 use crate::view_components::action_button::{ActionButton, PaneHeaderTheme};
 #[cfg(feature = "local_fs")]
@@ -505,6 +507,21 @@ impl RightPanelView {
         self.git_history_diff_open = true;
         self.git_history_diff_view.update(ctx, |view, ctx| {
             view.open(repo_path, commit_hash, commit_subject, file_path, ctx);
+        });
+        ctx.notify();
+    }
+
+    #[cfg(feature = "local_fs")]
+    pub fn open_git_working_tree_diff(
+        &mut self,
+        repo_path: PathBuf,
+        area: GitWorkingTreeArea,
+        change: GitWorkingTreeChange,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.git_history_diff_open = true;
+        self.git_history_diff_view.update(ctx, |view, ctx| {
+            view.open_working_tree(repo_path, area, change, ctx);
         });
         ctx.notify();
     }
