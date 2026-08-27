@@ -5,6 +5,7 @@ use parking_lot::FairMutex;
 use warpui::{AppContext, ModelHandle, SingletonEntity};
 
 use crate::persistence::StartedCommandMetadata;
+use crate::terminal::model::session::command_executor::is_in_band_command;
 use crate::terminal::{view::ExecuteCommandEvent, TerminalModel};
 use crate::terminal::{History, HistoryEntry};
 use crate::{persistence::ModelEvent, terminal::model::session::Sessions};
@@ -16,6 +17,10 @@ pub fn update_command_history(
     sessions: &ModelHandle<Sessions>,
     ctx: &mut AppContext,
 ) {
+    if is_in_band_command(&event.command) {
+        return;
+    }
+
     let model = model.lock();
     let active_block = model.block_list().active_block();
     let session_id = event.session_id;

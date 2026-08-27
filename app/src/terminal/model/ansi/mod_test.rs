@@ -5,6 +5,7 @@ use warpui::color::ColorU;
 use super::*;
 use crate::terminal::model::index::VisibleRow;
 use crate::terminal::model::session::SessionId;
+use crate::terminal::model::completions::{ShellCompletion, ShellCompletionUpdate};
 use crate::terminal::model::{ansi::InputBufferValue, selection::ScrollDelta};
 use std::{collections::HashSet, io, io::Write, path::PathBuf};
 
@@ -19,6 +20,9 @@ struct MockHandler {
     identity_reported: bool,
     d_proto_hooks: Vec<DProtoHook>,
     pluggable_notifications: Vec<(Option<String>, String)>,
+    completion_results: Vec<ShellCompletion>,
+    completion_description_updates: Vec<String>,
+    replacement_spans: Vec<(usize, usize)>,
 }
 
 impl Handler for MockHandler {
@@ -233,6 +237,22 @@ impl Handler for MockHandler {
     fn pop_keyboard_enhancement_flags(&mut self, _count: u16) {}
 
     fn query_keyboard_enhancement_flags<W: io::Write>(&mut self, _: &mut W) {}
+
+    fn on_completion_result_received(&mut self, completion_result: ShellCompletion) {
+        self.completion_results.push(completion_result);
+    }
+
+    fn update_last_completion_result(&mut self, completion_update: ShellCompletionUpdate) {
+        match completion_update {
+            ShellCompletionUpdate::Description { value } => {
+                self.completion_description_updates.push(value)
+            }
+        }
+    }
+
+    fn on_completion_replacement_span_received(&mut self, start: usize, length: usize) {
+        self.replacement_spans.push((start, length));
+    }
 }
 
 impl Default for MockHandler {
@@ -244,6 +264,9 @@ impl Default for MockHandler {
             identity_reported: false,
             d_proto_hooks: Vec::new(),
             pluggable_notifications: Vec::new(),
+            completion_results: Vec::new(),
+            completion_description_updates: Vec::new(),
+            replacement_spans: Vec::new(),
         }
     }
 }
@@ -884,4 +907,102 @@ fn tmux_pane_writer_returns_original_byte_count() {
     let output_str = String::from_utf8(output).unwrap();
     assert!(output_str.starts_with("send-keys -Ht %42"));
     assert!(output_str.ends_with('\n'));
+}
+
+#[test]
+fn decode_hex_completions_payload_round_trips_semicolon_bel_esc_and_multibyte() {
+    for raw in [
+        "int Count { get; }",
+        "bell\x07byte",
+        "esc\x1bbyte",
+        "café 日本",
+        "",
+    ] {
+        let encoded = hex::encode(raw).into_bytes();
+        let param: &[u8] = &encoded;
+        assert_eq!(
+            decode_hex_completions_payload(Some(&param)),
+            Some(raw.to_string()),
+            "failed to round-trip {raw:?}"
+        );
+    }
+}
+
+#[test]
+fn decode_hex_completions_payload_rejects_missing_or_malformed_input() {
+    assert_eq!(decode_hex_completions_payload(None), None);
+
+    let non_hex: &[u8] = b"not-hex";
+    assert_eq!(decode_hex_completions_payload(Some(&non_hex)), None);
+
+    let odd_length_hex: &[u8] = b"6";
+    assert_eq!(decode_hex_completions_payload(Some(&odd_length_hex)), None);
+
+    // 0xff alone does not decode to valid UTF-8.
+    let invalid_utf8_hex: &[u8] = b"ff";
+    assert_eq!(
+        decode_hex_completions_payload(Some(&invalid_utf8_hex)),
+        None
+    );
+}
+
+#[test]
+fn osc_completions_match_result_hex_decodes_semicolon_bel_and_esc() {
+    for raw_match in ["semi;colon.txt", "bell\x07byte", "esc\x1bbyte"] {
+        let encoded = hex::encode(raw_match);
+        let bytes = format!("\x1b]9280;C;{encoded}\x07").into_bytes();
+        let (_, handler) = parse_bytes(&bytes);
+
+        assert_eq!(handler.completion_results.len(), 1, "for {raw_match:?}");
+        let debug = format!("{:?}", handler.completion_results[0]);
+        assert!(
+            debug.contains(&format!("name: {raw_match:?}")),
+            "expected {raw_match:?} in {debug}"
+        );
+    }
+}
+
+#[test]
+fn osc_completions_description_hex_decodes_semicolon() {
+    let raw_description = "int Count { get; }";
+    let encoded = hex::encode(raw_description);
+    let bytes = format!("\x1b]9280;D?description;{encoded}\x07").into_bytes();
+    let (_, handler) = parse_bytes(&bytes);
+
+    assert_eq!(
+        handler.completion_description_updates,
+        vec![raw_description.to_string()]
+    );
+}
+
+#[test]
+fn osc_completions_match_result_skips_on_malformed_hex_payload() {
+    let bytes: &[u8] = b"\x1b]9280;C;not-hex\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.completion_results.is_empty());
+}
+
+#[test]
+fn osc_completions_description_degrades_to_empty_on_malformed_hex_payload() {
+    let bytes: &[u8] = b"\x1b]9280;D?description;not-hex\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(handler.completion_description_updates, vec!["".to_string()]);
+}
+
+#[test]
+fn osc_completions_replacement_span_forwards_well_formed_pair() {
+    let bytes: &[u8] = b"\x1b]9280;S;12,5\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(handler.replacement_spans, vec![(12, 5)]);
+}
+
+#[test]
+fn osc_completions_replacement_span_forwards_out_of_range_pair() {
+    let payload = format!("\x1b]9280;S;{},1\x07", usize::MAX);
+    let (_, handler) = parse_bytes(payload.as_bytes());
+
+    assert_eq!(handler.replacement_spans, vec![(usize::MAX, 1)]);
 }

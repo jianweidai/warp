@@ -374,7 +374,26 @@ impl ShellType {
 
     /// Returns whether the current shell supports native shell completions.
     fn supports_native_shell_completions(&self) -> bool {
-        matches!(self, ShellType::Zsh)
+        matches!(
+            self,
+            ShellType::Zsh | ShellType::Bash | ShellType::Fish | ShellType::PowerShell
+        )
+    }
+
+    /// Builds the in-band generator command that asks the shell for native completions of the
+    /// given hex-encoded line.
+    pub fn native_completions_generator_command(self, hex_encoded_line: &str) -> String {
+        match self {
+            ShellType::Zsh | ShellType::Bash => {
+                format!("warp_run_generator_command_native_completions {hex_encoded_line}")
+            }
+            ShellType::Fish => {
+                format!(" warp_run_generator_command_native_completions {hex_encoded_line}")
+            }
+            ShellType::PowerShell => {
+                format!("Warp-Run-GeneratorCommand-NativeCompletion {hex_encoded_line}")
+            }
+        }
     }
 
     /// Returns the syntax to run a second command regardless if the first one succeeds.
