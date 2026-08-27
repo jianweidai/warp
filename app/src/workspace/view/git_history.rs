@@ -154,6 +154,10 @@ impl GitHistoryModel {
         self.working_tree_error.as_deref()
     }
 
+    pub fn changed_file_count(&self) -> usize {
+        self.working_tree_changes.changed_file_count()
+    }
+
     pub fn commits(&self) -> &[GitHistoryCommit] {
         &self.commits
     }
@@ -489,6 +493,13 @@ impl GitHistoryView {
         }
     }
 
+    pub fn working_tree_changed_file_count(&self, app: &AppContext) -> usize {
+        self.history_model
+            .as_ref()
+            .map(|model| model.as_ref(app).changed_file_count())
+            .unwrap_or(0)
+    }
+
     pub fn set_repository(
         &mut self,
         repository_path: Option<PathBuf>,
@@ -521,12 +532,14 @@ impl GitHistoryView {
                     ctx.subscribe_to_model(history_model, |view, _, _, ctx| {
                         view.sync_mouse_states(ctx);
                         view.load_expanded_commit_files(ctx);
+                        ctx.emit(GitHistoryEvent::Updated);
                         ctx.notify();
                     });
                 }
             }
         }
 
+        ctx.emit(GitHistoryEvent::Updated);
         ctx.notify();
     }
 

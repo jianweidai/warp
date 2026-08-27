@@ -270,3 +270,22 @@ async fn commit_files_and_diff_support_root_commits() {
     assert_eq!(files[0].path, "root.txt");
     assert!(diff.patch.contains("+root content"));
 }
+
+#[test]
+fn changed_file_count_counts_unique_paths() {
+    let porcelain = concat!(
+        "1 MM N... 100644 100644 100644 0 0 src/main.rs\0",
+        "? untracked.txt\0",
+        "1 A. N... 100644 100644 100644 0 0 added.rs\0",
+    );
+    let changes = parse_working_tree_changes(porcelain);
+    assert_eq!(changes.staged.len(), 2, "MM staged + A. staged");
+    assert_eq!(changes.unstaged.len(), 2, "MM unstaged + untracked");
+    assert_eq!(changes.changed_file_count(), 3);
+}
+
+#[test]
+fn changed_file_count_is_zero_for_empty_tree() {
+    assert_eq!(parse_working_tree_changes("").changed_file_count(), 0);
+}
+
