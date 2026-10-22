@@ -216,7 +216,10 @@ fn oss_download_tarball_url_uses_github_release_asset() {
 
     assert_eq!(
         url,
-        "https://github.com/zerx-lab/warp/releases/latest/download/zap-linux-x86_64.tar.gz"
+        format!(
+            "https://github.com/{}/releases/latest/download/zap-linux-x86_64.tar.gz",
+            release_repo()
+        )
     );
     assert!(!url.contains("app.warp.dev"));
     assert!(!url.contains("/download/cli"));

@@ -359,13 +359,27 @@ pub fn install_script(staging_tarball_path: Option<&str>) -> String {
         .replace("{staging_tarball_path}", staging_tarball_path.unwrap_or(""))
 }
 
+/// 发布 remote-server tarball 的 GitHub 仓库(`owner/repo`)。
+///
+/// 编译时通过 `ZAP_RELEASE_REPO` 注入(CI 里传 `${{ github.repository }}`),
+/// 这样 fork 自己构建的客户端会去自己仓库的 Release 下载与客户端同 tag 的
+/// tarball,而不是去上游仓库找一个并不存在的 tag。未设置时默认 `jianweidai/warp`。
+pub const DEFAULT_RELEASE_REPO: &str = "jianweidai/warp";
+
+pub fn release_repo() -> &'static str {
+    match option_env!("ZAP_RELEASE_REPO") {
+        Some(repo) if !repo.trim().is_empty() => repo,
+        _ => DEFAULT_RELEASE_REPO,
+    }
+}
+
 /// 构造 Zap CLI release 资产下载基址。
 fn download_url() -> String {
     let release_path = match ChannelState::app_version() {
         Some(tag) => format!("download/{tag}"),
         None => "latest/download".to_string(),
     };
-    format!("https://github.com/zerx-lab/warp/releases/{release_path}")
+    format!("https://github.com/{}/releases/{release_path}", release_repo())
 }
 
 fn version_suffix() -> String {

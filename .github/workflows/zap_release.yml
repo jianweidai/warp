@@ -12,14 +12,15 @@
 # - 复用 ./.github/actions/{prepare_environment,get_channel_config}
 #
 # 流水线结构(先打包后发布,避免出现空 Release):
-#   prepare_metadata → release_{macos,windows,linux} (上传成 workflow artifact)
+#   prepare_metadata → release_{macos,windows,linux} + release_cli_linux (上传成 workflow artifact)
+#   (release_cli_linux 与 macOS job 产出 SSH 扩展所需的 zap-<os>-<arch>.tar.gz,release 分支 push 也会跑)
 #                    → publish_release (全部 build 成功后下载 artifact 并创建 Release)
 # 任意 build job 失败 → publish_release 因 needs 跳过 → 不会留下没有安装包的 Release。
 
 name: Zap Release
 
 # PR 验证由 .github/workflows/pr-check.yml 负责(Linux cargo check)。
-# release 分支 push 只打 macOS arm64,用于日常自用快速验证。
+# release 分支 push 只打 macOS arm64 安装包 + remote-server CLI tarball,用于日常自用快速验证。
 # push tag / 手动 dispatch 跑全量三平台打包,用于正式发布。
 on:
   push:
@@ -44,6 +45,9 @@ env:
   # channel_config::load_config!() 宏 → build.rs 调 warp-channel-config 失败 →
   # *_config.json 不生成 → include_str! 编译失败。
   CHANNEL: oss
+  # remote-server(SSH 扩展)tarball 的下载仓库,编译期注入 crates/remote_server/src/setup.rs。
+  # 用当前仓库,客户端就会去本仓库 Release 里下载与自己同 tag 的 zap-<os>-<arch>.tar.gz。
+  ZAP_RELEASE_REPO: ${{ github.repository }}
 
 jobs:
   prepare_metadata:
@@ -213,6 +217,35 @@ jobs:
         with:
           name: zap-macos-${{ matrix.dmg_name_suffix }}
           path: ${{ steps.bundle_app.outputs.dmg_path }}
+          if-no-files-found: error
+          retention-days: 7
+
+      # SSH 扩展(remote-server)需要的 CLI tarball:`zap-macos-<arch>.tar.gz`,
+      # 内含 `zap-oss` 与 `resources/`,与 crates/remote_server/src/setup.rs
+      # download_tarball_url() / install_remote_server.sh 请求的资产名一致。
+      - name: Build CLI (remote-server)
+        id: bundle_cli
+        run: |
+          script/bundle --channel "$CHANNEL" --arch ${{ matrix.arch }} --artifact cli --nosign
+        shell: bash
+        env:
+          GIT_RELEASE_TAG: ${{ needs.prepare_metadata.outputs.release_tag }}
+          ZAP_CARGO_PROFILE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/release' && 'release' || 'release-lto' }}
+
+      - name: Package CLI tarball
+        run: |
+          cp "${{ steps.bundle_cli.outputs.binary_path }}" zap-oss
+          tar czf zap-macos-${{ matrix.arch }}.tar.gz \
+            zap-oss \
+            -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
+          tar tzf zap-macos-${{ matrix.arch }}.tar.gz | head -n 5
+        shell: bash
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zap-cli-macos-${{ matrix.arch }}
+          path: zap-macos-${{ matrix.arch }}.tar.gz
           if-no-files-found: error
           retention-days: 7
 
@@ -413,6 +446,92 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # 轻量 Linux job:只编译 remote-server 需要的静态 musl CLI,打成
+  # `zap-linux-<arch>.tar.gz`(内含 `zap-oss` + `resources/`)。不打 AppImage/deb/rpm,
+  # 所以 release 分支 push 也跑,保证 SSH 扩展能下载到与客户端同 tag 的二进制。
+  # aarch64 走原生 arm runner,标记为 optional:失败不阻塞发布。
+  release_cli_linux:
+    name: Build remote-server CLI (Linux ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    needs: prepare_metadata
+    timeout-minutes: 180
+    continue-on-error: ${{ matrix.optional }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+            zig_host: x86_64
+            optional: false
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            zig_host: aarch64
+            optional: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ needs.prepare_metadata.outputs.release_branch }}
+
+      - name: Free up disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift || true
+          df -h /
+
+      - uses: ./.github/actions/prepare_environment
+        with:
+          target_os: linux
+          cache_key: cli-musl-${{ matrix.arch }}
+          is_self_hosted: false
+          install_release_deps: true
+
+      # 静态 musl 链接:产物不依赖远端主机 glibc(CentOS 7 / Alpine 等都能跑)。
+      # 用 cargo zigbuild,zig 自带 musl C/C++ 工具链。
+      - name: Install zig + cargo-zigbuild
+        run: |
+          set -euo pipefail
+          rustup target add ${{ matrix.arch }}-unknown-linux-musl
+          ZIG_VERSION="0.13.0"
+          ZIG_DIR="$HOME/.local/zig-${ZIG_VERSION}"
+          if [ ! -x "${ZIG_DIR}/zig" ]; then
+            mkdir -p "${ZIG_DIR}"
+            curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-${{ matrix.zig_host }}-${ZIG_VERSION}.tar.xz" \
+              | tar -xJ -C "${ZIG_DIR}" --strip-components=1
+          fi
+          echo "${ZIG_DIR}" >> "$GITHUB_PATH"
+          cargo install --locked cargo-zigbuild --version ^0.19
+        shell: bash
+
+      - name: Build CLI (static musl via zigbuild)
+        id: bundle_cli
+        run: |
+          script/bundle --channel "$CHANNEL" --arch ${{ matrix.arch }} --artifact cli --packages none \
+            --target ${{ matrix.arch }}-unknown-linux-musl
+        shell: bash
+        env:
+          GIT_RELEASE_TAG: ${{ needs.prepare_metadata.outputs.release_tag }}
+          USE_ZIGBUILD: "true"
+          PKG_CONFIG_ALLOW_CROSS: 1
+
+      - name: Package CLI tarball
+        run: |
+          cp "${{ steps.bundle_cli.outputs.executable_path }}" zap-oss
+          tar czf zap-linux-${{ matrix.arch }}.tar.gz \
+            zap-oss \
+            -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
+          tar tzf zap-linux-${{ matrix.arch }}.tar.gz | head -n 5
+        shell: bash
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zap-cli-linux-${{ matrix.arch }}
+          path: zap-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
   publish_release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
@@ -422,6 +541,7 @@ jobs:
       ${{
         always() &&
         needs.release_macos.result == 'success' &&
+        needs.release_cli_linux.result == 'success' &&
         (
           (github.event_name == 'push' && github.ref == 'refs/heads/release') ||
           (needs.release_windows.result == 'success' && needs.release_linux.result == 'success')
@@ -432,6 +552,7 @@ jobs:
       - release_macos
       - release_windows
       - release_linux
+      - release_cli_linux
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
