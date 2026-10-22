@@ -238,7 +238,7 @@ jobs:
           tar czf zap-macos-${{ matrix.arch }}.tar.gz \
             zap-oss \
             -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
-          tar tzf zap-macos-${{ matrix.arch }}.tar.gz | head -n 5
+          tar tzf zap-macos-${{ matrix.arch }}.tar.gz | head -n 5 || true
         shell: bash
 
       - name: Upload CLI artifact
@@ -521,7 +521,7 @@ jobs:
           tar czf zap-linux-${{ matrix.arch }}.tar.gz \
             zap-oss \
             -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
-          tar tzf zap-linux-${{ matrix.arch }}.tar.gz | head -n 5
+          tar tzf zap-linux-${{ matrix.arch }}.tar.gz | head -n 5 || true
         shell: bash
 
       - name: Upload CLI artifact
