@@ -25,6 +25,9 @@ use super::global_buffer_model::GlobalBufferModel;
 
 /// 卡片的最大高度。
 pub const FIND_REFERENCES_MAX_HEIGHT: f32 = 300.;
+/// 卡片宽度。卡片作为浮层显示，没有父级宽度约束，必须给定宽度，否则行内的
+/// `Shrinkable` 会在无限宽度下布局导致崩溃。
+const FIND_REFERENCES_WIDTH: f32 = 640.;
 /// 最多显示的引用数，避免超大结果拖慢界面。
 const MAX_REFERENCES: usize = 500;
 
@@ -275,6 +278,7 @@ impl View for FindReferencesView {
                 .with_border(Border::all(1.).with_border_fill(internal_colors::neutral_4(theme)))
                 .finish(),
         )
+        .with_width(FIND_REFERENCES_WIDTH)
         .with_max_height(FIND_REFERENCES_MAX_HEIGHT)
         .finish()
     }

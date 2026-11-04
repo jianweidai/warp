@@ -293,10 +293,12 @@ impl LocalCodeEditorView {
             }
         };
         self.lsp_hover.clear();
-        self.editor.update(ctx, |editor, ctx| {
-            editor.clear_hovered_symbol_range(ctx);
-        });
+        // Cmd+点击定义名时，这里在编辑器处理点击的过程中被同步调用，此时更新编辑器会
+        // 重入崩溃。所以清除链接放到结果回来之后再做。
         ctx.spawn(future, move |me, result, ctx| {
+            me.editor.update(ctx, |editor, ctx| {
+                editor.clear_hovered_symbol_range(ctx);
+            });
             let references = result.unwrap_or_default();
             me.show_find_references(references, anchor, ctx);
         });
