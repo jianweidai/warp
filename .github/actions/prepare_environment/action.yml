@@ -71,9 +71,10 @@ runs:
         # Make sure x86_64-unknown-linux-gnu and wasm32-unknown-unknown builds
         # don't share a cache, despite running on the same _host_ architecture.
         key: ${{ inputs.cache_key != '' && inputs.cache_key || inputs.target_os }}
-        # 仅在可信的默认分支、release 分支和本仓库 feat/ 分支保存缓存，避免缓存被不可信分支污染。
-        # GitHub 缓存按分支隔离；fork 的 PR ref_name 形如 "N/merge"，不会匹配 feat/。
-        save-if: ${{ github.ref_name == github.event.repository.default_branch || github.ref_name == 'release' || startsWith(github.ref_name, 'feat/') }}
+        # 仅在可信的默认分支、release 分支和本仓库 feat/、preview/ 分支保存缓存，避免缓存被不可信分支污染。
+        # GitHub 缓存按分支隔离，preview/ 分支读不到其他分支的缓存，不保存就每次从零编译。
+        # fork 的 PR ref_name 形如 "N/merge"，不会匹配这些前缀。
+        save-if: ${{ github.ref_name == github.event.repository.default_branch || github.ref_name == 'release' || startsWith(github.ref_name, 'feat/') || startsWith(github.ref_name, 'preview/') }}
 
     - name: Set up Namespace cache
       if: ${{ startsWith(runner.name, 'nsc-runner') }}
