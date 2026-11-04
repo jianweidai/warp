@@ -67,6 +67,26 @@ impl<'de> Deserialize<'de> for EditorChoice {
     }
 }
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    schemars::JsonSchema,
+    settings_value::SettingsValue,
+)]
+#[schemars(
+    description = "Side of the active tab where files open when using the split pane layout.",
+    rename_all = "snake_case"
+)]
+pub enum EditorSplitPosition {
+    Left,
+    Right,
+}
+
 define_settings_group!(EditorSettings, settings: [
     open_file_editor: OpenFileEditor {
         type: EditorChoice,
@@ -96,6 +116,15 @@ define_settings_group!(EditorSettings, settings: [
         private: false,
         toml_path: "code.editor.open_file_layout",
         description: "The layout used when opening files in the editor.",
+    },
+    open_file_split_position: OpenFileSplitPosition {
+        type: EditorSplitPosition,
+        default: EditorSplitPosition::Left,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        private: false,
+        toml_path: "code.editor.open_file_split_position",
+        description: "The side of the active tab where files open when using the split pane layout.",
     },
     prefer_markdown_viewer: PreferMarkdownViewer {
         type: bool,

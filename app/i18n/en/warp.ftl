@@ -2312,6 +2312,9 @@ settings-external-editor-tabbed-desc = When this setting is on, any files opened
 settings-external-editor-prefer-markdown = Open Markdown files in Zap's Markdown Viewer by default
 settings-external-editor-layout-split-pane = Split Pane
 settings-external-editor-layout-new-tab = New Tab
+settings-external-editor-choose-split-position = Choose which side split panes open files on
+settings-external-editor-split-position-left = Left
+settings-external-editor-split-position-right = Right
 settings-external-editor-default-app = Default App
 
 # =============================================================================

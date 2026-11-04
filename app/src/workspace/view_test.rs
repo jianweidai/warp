@@ -1139,6 +1139,37 @@ fn test_close_last_tab_skip_confirmation() {
     });
 }
 
+#[cfg(feature = "local_fs")]
+#[test]
+fn test_open_file_split_direction_follows_setting() {
+    use crate::util::file::external_editor::settings::EditorSplitPosition;
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        app.read(|ctx| {
+            assert!(matches!(
+                Workspace::open_file_split_direction(ctx),
+                Direction::Left
+            ));
+        });
+
+        EditorSettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .open_file_split_position
+                .set_value(EditorSplitPosition::Right, ctx)
+                .expect("Can set the split position");
+        });
+
+        app.read(|ctx| {
+            assert!(matches!(
+                Workspace::open_file_split_direction(ctx),
+                Direction::Right
+            ));
+        });
+    })
+}
+
 #[test]
 fn test_notebook_pane_tracking() {
     App::test((), |mut app| async move {

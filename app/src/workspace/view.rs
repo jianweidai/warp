@@ -82,6 +82,8 @@ use crate::terminal::view::load_ai_conversation::{RestorationDirState, RestoredA
 use crate::terminal::view::{ConversationRestorationInNewPaneType, OnboardingIntention};
 use crate::ui_components::red_notification_dot::RedNotificationDot;
 #[cfg(feature = "local_fs")]
+use crate::util::file::external_editor::settings::EditorSplitPosition;
+#[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::settings::OpenConversationPreference;
 use crate::workspace::bonus_grant_notification_model::BonusGrantNotificationEvent;
 use crate::workspace::toast_stack::ToastStack;
@@ -7014,6 +7016,15 @@ impl Workspace {
         );
     }
 
+    /// Returns the side files open on when using the split pane layout.
+    #[cfg(feature = "local_fs")]
+    fn open_file_split_direction(ctx: &AppContext) -> Direction {
+        match *EditorSettings::as_ref(ctx).open_file_split_position {
+            EditorSplitPosition::Left => Direction::Left,
+            EditorSplitPosition::Right => Direction::Right,
+        }
+    }
+
     /// Open a file from the given session as a notebook pane.
     #[cfg(feature = "local_fs")]
     fn open_file_notebook(
@@ -7044,11 +7055,10 @@ impl Workspace {
                 self.add_tab_from_existing_pane(Box::new(pane), new_idx, ctx);
             }
             EditorLayout::SplitPane => {
+                let direction = Self::open_file_split_direction(ctx);
                 self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
                     pane_group.add_pane_with_direction(
-                        Direction::Right,
-                        pane,
-                        true, /* focus_new_pane */
+                        direction, pane, true, /* focus_new_pane */
                         ctx,
                     );
                 });
@@ -7319,11 +7329,10 @@ impl Workspace {
                 self.add_tab_from_existing_pane(Box::new(pane), new_idx, ctx);
             }
             EditorLayout::SplitPane => {
+                let direction = Self::open_file_split_direction(ctx);
                 self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
                     pane_group.add_pane_with_direction(
-                        Direction::Right,
-                        pane,
-                        !preview, /* focus_new_pane */
+                        direction, pane, !preview, /* focus_new_pane */
                         ctx,
                     );
                 });
@@ -10918,11 +10927,10 @@ impl Workspace {
                     self.add_tab_from_existing_pane(Box::new(pane), new_idx, ctx);
                 }
                 EditorLayout::SplitPane => {
+                    let direction = Self::open_file_split_direction(ctx);
                     self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
                         pane_group.add_pane_with_direction(
-                            Direction::Right,
-                            pane,
-                            true, /* focus_new_pane */
+                            direction, pane, true, /* focus_new_pane */
                             ctx,
                         );
                     });

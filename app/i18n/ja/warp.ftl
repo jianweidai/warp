@@ -2215,6 +2215,9 @@ settings-external-editor-tabbed-desc = この設定がオンの場合、同じ�
 settings-external-editor-prefer-markdown = Markdown ファイルを既定で Zap の Markdown ビューアで開く
 settings-external-editor-layout-split-pane = ペイン分割
 settings-external-editor-layout-new-tab = 新規タブ
+settings-external-editor-choose-split-position = ペイン分割でファイルを開く位置を選択
+settings-external-editor-split-position-left = 左
+settings-external-editor-split-position-right = 右
 settings-external-editor-default-app = 既定アプリ
 
 # =============================================================================

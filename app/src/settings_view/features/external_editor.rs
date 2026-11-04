@@ -17,8 +17,9 @@ use crate::{
     },
     util::file::external_editor::{
         settings::{
-            EditorChoice, EditorLayout, OpenCodePanelsFileEditor, OpenFileEditor, OpenFileLayout,
-            PreferMarkdownViewer, PreferTabbedEditorView,
+            EditorChoice, EditorLayout, EditorSplitPosition, OpenCodePanelsFileEditor,
+            OpenFileEditor, OpenFileLayout, OpenFileSplitPosition, PreferMarkdownViewer,
+            PreferTabbedEditorView,
         },
         EditorSettings, SUPPORTED_EDITORS,
     },
@@ -33,6 +34,7 @@ pub enum ExternalEditorAction {
     SetEditor(EditorChoice),
     SetCodePanelsEditor(EditorChoice),
     SetLayout(EditorLayout),
+    SetSplitPosition(EditorSplitPosition),
     TogglePreferMarkdownViewer,
     ToggleTabbedEditorView,
     OpenUrl(String),
@@ -42,6 +44,7 @@ pub struct ExternalEditorView {
     editor_dropdown: ViewHandle<Dropdown<ExternalEditorAction>>,
     code_panels_editor_dropdown: ViewHandle<Dropdown<ExternalEditorAction>>,
     layout_dropdown: ViewHandle<Dropdown<ExternalEditorAction>>,
+    split_position_dropdown: ViewHandle<Dropdown<ExternalEditorAction>>,
     tabbed_editor_view_mouse_state: SwitchStateHandle,
     prefer_markdown_viewer_switch: SwitchStateHandle,
     markdown_viewer_mouse_state: MouseStateHandle,
@@ -54,6 +57,7 @@ impl ExternalEditorView {
         let editor_to_open_files = *settings.as_ref(ctx).open_file_editor;
         let code_panels_editor_to_open_files = *settings.as_ref(ctx).open_code_panels_file_editor;
         let layout_to_open_files = *settings.as_ref(ctx).open_file_layout;
+        let split_position = *settings.as_ref(ctx).open_file_split_position;
 
         let editor_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
@@ -80,6 +84,11 @@ impl ExternalEditorView {
             Self::init_layout_dropdown(&layout_to_open_files, &mut dropdown, ctx);
             dropdown
         });
+        let split_position_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            Self::init_split_position_dropdown(&split_position, &mut dropdown, ctx);
+            dropdown
+        });
         ctx.subscribe_to_model(
             &EditorSettings::handle(ctx),
             |me, editor_settings, _, ctx| {
@@ -101,6 +110,10 @@ impl ExternalEditorView {
                         ctx,
                     );
                 });
+                me.split_position_dropdown.update(ctx, |dropdown, ctx| {
+                    let position = *editor_settings.as_ref(ctx).open_file_split_position;
+                    Self::init_split_position_dropdown(&position, dropdown, ctx);
+                });
                 ctx.notify()
             },
         );
@@ -109,6 +122,7 @@ impl ExternalEditorView {
             editor_dropdown,
             code_panels_editor_dropdown,
             layout_dropdown,
+            split_position_dropdown,
             tabbed_editor_view_mouse_state: Default::default(),
             prefer_markdown_viewer_switch: Default::default(),
             markdown_viewer_mouse_state: Default::default(),
@@ -138,6 +152,33 @@ impl ExternalEditorView {
         match layout_to_open_files {
             EditorLayout::SplitPane => dropdown.set_selected_by_name(split_pane_text, ctx),
             EditorLayout::NewTab => dropdown.set_selected_by_name(new_tab_text, ctx),
+        };
+    }
+
+    fn init_split_position_dropdown(
+        split_position: &EditorSplitPosition,
+        dropdown: &mut Dropdown<ExternalEditorAction>,
+        ctx: &mut ViewContext<Dropdown<ExternalEditorAction>>,
+    ) {
+        let left_text = crate::t!("settings-external-editor-split-position-left");
+        let right_text = crate::t!("settings-external-editor-split-position-right");
+
+        dropdown.set_items(
+            vec![
+                DropdownItem::new(
+                    left_text.clone(),
+                    ExternalEditorAction::SetSplitPosition(EditorSplitPosition::Left),
+                ),
+                DropdownItem::new(
+                    right_text.clone(),
+                    ExternalEditorAction::SetSplitPosition(EditorSplitPosition::Right),
+                ),
+            ],
+            ctx,
+        );
+        match split_position {
+            EditorSplitPosition::Left => dropdown.set_selected_by_name(left_text, ctx),
+            EditorSplitPosition::Right => dropdown.set_selected_by_name(right_text, ctx),
         };
     }
 
@@ -224,6 +265,21 @@ impl ExternalEditorView {
             TelemetryEvent::FeaturesPageAction {
                 action: "SetLayout".to_string(),
                 value: format!("{layout:?}")
+            },
+            ctx
+        );
+    }
+
+    /// Handles [`ExternalEditorAction::SetSplitPosition`] by updating the split position setting.
+    fn set_split_position(&mut self, position: &EditorSplitPosition, ctx: &mut ViewContext<Self>) {
+        EditorSettings::handle(ctx).update(ctx, |settings, ctx| {
+            report_if_error!(settings.open_file_split_position.set_value(*position, ctx));
+        });
+
+        send_telemetry_from_ctx!(
+            TelemetryEvent::FeaturesPageAction {
+                action: "SetSplitPosition".to_string(),
+                value: format!("{position:?}")
             },
             ctx
         );
@@ -324,10 +380,26 @@ impl View for ExternalEditorView {
             &self.layout_dropdown,
         );
 
+        let split_position = render_dropdown_item(
+            appearance,
+            &crate::t!("settings-external-editor-choose-split-position"),
+            None,
+            None,
+            LocalOnlyIconState::for_setting(
+                OpenFileSplitPosition::storage_key(),
+                OpenFileSplitPosition::sync_to_cloud(),
+                &mut self.local_only_icon_states.borrow_mut(),
+                app,
+            ),
+            None,
+            &self.split_position_dropdown,
+        );
+
         let mut column = Flex::column()
             .with_child(default_editor)
             .with_child(code_panels_editor)
-            .with_child(default_layout);
+            .with_child(default_layout)
+            .with_child(split_position);
 
         if FeatureFlag::TabbedEditorView.is_enabled() {
             column.add_child(render_body_item::<ExternalEditorAction>(
@@ -402,6 +474,9 @@ impl TypedActionView for ExternalEditorView {
                 self.set_code_panels_editor(editor, ctx)
             }
             ExternalEditorAction::SetLayout(layout) => self.set_layout(layout, ctx),
+            ExternalEditorAction::SetSplitPosition(position) => {
+                self.set_split_position(position, ctx)
+            }
             ExternalEditorAction::TogglePreferMarkdownViewer => {
                 self.toggle_prefer_markdown_viewer(ctx)
             }

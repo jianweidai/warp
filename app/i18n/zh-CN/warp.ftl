@@ -2238,6 +2238,9 @@ settings-external-editor-tabbed-desc = 开启后，同一标签页中打开的�
 settings-external-editor-prefer-markdown = 默认用 Zap Markdown 查看器打开 Markdown 文件
 settings-external-editor-layout-split-pane = 分屏面板
 settings-external-editor-layout-new-tab = 新建标签页
+settings-external-editor-choose-split-position = 选择分屏打开文件时的位置
+settings-external-editor-split-position-left = 左侧
+settings-external-editor-split-position-right = 右侧
 settings-external-editor-default-app = 系统默认
 
 # =============================================================================
