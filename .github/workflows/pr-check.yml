@@ -1,0 +1,50 @@
+# 日常验证：在 Linux 上编译并运行相关测试，不打包、不创建 Release。
+# 发布由 zap_release.yml 负责（push 到 release 分支会直接发布正式 Release）。
+name: PR Check
+
+on:
+  push:
+    branches:
+      - "feat/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check and test (Linux)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Free up disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift || true
+          df -h /
+
+      - uses: ./.github/actions/prepare_environment
+        with:
+          target_os: linux
+          is_self_hosted: false
+          install_test_deps: true
+
+      - name: Check app
+        run: cargo check -p warp
+        shell: bash
+
+      - name: Run related tests
+        run: >-
+          cargo nextest run --profile ci -p warp
+          -E 'test(code::) | test(pane_group::tree) | test(open_file_split_direction)'
+        shell: bash
