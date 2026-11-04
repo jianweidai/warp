@@ -89,7 +89,7 @@ pub fn init(app: &mut AppContext) {
             id!("LocalCodeEditorView") & !id!("IMEOpen"),
         ),
         FixedBinding::new(
-            "shift-alt-f",
+            "alt-shift-F",
             LocalCodeEditorAction::FormatDocument,
             id!("LocalCodeEditorView") & !id!("IMEOpen"),
         ),

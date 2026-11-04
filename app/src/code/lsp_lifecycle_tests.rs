@@ -48,7 +48,7 @@ fn enabled_servers_match_file_language() {
 
 #[test]
 fn repo_root_falls_back_to_git_directory() {
-    App::test((), |mut app| async move {
+    App::test((), |app| async move {
         app.add_singleton_model(|_| DetectedRepositories::default());
 
         let repo = tempfile::tempdir().expect("Can create temp dir");
