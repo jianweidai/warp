@@ -4,6 +4,7 @@
 //! 只显示与当前缓冲区版本一致的诊断，避免把旧结果画到新内容上。
 
 use std::ops::Range;
+use std::path::Path;
 
 use lsp::{DiagnosticSeverity, LspEvent, LspManagerModel, LspManagerModelEvent};
 use string_offset::CharOffset;
@@ -12,10 +13,37 @@ use warp_editor::render::model::Decoration;
 use warpui::{SingletonEntity, ViewContext};
 
 use super::LocalCodeEditorView;
+use crate::settings::{CodeSettings, CodeSettingsChangedEvent};
 
 impl LocalCodeEditorView {
-    /// 文件加载完成后调用：连接服务器，并在服务器启动、停止时更新。
-    pub(super) fn connect_lsp_diagnostics(&mut self, ctx: &mut ViewContext<Self>) {
+    /// 本地文件加载完成后调用。在设置里启用或关闭服务器时会重新执行，
+    /// 所以打开文件后再启用 LSP 也能立即生效。
+    pub(super) fn init_lsp(&mut self, ctx: &mut ViewContext<Self>) {
+        ctx.subscribe_to_model(&CodeSettings::handle(ctx), |me, _, event, ctx| {
+            if matches!(event, CodeSettingsChangedEvent::EnabledLspServers { .. }) {
+                me.refresh_lsp(ctx);
+            }
+        });
+        self.refresh_lsp(ctx);
+    }
+
+    fn refresh_lsp(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(path) = self.file_path().map(Path::to_path_buf) else {
+            return;
+        };
+        if !crate::code::lsp_lifecycle::on_local_file_loaded(&path, ctx) {
+            return;
+        }
+        if self.lsp_subscribed {
+            self.try_connect_lsp_server(ctx);
+        } else {
+            self.lsp_subscribed = true;
+            self.connect_lsp_diagnostics(ctx);
+        }
+    }
+
+    /// 连接服务器，并在服务器启动、停止或被移除时更新。
+    fn connect_lsp_diagnostics(&mut self, ctx: &mut ViewContext<Self>) {
         ctx.subscribe_to_model(&LspManagerModel::handle(ctx), |me, _, event, ctx| {
             let Some(path) = me.file_path() else {
                 return;

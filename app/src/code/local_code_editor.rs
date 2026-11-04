@@ -230,6 +230,8 @@ pub struct LocalCodeEditorView {
     /// 当前文件的诊断（渲染偏移），悬停时显示信息。
     lsp_diagnostics: Vec<lsp_diagnostics::ProcessedDiagnostic>,
     lsp_hover: lsp_hover::LspHoverState,
+    /// 是否已订阅 LSP 服务器的启动、停止事件。
+    lsp_subscribed: bool,
     /// 查找引用的结果卡片。
     find_references: Option<ViewHandle<super::find_references_view::FindReferencesView>>,
 }
@@ -333,6 +335,7 @@ impl LocalCodeEditorView {
             lsp_server: None,
             lsp_diagnostics: Vec::new(),
             lsp_hover: Default::default(),
+            lsp_subscribed: false,
             find_references: None,
         };
 
@@ -621,12 +624,7 @@ impl LocalCodeEditorView {
                     }
                     me.base_content_version = Some(*content_version);
                     me.on_file_loaded(ctx);
-                    #[cfg(all(feature = "local_fs", feature = "local_tty"))]
-                    if let Some(path) = me.file_path().map(Path::to_path_buf) {
-                        if crate::code::lsp_lifecycle::on_local_file_loaded(&path, ctx) {
-                            me.connect_lsp_diagnostics(ctx);
-                        }
-                    }
+                    me.init_lsp(ctx);
                     ctx.emit(LocalCodeEditorEvent::FileLoaded);
                 }
                 GlobalBufferModelEvent::FailedToLoad { error, .. } => {

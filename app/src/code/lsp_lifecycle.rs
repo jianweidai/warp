@@ -4,6 +4,8 @@
 //!   默认集合为空，所以默认不会启动任何进程。
 //! - 每个 git 仓库根目录一组服务器。不在 git 仓库内的文件不启动。
 //! - 仓库内已没有打开的文件，并且超过 [`IDLE_GRACE_PERIOD`]，就停止该仓库的服务器。
+//! - 在设置里关闭某个服务器后，立即停止并移除它。
+//! - 记录每种服务器的安装情况和最近一次启动错误，供设置页显示；启动失败时弹出提示。
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -13,16 +15,22 @@ use std::time::{Duration, Instant};
 use ::settings::Setting;
 use futures::stream::AbortHandle;
 use lsp::supported_servers::LSPServerType;
-use lsp::{LanguageId, LspManagerModel, LspServerConfig, LspState};
+use lsp::{
+    CommandBuilder, LanguageId, LanguageServerCandidate, LanguageServerId, LspEvent, LspManagerModel, LspServerConfig,
+    LspServerModel, LspState,
+};
 use repo_metadata::repositories::DetectedRepositories;
 use sha2::{Digest, Sha256};
 use warpui::r#async::Timer;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use warpui::windowing::WindowManager;
+use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
 use crate::channel::ChannelState;
 use crate::code::local_code_editor::LocalCodeEditorView;
-use crate::settings::CodeSettings;
+use crate::settings::{CodeSettings, CodeSettingsChangedEvent};
 use crate::terminal::local_shell::LocalShellState;
+use crate::view_components::DismissibleToast;
+use crate::workspace::ToastStack;
 
 /// 仓库内没有打开的文件后，再等多久停止服务器。
 const IDLE_GRACE_PERIOD: Duration = Duration::from_secs(5 * 60);
@@ -43,7 +51,7 @@ pub fn on_local_file_loaded(path: &Path, ctx: &mut AppContext) -> bool {
     true
 }
 
-fn enabled_servers_for_path(path: &Path, ctx: &AppContext) -> Vec<LSPServerType> {
+pub(crate) fn enabled_servers_for_path(path: &Path, ctx: &AppContext) -> Vec<LSPServerType> {
     let Some(language) = LanguageId::from_path(path) else {
         return Vec::new();
     };
@@ -56,8 +64,26 @@ fn enabled_servers_for_path(path: &Path, ctx: &AppContext) -> Vec<LSPServerType>
         .collect()
 }
 
+/// 某种服务器的状态，供设置页显示。
+#[derive(Clone, Debug, Default)]
+pub struct ServerStatus {
+    /// `None` 表示还没检查或正在检查。
+    pub installed: Option<bool>,
+    /// 最近一次启动失败的原因，成功启动后清除。
+    pub last_error: Option<String>,
+}
+
+pub enum LspLifecycleEvent {
+    /// 安装情况、启动错误或运行状态有变化。
+    StatusChanged,
+}
+
 #[derive(Default)]
 pub struct LspLifecycle {
+    statuses: HashMap<LSPServerType, ServerStatus>,
+    /// 已订阅事件的服务器，避免重复订阅。
+    watched: HashSet<LanguageServerId>,
+    checking_install: bool,
     /// 只在需要启动服务器时才创建，用于检查安装情况。
     http_client: Option<Arc<http_client::Client>>,
     /// 正在获取 PATH、尚未注册的服务器，避免重复启动。
@@ -68,8 +94,134 @@ pub struct LspLifecycle {
 }
 
 impl LspLifecycle {
-    pub fn new() -> Self {
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self {
+        ctx.subscribe_to_model(&CodeSettings::handle(ctx), |me, event, ctx| {
+            if matches!(event, CodeSettingsChangedEvent::EnabledLspServers { .. }) {
+                me.remove_disabled_servers(ctx);
+            }
+        });
         Self::default()
+    }
+
+    pub fn status(&self, server: LSPServerType) -> ServerStatus {
+        self.statuses.get(&server).cloned().unwrap_or_default()
+    }
+
+    /// 正在运行（启动中或可用）这种服务器的仓库数。
+    pub fn running_count(&self, server: LSPServerType, ctx: &AppContext) -> usize {
+        let manager = LspManagerModel::as_ref(ctx);
+        manager
+            .workspace_roots()
+            .filter(|root| {
+                manager
+                    .servers_for_workspace(root)
+                    .into_iter()
+                    .flatten()
+                    .any(|model| {
+                        let model = model.as_ref(ctx);
+                        model.server_type() == server && is_running(model.state())
+                    })
+            })
+            .count()
+    }
+
+    /// 检查各服务器是否已安装（PATH 或 Zap 的安装目录）。只检查，不下载。
+    pub fn check_installed(&mut self, ctx: &mut ModelContext<Self>) {
+        if self.checking_install {
+            return;
+        }
+        self.checking_install = true;
+        let http_client = self.http_client(ctx);
+        let path_future = LocalShellState::handle(ctx).update(ctx, |shell_state, ctx| {
+            shell_state.get_interactive_path_env_var(ctx)
+        });
+        ctx.spawn(
+            async move {
+                let executor = CommandBuilder::new(path_future.await);
+                let mut results = Vec::new();
+                for server in LSPServerType::all() {
+                    let installed = server
+                        .candidate(http_client.clone())
+                        .is_installed(&executor)
+                        .await;
+                    results.push((server, installed));
+                }
+                results
+            },
+            |me, results, ctx| {
+                me.checking_install = false;
+                for (server, installed) in results {
+                    me.statuses.entry(server).or_default().installed = Some(installed);
+                }
+                ctx.emit(LspLifecycleEvent::StatusChanged);
+            },
+        );
+    }
+
+    fn http_client(&mut self, _ctx: &AppContext) -> Arc<http_client::Client> {
+        self.http_client
+            .get_or_insert_with(|| Arc::new(http_client::Client::new()))
+            .clone()
+    }
+
+    /// 在设置里关闭的服务器立即停止并移除，打开文件的诊断随之清除。
+    fn remove_disabled_servers(&mut self, ctx: &mut ModelContext<Self>) {
+        let enabled = CodeSettings::as_ref(ctx)
+            .enabled_lsp_servers
+            .value()
+            .clone();
+        let manager = LspManagerModel::handle(ctx);
+        let to_remove: Vec<(PathBuf, LSPServerType)> = manager
+            .as_ref(ctx)
+            .workspace_roots()
+            .flat_map(|root| {
+                manager
+                    .as_ref(ctx)
+                    .servers_for_workspace(root)
+                    .into_iter()
+                    .flatten()
+                    .map(|model| model.as_ref(ctx).server_type())
+                    .filter(|server| !enabled.contains(server))
+                    .map(|server| (root.clone(), server))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        if to_remove.is_empty() {
+            return;
+        }
+        manager.update(ctx, |manager, ctx| {
+            for (root, server) in to_remove {
+                log::info!(
+                    "Removing disabled {} LSP server for {}",
+                    server.binary_name(),
+                    root.display()
+                );
+                manager.remove_server(&root, server, ctx);
+            }
+        });
+        ctx.emit(LspLifecycleEvent::StatusChanged);
+    }
+
+    /// 订阅服务器事件：记录启动错误并弹出提示，状态变化时通知设置页。
+    fn watch_server(&mut self, server: &ModelHandle<LspServerModel>, ctx: &mut ModelContext<Self>) {
+        if !self.watched.insert(server.as_ref(ctx).id()) {
+            return;
+        }
+        let server_type = server.as_ref(ctx).server_type();
+        ctx.subscribe_to_model(server, move |me, event, ctx| match event {
+            LspEvent::Started => {
+                me.statuses.entry(server_type).or_default().last_error = None;
+                ctx.emit(LspLifecycleEvent::StatusChanged);
+            }
+            LspEvent::Stopped => ctx.emit(LspLifecycleEvent::StatusChanged),
+            LspEvent::Failed(e) => {
+                let error = format!("{e:#}");
+                me.statuses.entry(server_type).or_default().last_error = Some(error.clone());
+                ctx.emit(LspLifecycleEvent::StatusChanged);
+                show_failure_toast(server_type, &error, ctx);
+            }
+            _ => {}
+        });
     }
 
     fn ensure_started(
@@ -121,10 +273,7 @@ impl LspLifecycle {
             self.pending.remove(&(root.clone(), *server));
         }
 
-        let http_client = self
-            .http_client
-            .get_or_insert_with(|| Arc::new(http_client::Client::new()))
-            .clone();
+        let http_client = self.http_client(ctx);
         let client_name = ChannelState::app_id().application_name().to_string();
         let configs: Vec<LspServerConfig> = servers
             .into_iter()
@@ -150,8 +299,17 @@ impl LspLifecycle {
                 // 空闲回收后的服务器仍处于注册状态，这里返回 false，直接复用。
                 manager.register(root.clone(), config, ctx);
             }
-            manager.start_all(root, ctx);
+            manager.start_all(root.clone(), ctx);
         });
+
+        let servers = LspManagerModel::as_ref(ctx)
+            .servers_for_workspace(&root)
+            .cloned()
+            .unwrap_or_default();
+        for server in &servers {
+            self.watch_server(server, ctx);
+        }
+        ctx.emit(LspLifecycleEvent::StatusChanged);
 
         if self.scan.is_none() {
             self.schedule_scan(ctx);
@@ -203,12 +361,31 @@ impl LspLifecycle {
                 manager.stop_all(root, ctx);
             }
         });
+        ctx.emit(LspLifecycleEvent::StatusChanged);
         true
     }
 }
 
 impl Entity for LspLifecycle {
-    type Event = ();
+    type Event = LspLifecycleEvent;
+}
+
+fn is_running(state: &LspState) -> bool {
+    matches!(state, LspState::Starting | LspState::Available { .. })
+}
+
+fn show_failure_toast(server: LSPServerType, error: &str, ctx: &mut ModelContext<LspLifecycle>) {
+    let Some(window_id) = WindowManager::as_ref(ctx).active_window() else {
+        return;
+    };
+    let message = crate::t!(
+        "lsp-server-start-failed",
+        server = server.binary_name(),
+        error = error
+    );
+    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+        toast_stack.add_ephemeral_toast(DismissibleToast::error(message), window_id, ctx);
+    });
 }
 
 impl SingletonEntity for LspLifecycle {}
@@ -235,12 +412,7 @@ fn running_roots(ctx: &AppContext) -> Vec<PathBuf> {
                 .servers_for_workspace(root)
                 .into_iter()
                 .flatten()
-                .any(|server| {
-                    matches!(
-                        server.as_ref(ctx).state(),
-                        LspState::Starting | LspState::Available { .. }
-                    )
-                })
+                .any(|server| is_running(server.as_ref(ctx).state()))
         })
         .cloned()
         .collect()

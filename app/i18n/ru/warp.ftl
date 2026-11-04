@@ -1214,6 +1214,14 @@ settings-code-project-explorer = Обозреватель проекта
 settings-code-project-explorer-desc = Добавляет в панель инструментов слева обозреватель проекта / дерево файлов в стиле IDE.
 settings-code-global-search = Глобальный поиск по файлам
 settings-code-global-search-desc = Добавляет глобальный поиск по файлам в панель инструментов слева.
+settings-code-lsp-server = Языковой сервер { $language } ({ $binary })
+settings-code-lsp-status-checking = Проверяем, установлен ли он…
+settings-code-lsp-status-not-installed = Не найден. Установите его командой `{ $command }`, затем включите.
+settings-code-lsp-status-installed = Установлен. Включите, чтобы видеть ошибки, подсказки и переход к определению.
+settings-code-lsp-status-enabled = Включён. Запускается при открытии подходящего файла в git-репозитории и останавливается через 5 минут после закрытия его файлов.
+settings-code-lsp-status-running = Работает в проектах: { $count }.
+settings-code-lsp-status-failed = Не удалось запустить: { $error }
+lsp-server-start-failed = Не удалось запустить { $server }: { $error }
 
 # --- ANCHOR-SUB-EXEC-MODAL-BLOCKS (agent-settings-misc) ---
 # ---- execution_profile_view ----

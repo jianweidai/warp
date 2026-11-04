@@ -1214,6 +1214,14 @@ settings-code-project-explorer = Project explorer
 settings-code-project-explorer-desc = Adds an IDE-style project explorer / file tree to the left side tools panel.
 settings-code-global-search = Global file search
 settings-code-global-search-desc = Adds global file search to the left side tools panel.
+settings-code-lsp-server = { $language } language server ({ $binary })
+settings-code-lsp-status-checking = Checking whether it is installed…
+settings-code-lsp-status-not-installed = Not found. Install it with `{ $command }`, then turn this on.
+settings-code-lsp-status-installed = Installed. Turn on to show errors, hover info and go to definition.
+settings-code-lsp-status-enabled = On. Starts when you open a matching file in a git repository, and stops 5 minutes after its files are closed.
+settings-code-lsp-status-running = Running in { $count } project(s).
+settings-code-lsp-status-failed = Failed to start: { $error }
+lsp-server-start-failed = { $server } failed to start: { $error }
 
 # --- ANCHOR-SUB-EXEC-MODAL-BLOCKS (agent-settings-misc) ---
 # ---- execution_profile_view ----

@@ -1193,6 +1193,14 @@ settings-code-project-explorer = 项目浏览器
 settings-code-project-explorer-desc = 在左侧工具面板添加 IDE 风格的项目浏览器 / 文件树。
 settings-code-global-search = 全局文件搜索
 settings-code-global-search-desc = 在左侧工具面板添加全局文件搜索。
+settings-code-lsp-server = { $language } 语言服务器（{ $binary }）
+settings-code-lsp-status-checking = 正在检查是否已安装…
+settings-code-lsp-status-not-installed = 未找到。请先运行 `{ $command }` 安装，再打开开关。
+settings-code-lsp-status-installed = 已安装。打开后可显示错误、悬停提示和跳转定义。
+settings-code-lsp-status-enabled = 已开启。在 git 仓库中打开对应文件时启动，相关文件全部关闭 5 分钟后停止。
+settings-code-lsp-status-running = 正在 { $count } 个项目中运行。
+settings-code-lsp-status-failed = 启动失败：{ $error }
+lsp-server-start-failed = { $server } 启动失败：{ $error }
 
 # --- ANCHOR-SUB-EXEC-MODAL-BLOCKS (agent-settings-misc) ---
 # ---- execution_profile_view ----

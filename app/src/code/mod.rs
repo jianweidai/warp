@@ -87,7 +87,7 @@ pub fn init(app: &mut AppContext) {
     self::file_tree::init(app);
     lsp::init(app);
     #[cfg(all(not(target_family = "wasm"), feature = "local_fs", feature = "local_tty"))]
-    app.add_singleton_model(|_| lsp_lifecycle::LspLifecycle::new());
+    app.add_singleton_model(lsp_lifecycle::LspLifecycle::new);
 }
 
 /// The diff that results from editing a file.

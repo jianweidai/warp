@@ -1150,6 +1150,14 @@ settings-code-project-explorer = プロジェクトエクスプローラー
 settings-code-project-explorer-desc = 左側ツールパネルに IDE スタイルのプロジェクトエクスプローラー / ファイルツリーを追加します。
 settings-code-global-search = グローバルファイル検索
 settings-code-global-search-desc = 左側ツールパネルにグローバルファイル検索を追加します。
+settings-code-lsp-server = { $language } 言語サーバー（{ $binary }）
+settings-code-lsp-status-checking = インストールされているか確認しています…
+settings-code-lsp-status-not-installed = 見つかりません。`{ $command }` でインストールしてから有効にしてください。
+settings-code-lsp-status-installed = インストール済み。有効にするとエラー、ホバー情報、定義へのジャンプが使えます。
+settings-code-lsp-status-enabled = 有効。git リポジトリ内の対応ファイルを開くと起動し、関連ファイルをすべて閉じて 5 分後に停止します。
+settings-code-lsp-status-running = { $count } 個のプロジェクトで実行中です。
+settings-code-lsp-status-failed = 起動に失敗しました：{ $error }
+lsp-server-start-failed = { $server } の起動に失敗しました：{ $error }
 
 # --- ANCHOR-SUB-EXEC-MODAL-BLOCKS (agent-settings-misc) ---
 # ---- execution_profile_view ----
