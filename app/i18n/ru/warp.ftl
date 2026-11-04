@@ -2315,6 +2315,9 @@ settings-external-editor-tabbed-desc = Когда эта настройка вк
 settings-external-editor-prefer-markdown = По умолчанию открывать файлы Markdown в собственном просмотрщике Markdown Zap
 settings-external-editor-layout-split-pane = Разделенная панель
 settings-external-editor-layout-new-tab = Новая вкладка
+settings-external-editor-choose-split-position = Выберите, с какой стороны открывать файлы при разделении панелей
+settings-external-editor-split-position-left = Слева
+settings-external-editor-split-position-right = Справа
 settings-external-editor-default-app = Приложение по умолчанию
 
 # =============================================================================
