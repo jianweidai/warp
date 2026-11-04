@@ -23,7 +23,7 @@ pub use config::{default_init_params, LanguageId, LspServerConfig};
 pub use jsonrpc::{JsonRpcService, ServerNotificationEvent, Transport};
 pub use lsp_types::{
     notification::{self},
-    DiagnosticSeverity, Position, Range,
+    DiagnosticSeverity, FormattingOptions, Position, Range,
 };
 pub use manager::{LspManagerModel, LspManagerModelEvent};
 pub use model::{

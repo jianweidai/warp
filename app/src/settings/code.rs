@@ -24,6 +24,16 @@ define_settings_group!(CodeSettings, settings: [
         toml_path: "code.lsp.enabled_servers",
         description: "LSP servers to start on demand when a file in a matching language is opened.",
     },
+    // 保存时用 LSP 格式化。默认关闭，避免保存时意外改动内容。
+    format_on_save: FormatOnSave {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        private: false,
+        toml_path: "code.lsp.format_on_save",
+        description: "Format files with the language server before saving.",
+    },
     // Whether or not the user has manually dismissed the code toolbelt new feature popup.
     dismissed_code_toolbelt_new_feature_popup: DismissedCodeToolbeltNewFeaturePopup {
         type: bool,

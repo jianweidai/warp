@@ -89,6 +89,11 @@ pub fn init(app: &mut AppContext) {
             id!("LocalCodeEditorView") & !id!("IMEOpen"),
         ),
         FixedBinding::new(
+            "shift-alt-f",
+            LocalCodeEditorAction::FormatDocument,
+            id!("LocalCodeEditorView") & !id!("IMEOpen"),
+        ),
+        FixedBinding::new(
             "shift-f12",
             LocalCodeEditorAction::FindReferencesAtCursor,
             id!("LocalCodeEditorView") & !id!("IMEOpen"),
@@ -182,6 +187,8 @@ pub enum LocalCodeEditorAction {
     NavigateToTarget(lsp::types::FileLocation),
     /// 查找光标处符号的引用（Shift+F12）。
     FindReferencesAtCursor,
+    /// 用 LSP 格式化当前文件（Shift+Alt+F）。
+    FormatDocument,
     /// 在定义处 Cmd+点击时查找引用。`anchor` 为渲染偏移，卡片显示在这一行下方。
     FindReferencesAt {
         position: lsp::types::Location,
@@ -231,6 +238,8 @@ pub struct LocalCodeEditorView {
 mod lsp_diagnostics;
 #[path = "lsp_hover.rs"]
 mod lsp_hover;
+#[path = "lsp_format.rs"]
+mod lsp_format;
 
 impl LocalCodeEditorView {
     pub fn new(
@@ -670,8 +679,7 @@ impl LocalCodeEditorView {
             return Err(ImmediateSaveError::NoFileId);
         };
 
-        // LSP 下线后不再在保存前调用 LSP format。
-        self.perform_save(file_id, ctx);
+        self.format_then_save(file_id, ctx);
         Ok(())
     }
 
@@ -1196,6 +1204,9 @@ impl TypedActionView for LocalCodeEditorView {
             }
             LocalCodeEditorAction::FindReferencesAtCursor => {
                 self.find_references_at_cursor(ctx);
+            }
+            LocalCodeEditorAction::FormatDocument => {
+                self.format_document(ctx);
             }
             LocalCodeEditorAction::FindReferencesAt { position, anchor } => {
                 self.find_references(position.clone(), *anchor, ctx);

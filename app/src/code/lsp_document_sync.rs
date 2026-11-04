@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use futures_util::future::BoxFuture;
 use futures_util::stream::AbortHandle;
+use futures_util::FutureExt;
 use lsp::types::TextDocumentContentChangeEvent;
 use lsp::{LspManagerModel, LspManagerModelEvent, LspServerModel};
 use warp_editor::content::buffer::{Buffer, BufferEvent};
@@ -113,51 +115,69 @@ impl GlobalBufferModel {
 
     /// 立即把整份内容发给服务器：文档还没打开就 didOpen，否则 didChange。
     pub(super) fn lsp_sync_now(&mut self, file_id: FileId, ctx: &mut ModelContext<Self>) {
-        if self.lsp_sync.is_none() || !self.lsp_is_loaded_local(file_id) {
-            return;
+        if let Some(future) = self.lsp_sync_future(file_id, ctx) {
+            ctx.spawn(future, |_, _, _| {});
         }
-        let Some(path) = self.lsp_local_path(file_id) else {
-            return;
-        };
-        let Some(buffer) = self
+    }
+
+    /// 如果有还没发出的编辑，取消延迟发送，返回立即发送的 future。
+    ///
+    /// 格式化等请求要先等它完成，确保服务器看到的是最新内容。
+    pub fn take_pending_lsp_sync(
+        &mut self,
+        file_id: FileId,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<BoxFuture<'static, ()>> {
+        let pending = self.lsp_sync.as_mut()?.pending.remove(&file_id)?;
+        pending.abort();
+        self.lsp_sync_future(file_id, ctx)
+    }
+
+    fn lsp_sync_future(
+        &mut self,
+        file_id: FileId,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<BoxFuture<'static, ()>> {
+        if self.lsp_sync.is_none() || !self.lsp_is_loaded_local(file_id) {
+            return None;
+        }
+        let path = self.lsp_local_path(file_id)?;
+        let buffer = self
             .buffers
             .get(&file_id)
-            .and_then(|state| state.buffer.upgrade(ctx))
-        else {
-            return;
-        };
-        let Some(server) = ready_server_for_path(&path, ctx) else {
-            return;
-        };
+            .and_then(|state| state.buffer.upgrade(ctx))?;
+        let server = ready_server_for_path(&path, ctx)?;
 
         let content = buffer.as_ref(ctx).text_with_line_ending().into_string();
         let version = buffer.as_ref(ctx).buffer_version().as_usize();
-        if server.as_ref(ctx).document_is_open(&path).unwrap_or(false) {
+        let server = server.as_ref(ctx);
+        let result = if server.document_is_open(&path).unwrap_or(false) {
             let change = TextDocumentContentChangeEvent {
                 range: None,
                 text: content,
             };
-            let future =
-                match server
-                    .as_ref(ctx)
-                    .did_change_document(path, version.into(), vec![change])
-                {
-                    Ok(future) => future,
-                    Err(e) => {
-                        log::warn!("Failed to sync document with LSP server: {e}");
-                        return;
-                    }
-                };
-            ctx.spawn(future, |_, _, _| {});
+            server
+                .did_change_document(path, version.into(), vec![change])
+                .map(|future| future.boxed())
         } else {
-            let future = match server.as_ref(ctx).did_open_document(path, content, version) {
-                Ok(future) => future,
-                Err(e) => {
-                    log::warn!("Failed to open document with LSP server: {e}");
-                    return;
-                }
-            };
-            ctx.spawn(future, |_, _, _| {});
+            server
+                .did_open_document(path, content, version)
+                .map(|future| future.boxed())
+        };
+        match result {
+            Ok(future) => Some(
+                future
+                    .map(|result| {
+                        if let Err(e) = result {
+                            log::warn!("Failed to sync document with LSP server: {e}");
+                        }
+                    })
+                    .boxed(),
+            ),
+            Err(e) => {
+                log::warn!("Failed to sync document with LSP server: {e}");
+                None
+            }
         }
     }
 
