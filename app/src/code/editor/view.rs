@@ -1450,6 +1450,20 @@ impl CodeEditorView {
         self.model.as_ref(ctx).buffer_version(ctx)
     }
 
+    /// 把缓冲区偏移转换成 LSP 的位置（行从 0 开始）。
+    pub fn offset_to_lsp_position(
+        &self,
+        offset: CharOffset,
+        ctx: &AppContext,
+    ) -> lsp::types::Location {
+        let buffer = self.model.as_ref(ctx).content().as_ref(ctx);
+        let point = offset.to_buffer_point(buffer);
+        lsp::types::Location {
+            line: point.row.saturating_sub(1) as usize,
+            column: point.column as usize,
+        }
+    }
+
     /// 把 LSP 的位置（行从 0 开始）转换成缓冲区偏移。
     pub fn lsp_location_to_offset(
         &self,

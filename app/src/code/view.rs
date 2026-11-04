@@ -771,6 +771,19 @@ impl CodeView {
                     global_buffer.discard_unsaved_changes(path, ctx);
                 });
             }
+            LocalCodeEditorEvent::GotoDefinition { path, line, column } => {
+                // LSP 行号从 0 开始，LineAndColumnArg 从 1 开始。
+                let line_col = LineAndColumnArg {
+                    line_num: *line + 1,
+                    column_num: Some(*column),
+                };
+                me.open_or_focus_existing(
+                    Some(BufferLocation::Local(path.clone())),
+                    Some(line_col),
+                    ctx,
+                );
+                me.focus_contents(ctx);
+            }
             LocalCodeEditorEvent::CommentSaved { .. }
             | LocalCodeEditorEvent::RequestOpenComment(_)
             | LocalCodeEditorEvent::DeleteComment { .. } => {

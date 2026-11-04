@@ -3,6 +3,8 @@
 //! 文件加载后连接负责它的服务器；服务器稍后才启动时，收到 `ServerStarted` 再连接。
 //! 只显示与当前缓冲区版本一致的诊断，避免把旧结果画到新内容上。
 
+use std::ops::Range;
+
 use lsp::{DiagnosticSeverity, LspEvent, LspManagerModel, LspManagerModelEvent};
 use string_offset::CharOffset;
 use warp_core::ui::appearance::Appearance;
@@ -63,18 +65,48 @@ impl LocalCodeEditorView {
     }
 
     fn refresh_diagnostics(&mut self, ctx: &mut ViewContext<Self>) {
-        let decorations = self.compute_diagnostic_decorations(ctx);
-        self.set_diagnostics(decorations, ctx);
+        let diagnostics = self.compute_diagnostics(ctx);
+        self.set_diagnostics(diagnostics, ctx);
     }
 
-    fn set_diagnostics(&mut self, decorations: Vec<Decoration>, ctx: &mut ViewContext<Self>) {
+    /// 保存诊断（悬停时显示信息），并把它们画成虚线下划线。
+    fn set_diagnostics(
+        &mut self,
+        diagnostics: Vec<ProcessedDiagnostic>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let theme = Appearance::as_ref(ctx).theme();
+        let error_color = theme.ui_error_color();
+        let warning_color = theme.ui_warning_color();
+        let decorations: Vec<Decoration> = diagnostics
+            .iter()
+            .map(|diagnostic| {
+                let color = if diagnostic.is_error {
+                    error_color
+                } else {
+                    warning_color
+                };
+                Decoration::new(diagnostic.range.start, diagnostic.range.end)
+                    .with_dashed_underline(color)
+            })
+            .collect();
+        self.lsp_diagnostics = diagnostics;
         self.editor.update(ctx, |editor, ctx| {
             editor.set_diagnostic_decorations(decorations, ctx);
         });
     }
 
-    /// 只保留错误和警告，转换成虚线下划线。
-    fn compute_diagnostic_decorations(&self, ctx: &ViewContext<Self>) -> Vec<Decoration> {
+    /// 覆盖指定渲染偏移的诊断。
+    pub(super) fn diagnostics_at(&self, offset: CharOffset) -> Vec<ProcessedDiagnostic> {
+        self.lsp_diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.range.contains(&offset))
+            .cloned()
+            .collect()
+    }
+
+    /// 只保留错误和警告，并换算成渲染偏移。
+    fn compute_diagnostics(&self, ctx: &ViewContext<Self>) -> Vec<ProcessedDiagnostic> {
         let (Some(server), Some(path)) = (self.lsp_server.as_ref(), self.file_path()) else {
             return Vec::new();
         };
@@ -91,18 +123,14 @@ impl LocalCodeEditorView {
             return Vec::new();
         }
 
-        let theme = Appearance::as_ref(ctx).theme();
-        let error_color = theme.ui_error_color();
-        let warning_color = theme.ui_warning_color();
         let one = CharOffset::from(1);
-
         document
             .diagnostics
             .iter()
             .filter_map(|diagnostic| {
-                let color = match diagnostic.severity? {
-                    DiagnosticSeverity::ERROR => error_color,
-                    DiagnosticSeverity::WARNING => warning_color,
+                let is_error = match diagnostic.severity? {
+                    DiagnosticSeverity::ERROR => true,
+                    DiagnosticSeverity::WARNING => false,
                     _ => return None,
                 };
                 let range: lsp::types::Range = diagnostic.range.into();
@@ -120,8 +148,22 @@ impl LocalCodeEditorView {
                 }
 
                 // 缓冲区偏移从 1 开始，渲染偏移从 0 开始。
-                Some(Decoration::new(start - one, end - one).with_dashed_underline(color))
+                Some(ProcessedDiagnostic {
+                    message: diagnostic.message.clone(),
+                    is_error,
+                    range: (start - one)..(end - one),
+                })
             })
             .collect()
     }
+}
+
+/// 换算成渲染偏移后的诊断。
+#[derive(Clone)]
+pub(super) struct ProcessedDiagnostic {
+    pub message: String,
+    /// 错误为 true，警告为 false。
+    pub is_error: bool,
+    /// 渲染偏移（从 0 开始）。
+    pub range: Range<CharOffset>,
 }

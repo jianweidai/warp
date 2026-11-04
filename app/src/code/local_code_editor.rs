@@ -115,6 +115,12 @@ pub enum LocalCodeEditorEvent {
     DiscardUnsavedChanges {
         path: PathBuf,
     },
+    /// 跳转到 LSP 返回的定义位置。行、列从 0 开始。
+    GotoDefinition {
+        path: PathBuf,
+        line: usize,
+        column: usize,
+    },
     /// Emitted when a comment is saved. This propagates the comment content
     /// changes to the CodeReviewView, which will update the comment model.
     CommentSaved {
@@ -163,6 +169,8 @@ pub enum LocalCodeEditorAction {
     InsertSelectedTextToInput,
     SaveFile,
     DiscardUnsavedChanges,
+    /// Cmd+点击符号后跳转到 LSP 返回的定义位置。
+    NavigateToTarget(lsp::types::FileLocation),
 }
 
 #[derive(Default)]
@@ -194,13 +202,17 @@ pub struct LocalCodeEditorView {
     /// `set_pending_scroll` is called before the file content has finished loading
     /// (e.g., in the GlobalBuffer path where content loads asynchronously).
     pending_scroll_on_load: Option<ScrollPosition>,
-    /// 负责这个文件的 LSP 服务器，用于显示诊断。
+    /// 负责这个文件的 LSP 服务器，用于诊断、悬停和跳转。
     lsp_server: Option<warpui::ModelHandle<lsp::LspServerModel>>,
+    /// 当前文件的诊断（渲染偏移），悬停时显示信息。
+    lsp_diagnostics: Vec<lsp_diagnostics::ProcessedDiagnostic>,
+    lsp_hover: lsp_hover::LspHoverState,
 }
 
-#[cfg(all(feature = "local_fs", feature = "local_tty"))]
 #[path = "lsp_diagnostics.rs"]
 mod lsp_diagnostics;
+#[path = "lsp_hover.rs"]
+mod lsp_hover;
 
 impl LocalCodeEditorView {
     pub fn new(
@@ -234,8 +246,13 @@ impl LocalCodeEditorView {
                 me.sync_auto_selection_context(ctx);
                 ctx.notify();
             }
-            CodeEditorEvent::MouseHovered { .. } => {
-                // LSP 下线后,鼠标 hover 不再触发 hover/goto-definition;保留 event 订阅但不做处理。
+            CodeEditorEvent::MouseHovered {
+                offset,
+                cmd,
+                clamped,
+                is_covered,
+            } => {
+                me.handle_lsp_mouse_hover(*offset, *cmd, *clamped, *is_covered, ctx);
             }
             CodeEditorEvent::CommentSaved { comment } => {
                 ctx.emit(LocalCodeEditorEvent::CommentSaved {
@@ -287,6 +304,8 @@ impl LocalCodeEditorView {
             footer: None,
             pending_scroll_on_load: None,
             lsp_server: None,
+            lsp_diagnostics: Vec::new(),
+            lsp_hover: Default::default(),
         };
 
         if let Some(display_mode) = display_mode {
@@ -1121,6 +1140,11 @@ impl View for LocalCodeEditorView {
             }
         }
 
+        // 悬停提示最后加入，显示在最上层。
+        if let Some((hover, positioning)) = self.render_lsp_hover(app) {
+            stack.add_positioned_overlay_child(hover, positioning);
+        }
+
         if let Some(footer) = &self.footer {
             let mut col = Flex::column();
 
@@ -1143,6 +1167,9 @@ impl TypedActionView for LocalCodeEditorView {
         match action {
             LocalCodeEditorAction::InsertSelectedTextToInput => {
                 self.insert_selected_text_to_input(ctx);
+            }
+            LocalCodeEditorAction::NavigateToTarget(target) => {
+                self.navigate_to_definition(target, ctx);
             }
             LocalCodeEditorAction::SaveFile => {
                 if let Err(ImmediateSaveError::FailedToSave(err)) = self.save_local(ctx) {
