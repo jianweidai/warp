@@ -1,7 +1,11 @@
-# 手动打一个 macOS arm64 预览包用于验收，只上传 workflow artifact，不创建 Release。
+# 打一个 macOS arm64 预览包用于验收，只上传 workflow artifact，不创建 Release。
+# 推送到 preview/** 分支即触发（workflow_dispatch 要求文件在默认分支上才能用）。
 name: Preview Build (macOS)
 
 on:
+  push:
+    branches:
+      - "preview/**"
   workflow_dispatch:
 
 permissions:
