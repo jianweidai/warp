@@ -30,14 +30,17 @@ const IDLE_GRACE_PERIOD: Duration = Duration::from_secs(5 * 60);
 const SCAN_INTERVAL: Duration = Duration::from_secs(30);
 
 /// 本地文件加载完成后调用。没有启用对应语言的服务器时直接返回，不做任何事。
-pub fn on_local_file_loaded(path: &Path, ctx: &mut AppContext) {
+///
+/// 返回该文件是否启用了 LSP，调用方据此决定是否显示诊断。
+pub fn on_local_file_loaded(path: &Path, ctx: &mut AppContext) -> bool {
     let servers = enabled_servers_for_path(path, ctx);
     if servers.is_empty() {
-        return;
+        return false;
     }
     LspLifecycle::handle(ctx).update(ctx, |lifecycle, ctx| {
         lifecycle.ensure_started(path, servers, ctx);
     });
+    true
 }
 
 fn enabled_servers_for_path(path: &Path, ctx: &AppContext) -> Vec<LSPServerType> {

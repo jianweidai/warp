@@ -16,6 +16,9 @@ use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle
 
 use super::buffer_location::{BufferLocation, SyncClock};
 
+#[path = "lsp_document_sync.rs"]
+mod lsp_document_sync;
+
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
         use warp_files::{FileModelEvent, FileModel};
@@ -198,6 +201,8 @@ pub struct CharOffsetEdit {
 pub struct GlobalBufferModel {
     location_to_id: BiMap<BufferLocation, FileId>,
     buffers: HashMap<FileId, InternalBufferState>,
+    /// LSP 文档同步。只有客户端 app 开启，见 `subscribe_to_lsp_manager`。
+    lsp_sync: Option<lsp_document_sync::LspSync>,
 }
 
 impl GlobalBufferModel {
@@ -208,6 +213,7 @@ impl GlobalBufferModel {
         Self {
             location_to_id: BiMap::new(),
             buffers: HashMap::new(),
+            lsp_sync: None,
         }
     }
 
@@ -275,6 +281,7 @@ impl GlobalBufferModel {
         }
 
         for id in &ids_to_remove {
+            self.lsp_close(*id, ctx);
             self.location_to_id.remove_by_right(id);
         }
 
@@ -300,6 +307,7 @@ impl GlobalBufferModel {
     }
 
     fn cleanup_file_id(&mut self, file_id: FileId, _ctx: &mut ModelContext<Self>) {
+        self.lsp_close(file_id, _ctx);
         self.location_to_id.remove_by_right(&file_id);
 
         self.buffers.remove(&file_id);
@@ -400,6 +408,7 @@ impl GlobalBufferModel {
                 file_id,
                 content_version: new_version,
             });
+            self.lsp_sync_now(file_id, ctx);
         } else if FeatureFlag::IncrementalAutoReload.is_enabled() {
             // Auto-reload: spawn background task for diff computation
             Self::start_background_diff_parse(
@@ -784,6 +793,7 @@ impl GlobalBufferModel {
         new_path: PathBuf,
         ctx: &mut ModelContext<Self>,
     ) -> Option<BufferState> {
+        self.lsp_close(old_file_id, ctx);
         let old_state = self.buffers.remove(&old_file_id)?;
         let buffer = old_state.buffer.upgrade(ctx)?;
 
@@ -813,7 +823,6 @@ impl GlobalBufferModel {
     }
 
     /// Shared helper: register `buffer` under `path` with FileModel and store internal state.
-    /// LSP 下线后不再试图跟 LSP 同步 buffer 变更。
     #[cfg(feature = "local_fs")]
     fn register_buffer_for_path(
         &mut self,
@@ -851,6 +860,8 @@ impl GlobalBufferModel {
                 },
             },
         );
+        self.lsp_watch_buffer(file_id, &buffer, ctx);
+        self.lsp_sync_now(file_id, ctx);
 
         BufferState::new(file_id, buffer)
     }
@@ -951,6 +962,7 @@ impl GlobalBufferModel {
                 source,
             },
         );
+        self.lsp_watch_buffer(file_id, &buffer, ctx);
 
         BufferState::new(file_id, buffer)
     }

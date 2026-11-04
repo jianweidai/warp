@@ -265,6 +265,10 @@ pub struct CodeEditorView {
     comment_save_position_id: String,
     show_comment_editor_provider: Box<dyn ShowCommentEditorProvider>,
     window_id: WindowId,
+    /// 搜索匹配的高亮。和诊断下划线分开保存，渲染前合并，避免互相覆盖。
+    highlight_decorations: Vec<Decoration>,
+    /// LSP 诊断的下划线。
+    diagnostic_decorations: Vec<Decoration>,
 }
 
 impl CodeEditorView {
@@ -402,6 +406,8 @@ impl CodeEditorView {
             comment_save_position_id: format!("code_editor_comment_{}", ctx.view_id()),
             show_comment_editor_provider: render_options.show_comment_editor_provider,
             window_id: ctx.window_id(),
+            highlight_decorations: Vec::new(),
+            diagnostic_decorations: Vec::new(),
         }
     }
 
@@ -683,17 +689,13 @@ impl CodeEditorView {
         ctx.emit(CodeEditorEvent::EscapePressed);
     }
 
-    fn update_decorations_and_position(&self, ctx: &mut ViewContext<Self>) {
+    fn update_decorations_and_position(&mut self, ctx: &mut ViewContext<Self>) {
         // Updating search decorations based on matches
-        let search_decorations = match self.find_bar_open(ctx) {
+        self.highlight_decorations = match self.find_bar_open(ctx) {
             true => self.searcher.as_ref(ctx).result_decorations(),
             false => Vec::new(),
         };
-        self.model.update(ctx, |model, ctx| {
-            model.render_state().update(ctx, |render, ctx| {
-                render.set_text_decorations(search_decorations, ctx);
-            });
-        });
+        self.apply_text_decorations(ctx);
 
         // Updating position on code editor view based on match location
         if let Some(autoscroll_match) = self.searcher.as_ref(ctx).selected_match_range() {
@@ -746,12 +748,12 @@ impl CodeEditorView {
     }
 
     pub fn set_find_highlights(
-        &self,
+        &mut self,
         ranges: Vec<Range<CharOffset>>,
         selected_range_index: Option<usize>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let decorations: Vec<Decoration> = ranges
+        self.highlight_decorations = ranges
             .into_iter()
             .enumerate()
             .map(|(index, range)| {
@@ -763,20 +765,27 @@ impl CodeEditorView {
                 Decoration::new(range.start, range.end).with_background(fill)
             })
             .collect();
-
-        self.model.update(ctx, |model, ctx| {
-            model.render_state().update(ctx, |render, ctx| {
-                render.set_text_decorations(decorations, ctx);
-            });
-        });
+        self.apply_text_decorations(ctx);
     }
 
     /// Set diagnostic decorations (e.g., error/warning underlines) on the editor.
     pub fn set_diagnostic_decorations(
-        &self,
+        &mut self,
         decorations: Vec<Decoration>,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.diagnostic_decorations = decorations;
+        self.apply_text_decorations(ctx);
+    }
+
+    /// 合并搜索高亮和诊断下划线，交给渲染层。
+    fn apply_text_decorations(&self, ctx: &mut ViewContext<Self>) {
+        let decorations: Vec<Decoration> = self
+            .highlight_decorations
+            .iter()
+            .chain(&self.diagnostic_decorations)
+            .cloned()
+            .collect();
         self.model.update(ctx, |model, ctx| {
             model.render_state().update(ctx, |render, ctx| {
                 render.set_text_decorations(decorations, ctx);
@@ -1439,6 +1448,17 @@ impl CodeEditorView {
 
     pub fn buffer_version(&self, ctx: &AppContext) -> BufferVersion {
         self.model.as_ref(ctx).buffer_version(ctx)
+    }
+
+    /// 把 LSP 的位置（行从 0 开始）转换成缓冲区偏移。
+    pub fn lsp_location_to_offset(
+        &self,
+        location: &lsp::types::Location,
+        ctx: &AppContext,
+    ) -> CharOffset {
+        let buffer = self.model.as_ref(ctx).content().as_ref(ctx);
+        let point = Point::new((location.line + 1) as u32, location.column as u32);
+        point.to_buffer_char_offset(buffer)
     }
 
     /// Append text to the end of the buffer regardless of cursor position.

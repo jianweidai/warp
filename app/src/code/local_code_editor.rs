@@ -194,7 +194,13 @@ pub struct LocalCodeEditorView {
     /// `set_pending_scroll` is called before the file content has finished loading
     /// (e.g., in the GlobalBuffer path where content loads asynchronously).
     pending_scroll_on_load: Option<ScrollPosition>,
+    /// 负责这个文件的 LSP 服务器，用于显示诊断。
+    lsp_server: Option<warpui::ModelHandle<lsp::LspServerModel>>,
 }
+
+#[cfg(all(feature = "local_fs", feature = "local_tty"))]
+#[path = "lsp_diagnostics.rs"]
+mod lsp_diagnostics;
 
 impl LocalCodeEditorView {
     pub fn new(
@@ -280,6 +286,7 @@ impl LocalCodeEditorView {
             default_directory: None,
             footer: None,
             pending_scroll_on_load: None,
+            lsp_server: None,
         };
 
         if let Some(display_mode) = display_mode {
@@ -569,7 +576,9 @@ impl LocalCodeEditorView {
                     me.on_file_loaded(ctx);
                     #[cfg(all(feature = "local_fs", feature = "local_tty"))]
                     if let Some(path) = me.file_path().map(Path::to_path_buf) {
-                        crate::code::lsp_lifecycle::on_local_file_loaded(&path, ctx);
+                        if crate::code::lsp_lifecycle::on_local_file_loaded(&path, ctx) {
+                            me.connect_lsp_diagnostics(ctx);
+                        }
                     }
                     ctx.emit(LocalCodeEditorEvent::FileLoaded);
                 }

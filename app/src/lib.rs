@@ -1520,7 +1520,9 @@ fn initialize_app(
     #[cfg(feature = "local_fs")]
     ctx.add_singleton_model(FileModel::new);
     ctx.add_singleton_model(|ctx| {
-        let model = GlobalBufferModel::new(ctx);
+        let mut model = GlobalBufferModel::new(ctx);
+        // 客户端 app 才同步给 LSP。daemon 不注册 LspManagerModel，不能放进 new。
+        model.subscribe_to_lsp_manager(ctx);
         // 客户端 app:订阅 RemoteServerManager 的 buffer push 事件。daemon 不做
         // 这一步(daemon 不注册 RemoteServerManager),所以这段不能放进
         // GlobalBufferModel::new。RemoteServerManager 已在前面注册过。
