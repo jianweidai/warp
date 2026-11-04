@@ -310,8 +310,16 @@ async fn capture_interactive_shell_env(
         // (some shells exit non-zero but still produce valid output)
     }
 
+    // 插件、主题或版本管理器可能在 rc 文件里往 stdout 打印别的内容，PATH 在最后一行输出，
+    // 只取最后一个非空行，避免把这些内容拼进第一个 PATH 条目。
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let path = stdout.trim().to_string();
+    let path = stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .last()
+        .unwrap_or_default()
+        .to_string();
 
     if path.is_empty() {
         Err(anyhow!("Interactive shell returned empty PATH"))
