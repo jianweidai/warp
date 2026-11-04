@@ -13,8 +13,7 @@ use crate::terminal::model::iterm_image::{ITermImage, ITermImageMetadata};
 use crate::terminal::model::kitty::{KittyAction, KittyChunk, KittyResponse};
 use crate::terminal::model::terminal_model::TmuxInstallationState;
 use crate::terminal::model::{
-    completions::ShellData as CompletionsShellData, index::VisibleRow, selection::ScrollDelta,
-    tmux::ControlModeEvent,
+    index::VisibleRow, selection::ScrollDelta, tmux::ControlModeEvent,
 };
 
 /// Trait to be implemented by model objects that handle pty output. The
@@ -326,27 +325,25 @@ pub trait Handler {
     /// tmux control mode event
     fn tmux_control_mode_event(&mut self, _event: ControlModeEvent) {}
 
-    /// Callback that tells the terminal that the shell is ready to receive
-    /// the string to run completions for.
-    fn send_completions_prompt(&mut self) {}
-
     /// Callback to handle the OSC for starting completions.
     ///
-    /// Depending on the output format, subsequent data from the PTY will be
-    /// considered as completions output.
-    fn start_completions_output(&mut self, _format: CompletionsShellData) {}
+    /// Subsequent completion results from the PTY will be considered as completions output.
+    fn start_completions_output(&mut self) {}
 
     /// Callback to handle the OSC for finishing completions.
     ///
     /// Marks the end of the in-band command output payload.
     fn end_completions_output(&mut self) {}
 
-    /// Callback invoked when we've received a _typed_ native completion result from the shell.
-    /// This is a noop if we are in "raw" completions mode.
+    /// Callback to handle the OSC reporting the shell's own notion of the range of the buffer
+    /// the completions being sent (or about to be sent) replace, as a `(start, length)` byte
+    /// pair.
+    fn on_completion_replacement_span_received(&mut self, _start: usize, _length: usize) {}
+
+    /// Callback invoked when we've received a native completion result from the shell.
     fn on_completion_result_received(&mut self, _completion_result: ShellCompletion) {}
 
     /// Update the last completion result with the metadata in [`ShellCompletionUpdate`].
-    /// This is a noop if we are in "raw" completions mode.
     fn update_last_completion_result(&mut self, _completion_update: ShellCompletionUpdate) {}
 
     /// Callback to handle the OSC to start receiving an iTerm image.

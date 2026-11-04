@@ -5,11 +5,14 @@ use std::sync::Arc;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::{send_telemetry_from_ctx, ui::Icon, HostId, SessionId};
 use warp_util::path::LineAndColumnArg;
+use pathfinder_geometry::vector::vec2f;
+use warp_core::ui::theme::Fill;
 use warpui::{
     elements::{
-        resizable_state_handle, ChildView, ConstrainedBox, Container, CrossAxisAlignment,
-        DragBarSide, Element, Empty, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle,
-        ParentElement, Resizable, ResizableStateHandle, Shrinkable,
+        resizable_state_handle, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
+        CrossAxisAlignment, DragBarSide, Element, Empty, Flex, MainAxisAlignment, MainAxisSize,
+        MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
+        Radius, Resizable, ResizableStateHandle, Shrinkable, Stack, Text,
     },
     platform::Cursor,
     ui_components::components::{Coords, UiComponent, UiComponentStyles},
@@ -439,6 +442,7 @@ impl LeftPanelView {
                 git_history_view.update(ctx, |view, ctx| {
                     view.set_repository(focused_repo.clone(), ctx);
                 });
+                ctx.notify();
             }
             WorkingDirectoriesEvent::RepositoriesChanged { .. } => {}
         });
@@ -711,7 +715,9 @@ impl LeftPanelView {
 
         #[cfg(feature = "local_fs")]
         ctx.subscribe_to_view(&git_history_view, |_me, _, event, ctx| match event {
-            GitHistoryEvent::Updated => {}
+            GitHistoryEvent::Updated => {
+                ctx.notify();
+            }
             GitHistoryEvent::OpenFileDiff {
                 repo_path,
                 commit_hash,
@@ -1174,16 +1180,52 @@ impl LeftPanelView {
         }
     }
 
+    fn git_working_tree_file_count(&self, app: &AppContext) -> usize {
+        #[cfg(feature = "local_fs")]
+        {
+            self.active_git_history_view(app)
+                .map(|view| view.as_ref(app).working_tree_changed_file_count(app))
+                .unwrap_or(0)
+        }
+        #[cfg(not(feature = "local_fs"))]
+        {
+            let _ = app;
+            0
+        }
+    }
+
+    fn render_change_count_badge(count: usize, appearance: &Appearance) -> Box<dyn Element> {
+        let label = if count > 99 {
+            "99+".to_string()
+        } else {
+            count.to_string()
+        };
+        let theme = appearance.theme();
+        let background = theme.accent().into_solid();
+        let foreground = theme.font_color(background).into_solid();
+        Container::new(
+            Text::new_inline(label, appearance.ui_font_family(), 9.)
+                .with_color(foreground.into())
+                .finish(),
+        )
+        .with_horizontal_padding(4.)
+        .with_vertical_padding(1.)
+        .with_background(Fill::Solid(background))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+        .finish()
+    }
+
     fn render_button(
         button_config: &ToolbeltButtonConfig,
         mouse_state: MouseStateHandle,
         appearance: &Appearance,
+        badge_count: usize,
     ) -> Box<dyn Element> {
         let action = button_config.action.clone();
         let ui_builder = appearance.ui_builder().clone();
         let tooltip_keybinding = button_config.tooltip_keybinding.clone();
 
-        let icon_color = if button_config.render_with_active_state {
+        let icon_color = if button_config.render_with_active_state || badge_count > 0 {
             appearance.theme().foreground().into_solid()
         } else {
             appearance
@@ -1210,7 +1252,7 @@ impl LeftPanelView {
             button_config.icon
         };
 
-        icon_button(
+        let button = icon_button(
             appearance,
             icon,
             button_config.render_with_active_state,
@@ -1248,7 +1290,23 @@ impl LeftPanelView {
             }
         })
         .with_cursor(Cursor::PointingHand)
-        .finish()
+        .finish();
+
+        if badge_count == 0 {
+            return button;
+        }
+
+        let mut stack = Stack::new().with_child(button);
+        stack.add_positioned_child(
+            Self::render_change_count_badge(badge_count, appearance),
+            OffsetPositioning::offset_from_parent(
+                vec2f(4., -4.),
+                ParentOffsetBounds::Unbounded,
+                ParentAnchor::TopRight,
+                ChildAnchor::TopRight,
+            ),
+        );
+        stack.finish()
     }
 }
 
@@ -1470,7 +1528,18 @@ impl View for LeftPanelView {
                     .with_spacing(4.0)
                     .with_children(self.toolbelt_buttons.iter().zip(&mouse_state_handles).map(
                         |(button_config, mouse_state)| {
-                            Self::render_button(button_config, mouse_state.clone(), appearance)
+                            let badge_count = match button_config.action {
+                                LeftPanelAction::GitHistory => {
+                                    self.git_working_tree_file_count(app)
+                                }
+                                _ => 0,
+                            };
+                            Self::render_button(
+                                button_config,
+                                mouse_state.clone(),
+                                appearance,
+                                badge_count,
+                            )
                         },
                     ))
                     .with_main_axis_size(MainAxisSize::Min)

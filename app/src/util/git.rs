@@ -378,6 +378,18 @@ pub struct GitWorkingTreeChanges {
     pub unstaged: Vec<GitWorkingTreeChange>,
 }
 
+impl GitWorkingTreeChanges {
+    /// Unique changed files across staged and unstaged, matching SCM badge counts.
+    pub fn changed_file_count(&self) -> usize {
+        self.staged
+            .iter()
+            .map(|change| change.path.as_str())
+            .chain(self.unstaged.iter().map(|change| change.path.as_str()))
+            .collect::<HashSet<_>>()
+            .len()
+    }
+}
+
 /// 指定提交中单个文件的历史差异原文。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitHistoryFileDiff {

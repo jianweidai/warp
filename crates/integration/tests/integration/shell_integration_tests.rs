@@ -40,6 +40,7 @@ integration_tests! {
     test_ps1_value_not_null_or_exit,
     // Tests bash-specific behavior.
     test_custom_ps1_expansion_bash,
+    test_bash_honor_ps1_expands_dynamic_prompt_once,
     // Tests zsh-specific behavior.
     test_auto_title,
     // Tests zsh-specific behavior.
@@ -75,6 +76,8 @@ integration_tests! {
     test_color_overrides_in_prompt_dont_crash,
     // Tests zsh-specific behavior with nounset option.
     test_zsh_bootstraps_with_nounset_option,
+    // Tests PowerShell-specific behavior with PSReadLine's vi edit mode.
+    test_pwsh_vi_edit_mode_does_not_corrupt_commands,
 
     // Tests of ssh wrapper logic from bootstrap script.
     test_legacy_ssh_into_bash,

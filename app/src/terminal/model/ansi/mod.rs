@@ -22,9 +22,7 @@ pub use warp_terminal::model::ansi::control_sequence_parameters::*;
 use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 
 use crate::features::FeatureFlag;
-use crate::terminal::model::completions::{
-    ShellCompletion, ShellCompletionUpdate, ShellData as CompletionsShellData,
-};
+use crate::terminal::model::completions::{ShellCompletion, ShellCompletionUpdate};
 use crate::terminal::model::escape_sequences::C0;
 use crate::terminal::model::index::VisibleRow;
 
@@ -86,19 +84,20 @@ const WARP_COMPLETIONS_OSC_MARKER: &[u8] = b"9280";
 const WARP_COMPLETIONS_START_BYTE: &[u8] = b"A";
 const WARP_COMPLETIONS_END_BYTE: &[u8] = b"B";
 const WARP_COMPLETIONS_MATCH_RESULT_BYTE: &[u8] = b"C";
-
-/// Denotes an OSC that sends metadata about the last match result.
-/// The sequence begins with `D?` followed by the field that should be updated.
-/// For example: `D?description'{OSC_PAYLOAD}` updates the description of the last match.
+const WARP_COMPLETIONS_REPLACEMENT_SPAN_BYTE: &[u8] = b"S";
 const WARP_COMPLETIONS_MATCH_UPDATE_METADATA: &[u8] = b"D?";
-
-/// Marks an OSC that tells the terminal that the shell is ready to receive
-/// the the string to run completions for.
-const WARP_COMPLETIONS_PROMPT_BYTE: &[u8] = b"P";
 
 const WARP_KV_START_BYTE: &[u8] = b"A";
 const WARP_KV_ENTRY_BYTE: &[u8] = b"B";
 const WARP_KV_END_BYTE: &[u8] = b"C";
+
+
+/// Decodes a completions OSC's hex-encoded match/description payload.
+fn decode_hex_completions_payload(param: Option<&&[u8]>) -> Option<String> {
+    let hex_str = param.map(|osc_data| String::from_utf8_lossy(osc_data))?;
+    let decoded_bytes = hex::decode(&*hex_str).ok()?;
+    String::from_utf8(decoded_bytes).ok()
+}
 
 /// Parse colors in XParseColor format.
 #[allow(dead_code)]
@@ -1147,35 +1146,60 @@ where
             // Received a Zap OSC used for completions.
             WARP_COMPLETIONS_OSC_MARKER => match params.get(1) {
                 Some(&WARP_COMPLETIONS_START_BYTE) => {
-                    let Some(format) = params
-                        .get(2)
-                        .map(|osc_data| String::from_utf8_lossy(osc_data))
-                        .and_then(|format| CompletionsShellData::from_format_type(&format))
-                    else {
-                        log::warn!("Zap start completions OSC marker contained invalid format.");
-                        return;
-                    };
-                    self.handler.start_completions_output(format);
+                    self.handler.start_completions_output();
                 }
                 Some(&WARP_COMPLETIONS_END_BYTE) => {
                     self.handler.end_completions_output();
                 }
                 Some(&WARP_COMPLETIONS_MATCH_RESULT_BYTE) => {
-                    // The payload for the OSC is contained in the third parameter.
+                    let Some(match_text) = decode_hex_completions_payload(params.get(2)) else {
+                        log::warn!(
+                            "Zap completions match result OSC marker was missing or had an                              invalid hex payload; skipping this match"
+                        );
+                        return;
+                    };
+
+                    let shell_completion_result = ShellCompletion::new(match_text);
+
+                    self.handler
+                        .on_completion_result_received(shell_completion_result);
+                }
+                Some(&WARP_COMPLETIONS_REPLACEMENT_SPAN_BYTE) => {
                     let Some(data_str) = params
                         .get(2)
                         .map(|osc_data| String::from_utf8_lossy(osc_data))
                     else {
                         log::warn!(
-                            "Zap completions match result OSC marker did not contain payload"
+                            "Zap completions replacement span OSC marker did not contain payload"
                         );
                         return;
                     };
-
-                    let shell_completion_result = ShellCompletion::new(data_str.to_string());
-
+                    let Some((start_str, length_str)) = data_str.split_once(',') else {
+                        crate::safe_warn!(
+                            safe: (
+                                "Zap completions replacement span OSC marker payload was not a                                  comma-separated pair"
+                            ),
+                            full: (
+                                "Zap completions replacement span OSC marker payload was not a                                  comma-separated pair: {data_str:?}"
+                            )
+                        );
+                        return;
+                    };
+                    let start_parsed = start_str.parse::<usize>();
+                    let length_parsed = length_str.parse::<usize>();
+                    let (Ok(start), Ok(length)) = (start_parsed, length_parsed) else {
+                        crate::safe_warn!(
+                            safe: (
+                                "Zap completions replacement span OSC marker payload was not a                                  pair of non-negative integers"
+                            ),
+                            full: (
+                                "Zap completions replacement span OSC marker payload was not a                                  pair of non-negative integers: {data_str:?}"
+                            )
+                        );
+                        return;
+                    };
                     self.handler
-                        .on_completion_result_received(shell_completion_result);
+                        .on_completion_replacement_span_received(start, length);
                 }
                 Some(bytes) if bytes.starts_with(WARP_COMPLETIONS_MATCH_UPDATE_METADATA) => {
                     let Ok(parameter) = String::from_utf8(bytes.to_vec()) else {
@@ -1185,33 +1209,26 @@ where
                         return;
                     };
 
-                    // Read out the payload for the OSC (stored in the 3rd parameter).
-                    let Some(data_str) = params
-                        .get(2)
-                        .map(|osc_data| String::from_utf8_lossy(osc_data))
-                    else {
-                        log::warn!(
-                            "Zap completions match metadata OSC marker did not contain payload"
-                        );
-                        return;
-                    };
-
                     // Determine which field we are trying to update.
                     match &parameter[2..] {
                         "description" => {
+                            let value =
+                                decode_hex_completions_payload(params.get(2)).unwrap_or_default();
                             self.handler.update_last_completion_result(
-                                ShellCompletionUpdate::Description {
-                                    value: data_str.into(),
-                                },
+                                ShellCompletionUpdate::Description { value },
                             );
                         }
                         _ => {
-                            log::warn!("Invalid Zap OSC marker parameter for completions match metadata: {parameter}");
+                            crate::safe_warn!(
+                                safe: (
+                                    "Invalid Zap OSC marker parameter for completions match                                      metadata"
+                                ),
+                                full: (
+                                    "Invalid Zap OSC marker parameter for completions match                                      metadata: {parameter}"
+                                )
+                            );
                         }
                     }
-                }
-                Some(&WARP_COMPLETIONS_PROMPT_BYTE) => {
-                    self.handler.send_completions_prompt();
                 }
                 _ => {
                     log::warn!("Received a Zap OSC completions marker missing required param.");

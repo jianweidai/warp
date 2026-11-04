@@ -5851,14 +5851,25 @@ impl Workspace {
                 .unwrap_or_else(|| "<unknown>".to_string());
 
             format!(
-                "Zap 日志导出\n\
-                 生成时间: {now}\n\
-                 版本: {version}\n\
-                 channel: {channel}\n\
-                 执行模式: {execution_mode:?}\n\
+                "{header}\n\
+                 {generated_at}\n\
+                 {version_line}\n\
+                 {channel_line}\n\
+                 {execution_mode_line}\n\
                  OS: {os}\n\
                  ARCH: {arch}\n\
-                 日志目录: {log_dir_str}\n",
+                 {log_dir_line}\n",
+                header = crate::t!("workspace-log-export-header"),
+                generated_at =
+                    crate::t!("workspace-log-export-generated-at", time = now.to_string()),
+                version_line = crate::t!("workspace-log-export-version", version = version),
+                channel_line =
+                    crate::t!("workspace-log-export-channel", channel = channel.to_string()),
+                execution_mode_line = crate::t!(
+                    "workspace-log-export-execution-mode",
+                    mode = format!("{execution_mode:?}")
+                ),
+                log_dir_line = crate::t!("workspace-log-export-log-dir", dir = log_dir_str),
                 os = std::env::consts::OS,
                 arch = std::env::consts::ARCH,
             )
@@ -9825,6 +9836,20 @@ impl Workspace {
                 .unwrap_or(DEFAULT_RIGHT_PANEL_WIDTH)
         });
 
+        let cli_subagent_width = modal_sizes.map(|ms| {
+            ms.cli_subagent_width
+                .lock()
+                .expect("should be able to lock cli subagent resizable state handle")
+                .size()
+        });
+
+        let cli_subagent_height = modal_sizes.map(|ms| {
+            ms.cli_subagent_height
+                .lock()
+                .expect("should be able to lock cli subagent resizable state handle")
+                .size()
+        });
+
         WindowSnapshot {
             tabs,
             active_tab_index,
@@ -9839,6 +9864,8 @@ impl Workspace {
             vertical_tabs_panel_open: self.vertical_tabs_panel_open,
             left_panel_width,
             right_panel_width,
+            cli_subagent_width,
+            cli_subagent_height,
             agent_management_filters: None,
             theme_override: self.theme_override.clone(),
         }
@@ -18508,6 +18535,16 @@ impl Workspace {
             context
                 .set
                 .insert(flags::COMPLETIONS_OPEN_WHILE_TYPING_CONTEXT_FLAG);
+        }
+
+        if *input_settings.warp_completions_enabled.value() {
+            context.set.insert(flags::WARP_COMPLETIONS_CONTEXT_FLAG);
+        }
+
+        if *input_settings.native_shell_completions_enabled.value() {
+            context
+                .set
+                .insert(flags::NATIVE_SHELL_COMPLETIONS_CONTEXT_FLAG);
         }
 
         if *input_settings.command_corrections.value() {
