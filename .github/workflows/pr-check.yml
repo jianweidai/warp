@@ -39,6 +39,12 @@ jobs:
           is_self_hosted: false
           install_test_deps: true
 
+      # rust-cache 恢复的 ~/.cargo 元数据会让安装脚本误以为 nextest 已装而跳过，
+      # 这里强制重装，确保命令存在。
+      - name: Ensure cargo-nextest is installed
+        run: cargo binstall --secure --no-confirm --no-discover-github-token --force cargo-nextest
+        shell: bash
+
       - name: Check app
         run: cargo check -p warp
         shell: bash
