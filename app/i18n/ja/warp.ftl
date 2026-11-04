@@ -1158,6 +1158,7 @@ settings-code-lsp-status-enabled = 有効。git リポジトリ内の対応フ�
 settings-code-lsp-status-running = { $count } 個のプロジェクトで実行中です。
 settings-code-lsp-status-failed = 起動に失敗しました：{ $error }
 lsp-server-start-failed = { $server } の起動に失敗しました：{ $error }
+lsp-server-not-installed = { $server } が見つかりません。`{ $command }` でインストールしてから、ファイルを開き直してください。
 
 # --- ANCHOR-SUB-EXEC-MODAL-BLOCKS (agent-settings-misc) ---
 # ---- execution_profile_view ----

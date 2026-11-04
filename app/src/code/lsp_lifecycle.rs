@@ -16,8 +16,8 @@ use ::settings::Setting;
 use futures::stream::AbortHandle;
 use lsp::supported_servers::LSPServerType;
 use lsp::{
-    CommandBuilder, LanguageId, LanguageServerCandidate, LanguageServerId, LspEvent, LspManagerModel, LspServerConfig,
-    LspServerModel, LspState,
+    CommandBuilder, LanguageId, LanguageServerCandidate, LanguageServerId, LspEvent,
+    LspManagerModel, LspServerConfig, LspServerModel, LspState,
 };
 use repo_metadata::repositories::DetectedRepositories;
 use sha2::{Digest, Sha256};
@@ -202,6 +202,34 @@ impl LspLifecycle {
         ctx.emit(LspLifecycleEvent::StatusChanged);
     }
 
+    /// 移除之前启动失败的服务器，让它们重新启动（比如用户刚装好服务器）。
+    fn remove_failed_servers(
+        &mut self,
+        root: &Path,
+        servers: &[LSPServerType],
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let manager = LspManagerModel::handle(ctx);
+        let failed: Vec<LSPServerType> = manager
+            .as_ref(ctx)
+            .servers_for_workspace(root)
+            .into_iter()
+            .flatten()
+            .map(|model| model.as_ref(ctx))
+            .filter(|model| matches!(model.state(), LspState::Failed { .. }))
+            .map(|model| model.server_type())
+            .filter(|server| servers.contains(server))
+            .collect();
+        if failed.is_empty() {
+            return;
+        }
+        manager.update(ctx, |manager, ctx| {
+            for server in failed {
+                manager.remove_server(root, server, ctx);
+            }
+        });
+    }
+
     /// 订阅服务器事件：记录启动错误并弹出提示，状态变化时通知设置页。
     fn watch_server(&mut self, server: &ModelHandle<LspServerModel>, ctx: &mut ModelContext<Self>) {
         if !self.watched.insert(server.as_ref(ctx).id()) {
@@ -210,15 +238,25 @@ impl LspLifecycle {
         let server_type = server.as_ref(ctx).server_type();
         ctx.subscribe_to_model(server, move |me, event, ctx| match event {
             LspEvent::Started => {
-                me.statuses.entry(server_type).or_default().last_error = None;
+                let status = me.statuses.entry(server_type).or_default();
+                status.installed = Some(true);
+                status.last_error = None;
                 ctx.emit(LspLifecycleEvent::StatusChanged);
             }
             LspEvent::Stopped => ctx.emit(LspLifecycleEvent::StatusChanged),
             LspEvent::Failed(e) => {
                 let error = format!("{e:#}");
-                me.statuses.entry(server_type).or_default().last_error = Some(error.clone());
+                let status = me.statuses.entry(server_type).or_default();
+                // 没装时显示安装命令，而不是一段报错。
+                let not_installed = error.contains("is not installed");
+                if not_installed {
+                    status.installed = Some(false);
+                    status.last_error = None;
+                } else {
+                    status.last_error = Some(error.clone());
+                }
                 ctx.emit(LspLifecycleEvent::StatusChanged);
-                show_failure_toast(server_type, &error, ctx);
+                show_failure_toast(server_type, &error, not_installed, ctx);
             }
             _ => {}
         });
@@ -238,6 +276,7 @@ impl LspLifecycle {
             return;
         };
         self.last_used.insert(root.clone(), Instant::now());
+        self.remove_failed_servers(&root, &servers, ctx);
 
         let app: &AppContext = ctx;
         let manager = LspManagerModel::as_ref(app);
@@ -374,21 +413,47 @@ fn is_running(state: &LspState) -> bool {
     matches!(state, LspState::Starting | LspState::Available { .. })
 }
 
-fn show_failure_toast(server: LSPServerType, error: &str, ctx: &mut ModelContext<LspLifecycle>) {
+fn show_failure_toast(
+    server: LSPServerType,
+    error: &str,
+    not_installed: bool,
+    ctx: &mut ModelContext<LspLifecycle>,
+) {
     let Some(window_id) = WindowManager::as_ref(ctx).active_window() else {
         return;
     };
-    let message = crate::t!(
-        "lsp-server-start-failed",
-        server = server.binary_name(),
-        error = error
-    );
+    let message = if not_installed {
+        crate::t!(
+            "lsp-server-not-installed",
+            server = server.binary_name(),
+            command = install_command(server)
+        )
+    } else {
+        crate::t!(
+            "lsp-server-start-failed",
+            server = server.binary_name(),
+            error = error
+        )
+    };
     ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
         toast_stack.add_ephemeral_toast(DismissibleToast::error(message), window_id, ctx);
     });
 }
 
 impl SingletonEntity for LspLifecycle {}
+
+/// 推荐的安装命令。只作提示，Zap 不会自动执行。
+pub fn install_command(server: LSPServerType) -> &'static str {
+    match server {
+        LSPServerType::Pyright => "npm install -g pyright",
+        LSPServerType::TypeScriptLanguageServer => {
+            "npm install -g typescript typescript-language-server"
+        }
+        LSPServerType::GoPls => "go install golang.org/x/tools/gopls@latest",
+        LSPServerType::RustAnalyzer => "rustup component add rust-analyzer",
+        LSPServerType::Clangd => "brew install llvm",
+    }
+}
 
 /// 优先用已检测到的仓库，否则向上查找 `.git`。
 fn repo_root_for_path(path: &Path, ctx: &AppContext) -> Option<PathBuf> {

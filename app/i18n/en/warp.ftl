@@ -1222,6 +1222,7 @@ settings-code-lsp-status-enabled = On. Starts when you open a matching file in a
 settings-code-lsp-status-running = Running in { $count } project(s).
 settings-code-lsp-status-failed = Failed to start: { $error }
 lsp-server-start-failed = { $server } failed to start: { $error }
+lsp-server-not-installed = { $server } is not installed. Install it with `{ $command }`, then reopen the file.
 
 # --- ANCHOR-SUB-EXEC-MODAL-BLOCKS (agent-settings-misc) ---
 # ---- execution_profile_view ----

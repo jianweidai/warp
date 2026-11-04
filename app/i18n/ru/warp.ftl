@@ -1222,6 +1222,7 @@ settings-code-lsp-status-enabled = Включён. Запускается при
 settings-code-lsp-status-running = Работает в проектах: { $count }.
 settings-code-lsp-status-failed = Не удалось запустить: { $error }
 lsp-server-start-failed = Не удалось запустить { $server }: { $error }
+lsp-server-not-installed = { $server } не установлен. Установите его командой `{ $command }` и откройте файл заново.
 
 # --- ANCHOR-SUB-EXEC-MODAL-BLOCKS (agent-settings-misc) ---
 # ---- execution_profile_view ----

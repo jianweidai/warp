@@ -11,7 +11,7 @@ use warpui::{
 
 use super::{CodeSettingsPageAction, CodeSettingsPageView};
 use crate::appearance::Appearance;
-use crate::code::lsp_lifecycle::LspLifecycle;
+use crate::code::lsp_lifecycle::{install_command, LspLifecycle};
 use crate::settings::CodeSettings;
 use crate::settings_view::{
     settings_page::{render_body_item, SettingsWidget},
@@ -119,18 +119,5 @@ fn status_text(server: LSPServerType, enabled: bool, app: &AppContext) -> String
         ),
         Some(true) if enabled => crate::t!("settings-code-lsp-status-enabled"),
         Some(true) => crate::t!("settings-code-lsp-status-installed"),
-    }
-}
-
-/// 推荐的安装命令。只作提示，Zap 不会自动执行。
-fn install_command(server: LSPServerType) -> &'static str {
-    match server {
-        LSPServerType::Pyright => "npm install -g pyright",
-        LSPServerType::TypeScriptLanguageServer => {
-            "npm install -g typescript typescript-language-server"
-        }
-        LSPServerType::GoPls => "go install golang.org/x/tools/gopls@latest",
-        LSPServerType::RustAnalyzer => "rustup component add rust-analyzer",
-        LSPServerType::Clangd => "brew install llvm",
     }
 }

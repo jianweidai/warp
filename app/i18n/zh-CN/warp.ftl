@@ -1201,6 +1201,7 @@ settings-code-lsp-status-enabled = 已开启。在 git 仓库中打开对应文�
 settings-code-lsp-status-running = 正在 { $count } 个项目中运行。
 settings-code-lsp-status-failed = 启动失败：{ $error }
 lsp-server-start-failed = { $server } 启动失败：{ $error }
+lsp-server-not-installed = 未找到 { $server }。请运行 `{ $command }` 安装，然后重新打开文件。
 
 # --- ANCHOR-SUB-EXEC-MODAL-BLOCKS (agent-settings-misc) ---
 # ---- execution_profile_view ----
