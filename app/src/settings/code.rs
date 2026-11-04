@@ -1,3 +1,4 @@
+use lsp::supported_servers::LSPServerType;
 use settings::{
     macros::define_settings_group, RespectUserSyncSetting, SupportedPlatforms, SyncToCloud,
 };
@@ -13,6 +14,16 @@ define_settings_group!(CodeSettings, settings: [
         description: "Whether Zap is used as the default code editor.",
     }
 
+    // 启用的 LSP 服务器。打开对应语言的文件时才按需启动。各机器安装情况不同，不同步。
+    enabled_lsp_servers: EnabledLspServers {
+        type: Vec<LSPServerType>,
+        default: vec![],
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "code.lsp.enabled_servers",
+        description: "LSP servers to start on demand when a file in a matching language is opened.",
+    },
     // Whether or not the user has manually dismissed the code toolbelt new feature popup.
     dismissed_code_toolbelt_new_feature_popup: DismissedCodeToolbeltNewFeaturePopup {
         type: bool,

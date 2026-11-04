@@ -16,6 +16,8 @@ pub mod inline_diff;
 #[cfg_attr(not(target_family = "wasm"), path = "local_code_editor.rs")]
 #[cfg_attr(target_family = "wasm", path = "local_code_editor_wasm.rs")]
 pub mod local_code_editor;
+#[cfg(all(not(target_family = "wasm"), feature = "local_fs", feature = "local_tty"))]
+pub mod lsp_lifecycle;
 
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
@@ -81,6 +83,9 @@ pub fn init(app: &mut AppContext) {
     app.add_singleton_model(|_| auto_selection_context::AutoCodeSelectionContextModel::default());
     self::view::init(app);
     self::file_tree::init(app);
+    lsp::init(app);
+    #[cfg(all(not(target_family = "wasm"), feature = "local_fs", feature = "local_tty"))]
+    app.add_singleton_model(|_| lsp_lifecycle::LspLifecycle::new());
 }
 
 /// The diff that results from editing a file.

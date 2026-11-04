@@ -1815,6 +1815,11 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
                 writer.terminate();
             });
 
+            // 退出前关闭所有 LSP 服务器，避免残留子进程。
+            lsp::LspManagerModel::handle(ctx).update(ctx, |manager, ctx| {
+                manager.terminate(ctx);
+            });
+
             // We want to tear down the terminal server before relaunching for
             // autoupdate, to ensure we're not running any extra Zap processes
             // when we bring up the new process.  Additionally, this must occur

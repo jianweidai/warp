@@ -567,6 +567,10 @@ impl LocalCodeEditorView {
                     }
                     me.base_content_version = Some(*content_version);
                     me.on_file_loaded(ctx);
+                    #[cfg(all(feature = "local_fs", feature = "local_tty"))]
+                    if let Some(path) = me.file_path().map(Path::to_path_buf) {
+                        crate::code::lsp_lifecycle::on_local_file_loaded(&path, ctx);
+                    }
                     ctx.emit(LocalCodeEditorEvent::FileLoaded);
                 }
                 GlobalBufferModelEvent::FailedToLoad { error, .. } => {

@@ -74,6 +74,14 @@ LSP 曾完整存在，后来被 `efcaa42b`（2026-05-10）删除，之后又过�
 
 恢复的旧代码：`lsp_logs.rs`、`lsp_telemetry.rs`（遥测保持默认关闭）。
 
+**实际实现（2026-11-04）：**
+- 启动、空闲回收和日志路径都放在 `lsp_lifecycle.rs` 一个文件里，没有单独恢复 `language_server_shutdown_manager.rs` 和 `lsp_logs.rs`。
+- 遥测不恢复（`lsp_telemetry.rs`）。
+- 根目录先查 `DetectedRepositories`，查不到再向上找 `.git`。
+- 有服务器运行时每 30 秒检查一次，没有服务器运行时不检查。
+- 入口在 `LocalCodeEditorView` 收到 `BufferLoaded` 时，远程文件不会触发。
+- 启动失败目前只写日志，提示放到阶段 6 的状态显示里做。
+
 **完成标准：** 启用 pyright 后，打开 `.py` 文件才有子进程；关闭文件超过宽限期后进程退出；退出 Zap 后没有残留进程。
 
 ## 阶段 3：文档同步和语法错误检查
