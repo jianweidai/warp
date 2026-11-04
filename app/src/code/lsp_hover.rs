@@ -15,9 +15,9 @@ use string_offset::CharOffset;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    Border, ChildAnchor, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
-    CornerRadius, Fill, FormattedTextElement, Hoverable, MouseStateHandle, OffsetPositioning,
-    ParentAnchor, ParentOffsetBounds, Radius, ScrollbarWidth,
+    Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
+    Container, CornerRadius, Fill, FormattedTextElement, Hoverable, MouseStateHandle,
+    OffsetPositioning, ParentAnchor, ParentOffsetBounds, Radius, ScrollbarWidth,
 };
 use warpui::r#async::Timer;
 use warpui::{AppContext, Element, SingletonEntity, ViewContext};
@@ -25,6 +25,7 @@ use warpui::{AppContext, Element, SingletonEntity, ViewContext};
 use super::lsp_diagnostics::ProcessedDiagnostic;
 use super::{LocalCodeEditorAction, LocalCodeEditorView};
 use crate::code::editor::model::HoverableLink;
+use crate::code::find_references_view::{FindReferencesEvent, FindReferencesView};
 
 /// 鼠标停留多久后请求悬停信息。
 const HOVER_DELAY: Duration = Duration::from_millis(500);
@@ -226,15 +227,22 @@ impl LocalCodeEditorView {
             Some(range) => self.lsp_range_to_render(range, ctx),
             None => self.word_render_range(offset, ctx),
         };
-        let target = location.target;
+        // 已经在定义处（同一文件同一行）时，点击改为查找引用。
+        let position = self.editor.as_ref(ctx).offset_to_lsp_position(offset, ctx);
+        let at_definition = Some(location.target.path.as_path()) == self.file_path()
+            && location.target.location.line == position.line;
+        let action = if at_definition {
+            LocalCodeEditorAction::FindReferencesAt {
+                position,
+                anchor: range.start,
+            }
+        } else {
+            LocalCodeEditorAction::NavigateToTarget(location.target)
+        };
         let window_id = ctx.window_id();
         let view_id = ctx.view_id();
         let link = HoverableLink::new(range).with_on_click(Box::new(move |app| {
-            app.dispatch_typed_action_for_view(
-                window_id,
-                view_id,
-                &LocalCodeEditorAction::NavigateToTarget(target.clone()),
-            );
+            app.dispatch_typed_action_for_view(window_id, view_id, &action);
         }));
         self.editor.update(ctx, |editor, ctx| {
             if editor.set_hovered_symbol_range(Some(link), ctx) {
@@ -255,6 +263,92 @@ impl LocalCodeEditorView {
             line: target.location.line,
             column: target.location.column,
         });
+    }
+
+    pub(super) fn find_references_at_cursor(&mut self, ctx: &mut ViewContext<Self>) {
+        let editor = self.editor.as_ref(ctx);
+        let cursor = editor.cursor_head_offset(ctx);
+        let position = editor.offset_to_lsp_position(cursor, ctx);
+        self.find_references(position, to_render_offset(cursor), ctx);
+    }
+
+    /// 请求引用并在 `anchor`（渲染偏移）所在行下方显示结果卡片。
+    pub(super) fn find_references(
+        &mut self,
+        position: lsp::types::Location,
+        anchor: CharOffset,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let (Some(server), Some(path)) = (self.lsp_server.as_ref(), self.file_path()) else {
+            return;
+        };
+        let future = match server
+            .as_ref(ctx)
+            .find_references(path.to_path_buf(), position)
+        {
+            Ok(future) => future,
+            Err(e) => {
+                log::debug!("Failed to request LSP references: {e}");
+                return;
+            }
+        };
+        self.lsp_hover.clear();
+        self.editor.update(ctx, |editor, ctx| {
+            editor.clear_hovered_symbol_range(ctx);
+        });
+        ctx.spawn(future, move |me, result, ctx| {
+            let references = result.unwrap_or_default();
+            me.show_find_references(references, anchor, ctx);
+        });
+    }
+
+    fn show_find_references(
+        &mut self,
+        references: Vec<lsp::ReferenceLocation>,
+        anchor: CharOffset,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let view =
+            ctx.add_typed_action_view(|ctx| FindReferencesView::new(references, anchor, ctx));
+        ctx.subscribe_to_view(&view, |me, _, event, ctx| match event {
+            // 跳转后焦点交给目标编辑器，这里不再抢回焦点。
+            FindReferencesEvent::Open(target) => {
+                me.find_references = None;
+                me.navigate_to_definition(target, ctx);
+                ctx.notify();
+            }
+            FindReferencesEvent::Close => me.close_find_references(ctx),
+        });
+        ctx.focus(&view);
+        self.find_references = Some(view);
+        ctx.notify();
+    }
+
+    fn close_find_references(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.find_references.take().is_some() {
+            self.editor.update(ctx, |editor, ctx| editor.focus(ctx));
+            ctx.notify();
+        }
+    }
+
+    /// 引用卡片和它的位置：贴着编辑器左边，显示在发起行的下方。
+    pub(super) fn render_find_references(
+        &self,
+        app: &AppContext,
+    ) -> Option<(Box<dyn Element>, OffsetPositioning)> {
+        let view = self.find_references.as_ref()?;
+        let anchor = view.as_ref(app).anchor();
+        let bounds = self
+            .editor
+            .as_ref(app)
+            .character_bounds_in_viewport(anchor, app)?;
+        let positioning = OffsetPositioning::offset_from_parent(
+            Vector2F::new(0., bounds.max_y()),
+            ParentOffsetBounds::ParentByPosition,
+            ParentAnchor::TopLeft,
+            ChildAnchor::TopLeft,
+        );
+        Some((ChildView::new(view).finish(), positioning))
     }
 
     fn lsp_range_to_render(

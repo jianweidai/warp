@@ -13,6 +13,7 @@ use std::{
 };
 
 use pathfinder_geometry::vector::Vector2F;
+use string_offset::CharOffset;
 use warp_core::{features::FeatureFlag, ui::appearance::Appearance};
 use warp_editor::{content::buffer::InitialBufferState, render::model::LineCount};
 use warp_util::{
@@ -81,11 +82,19 @@ type SaveCallback =
     Box<dyn FnOnce(SaveOutcome, &mut ViewContext<LocalCodeEditorView>) + Send + Sync + 'static>;
 
 pub fn init(app: &mut AppContext) {
-    app.register_fixed_bindings([FixedBinding::new(
-        "cmdorctrl-l",
-        LocalCodeEditorAction::InsertSelectedTextToInput,
-        id!("LocalCodeEditorView") & !id!("IMEOpen"),
-    )]);
+    app.register_fixed_bindings([
+        FixedBinding::new(
+            "cmdorctrl-l",
+            LocalCodeEditorAction::InsertSelectedTextToInput,
+            id!("LocalCodeEditorView") & !id!("IMEOpen"),
+        ),
+        FixedBinding::new(
+            "shift-f12",
+            LocalCodeEditorAction::FindReferencesAtCursor,
+            id!("LocalCodeEditorView") & !id!("IMEOpen"),
+        ),
+    ]);
+    super::find_references_view::init(app);
 }
 
 pub enum LocalCodeEditorEvent {
@@ -171,6 +180,13 @@ pub enum LocalCodeEditorAction {
     DiscardUnsavedChanges,
     /// Cmd+点击符号后跳转到 LSP 返回的定义位置。
     NavigateToTarget(lsp::types::FileLocation),
+    /// 查找光标处符号的引用（Shift+F12）。
+    FindReferencesAtCursor,
+    /// 在定义处 Cmd+点击时查找引用。`anchor` 为渲染偏移，卡片显示在这一行下方。
+    FindReferencesAt {
+        position: lsp::types::Location,
+        anchor: CharOffset,
+    },
 }
 
 #[derive(Default)]
@@ -207,6 +223,8 @@ pub struct LocalCodeEditorView {
     /// 当前文件的诊断（渲染偏移），悬停时显示信息。
     lsp_diagnostics: Vec<lsp_diagnostics::ProcessedDiagnostic>,
     lsp_hover: lsp_hover::LspHoverState,
+    /// 查找引用的结果卡片。
+    find_references: Option<ViewHandle<super::find_references_view::FindReferencesView>>,
 }
 
 #[path = "lsp_diagnostics.rs"]
@@ -306,6 +324,7 @@ impl LocalCodeEditorView {
             lsp_server: None,
             lsp_diagnostics: Vec::new(),
             lsp_hover: Default::default(),
+            find_references: None,
         };
 
         if let Some(display_mode) = display_mode {
@@ -1140,6 +1159,10 @@ impl View for LocalCodeEditorView {
             }
         }
 
+        if let Some((card, positioning)) = self.render_find_references(app) {
+            stack.add_positioned_overlay_child(card, positioning);
+        }
+
         // 悬停提示最后加入，显示在最上层。
         if let Some((hover, positioning)) = self.render_lsp_hover(app) {
             stack.add_positioned_overlay_child(hover, positioning);
@@ -1170,6 +1193,12 @@ impl TypedActionView for LocalCodeEditorView {
             }
             LocalCodeEditorAction::NavigateToTarget(target) => {
                 self.navigate_to_definition(target, ctx);
+            }
+            LocalCodeEditorAction::FindReferencesAtCursor => {
+                self.find_references_at_cursor(ctx);
+            }
+            LocalCodeEditorAction::FindReferencesAt { position, anchor } => {
+                self.find_references(position.clone(), *anchor, ctx);
             }
             LocalCodeEditorAction::SaveFile => {
                 if let Err(ImmediateSaveError::FailedToSave(err)) = self.save_local(ctx) {

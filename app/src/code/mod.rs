@@ -18,6 +18,8 @@ pub mod inline_diff;
 pub mod local_code_editor;
 #[cfg(all(not(target_family = "wasm"), feature = "local_fs", feature = "local_tty"))]
 pub mod lsp_lifecycle;
+#[cfg(not(target_family = "wasm"))]
+pub mod find_references_view;
 
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
