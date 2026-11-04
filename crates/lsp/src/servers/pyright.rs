@@ -121,13 +121,10 @@ impl LanguageServerCandidate for PyrightCandidate {
     }
 
     async fn is_installed_on_path(&self, executor: &CommandBuilder) -> bool {
-        executor
-            .command("pyright-langserver")
-            .arg("--version")
-            .output()
-            .await
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        // pyright-langserver 不支持 --version，运行它会因缺少 --stdio 报错退出，
+        // 所以只查找文件。它是 Node 脚本，还需要 PATH 里有 node。
+        executor.find_on_path("pyright-langserver").is_some()
+            && executor.find_on_path("node").is_some()
     }
 
     async fn install(
