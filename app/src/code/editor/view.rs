@@ -475,7 +475,7 @@ impl CodeEditorView {
     }
 
     fn show_find_bar(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(find_bar) = &self.find_bar else {
+        let Some(find_bar) = self.find_bar.clone() else {
             return;
         };
 
@@ -503,7 +503,7 @@ impl CodeEditorView {
             find_bar.set_open(true);
         });
         self.update_decorations_and_position(ctx);
-        ctx.focus(find_bar);
+        ctx.focus(&find_bar);
         ctx.notify();
     }
 
