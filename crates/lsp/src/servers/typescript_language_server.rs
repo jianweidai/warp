@@ -102,6 +102,38 @@ impl TypeScriptLanguageServerCandidate {
             prepend_args: vec![server_js.to_string_lossy().to_string()],
         })
     }
+
+    /// 查找可作为 `tsserver.fallbackPath` 的 tsserver.js。
+    ///
+    /// typescript-language-server 只在工作区和它自身所在的 node_modules 中找 typescript，
+    /// 全局 typescript 装在另一个 Node 前缀下（nvm/fnm/volta 切换版本、Homebrew 装的服务器）时会找不到。
+    /// 依次检查自管安装目录和 `npm root -g`；工作区自带的 typescript 仍由服务器优先使用。
+    #[cfg(feature = "local_fs")]
+    pub async fn find_tsserver_fallback(executor: &CommandBuilder) -> Option<String> {
+        let managed = warp_core::paths::data_dir()
+            .join("typescript-language-server/node_modules/typescript/lib/tsserver.js");
+        if managed.is_file() {
+            return Some(managed.to_string_lossy().to_string());
+        }
+
+        let output = executor
+            .command("npm")
+            .arg("root")
+            .arg("-g")
+            .output()
+            .await
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let global_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let global = Path::new(&global_root).join("typescript/lib/tsserver.js");
+        if !global.is_file() {
+            log::info!("Global typescript not found at {}", global.display());
+            return None;
+        }
+        Some(global.to_string_lossy().to_string())
+    }
 }
 
 #[async_trait]

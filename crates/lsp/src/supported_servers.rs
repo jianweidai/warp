@@ -126,6 +126,22 @@ impl LSPServerType {
         self.candidate(client).is_installed_on_path(executor).await
     }
 
+    /// initialize 请求里的 `initializationOptions`，目前只有 typescript-language-server 需要。
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn initialization_options(
+        &self,
+        executor: &CommandBuilder,
+    ) -> Option<serde_json::Value> {
+        match self {
+            LSPServerType::TypeScriptLanguageServer => {
+                let fallback_path =
+                    TypeScriptLanguageServerCandidate::find_tsserver_fallback(executor).await?;
+                Some(serde_json::json!({ "tsserver": { "fallbackPath": fallback_path } }))
+            }
+            _ => None,
+        }
+    }
+
     pub fn binary_name(&self) -> &'static str {
         match self {
             LSPServerType::RustAnalyzer => "rust-analyzer",

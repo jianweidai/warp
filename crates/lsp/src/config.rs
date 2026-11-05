@@ -203,7 +203,8 @@ impl LspServerConfig {
             custom_binary_config
         );
 
-        let params = default_init_params(&self.initial_workspace, self.client_name)?;
+        let mut params = default_init_params(&self.initial_workspace, self.client_name)?;
+        params.initialization_options = self.server_type.initialization_options(&executor).await;
 
         Ok(ResolvedLspCommand { command, params })
     }
