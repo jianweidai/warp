@@ -129,6 +129,9 @@ impl PaneContent for CodePane {
                         pane_group.active_file_model().update(ctx, |model, ctx| {
                             model.active_file_changed(path.clone(), ctx);
                         });
+                        // 切换 tab 也算最近使用，供 Cmd+E 最近打开面板排序。
+                        #[cfg(feature = "local_fs")]
+                        record_opened_file(path, ctx);
                     }
                 }
                 CodeViewEvent::FileOpened { file_path, .. } => {
@@ -138,18 +141,7 @@ impl PaneContent for CodePane {
 
                     // Track the opened file in the OpenedFilesModel
                     #[cfg(feature = "local_fs")]
-                    {
-                        use crate::code::opened_files::OpenedFilesModel;
-                        use repo_metadata::repositories::DetectedRepositories;
-
-                        if let Some(repo_path) =
-                            DetectedRepositories::as_ref(ctx).get_root_for_path(file_path)
-                        {
-                            OpenedFilesModel::handle(ctx).update(ctx, |opened_files, ctx| {
-                                opened_files.file_opened(repo_path, file_path.clone(), ctx);
-                            });
-                        }
-                    }
+                    record_opened_file(file_path, ctx);
                 }
                 CodeViewEvent::RunTabConfigSkill { path } => {
                     ctx.emit(crate::pane_group::Event::RunTabConfigSkill { path: path.clone() });
@@ -238,5 +230,19 @@ impl PaneContent for CodePane {
 
     fn is_pane_being_dragged(&self, ctx: &AppContext) -> bool {
         self.view.as_ref(ctx).is_being_dragged()
+    }
+}
+
+/// 在 [`crate::code::opened_files::OpenedFilesModel`] 中记录文件最近一次被打开/切换到的时间。
+/// 不在 git 仓库内的文件不记录。
+#[cfg(feature = "local_fs")]
+fn record_opened_file(file_path: &std::path::Path, ctx: &mut ViewContext<PaneGroup>) {
+    use crate::code::opened_files::OpenedFilesModel;
+    use repo_metadata::repositories::DetectedRepositories;
+
+    if let Some(repo_path) = DetectedRepositories::as_ref(ctx).get_root_for_path(file_path) {
+        OpenedFilesModel::handle(ctx).update(ctx, |opened_files, ctx| {
+            opened_files.file_opened(repo_path, file_path.to_path_buf(), ctx);
+        });
     }
 }

@@ -28,6 +28,7 @@ use super::warp_drive;
 pub struct DataSourceStore {
     actions_data_source: ModelHandle<CommandBindingDataSource>,
     sessions_data_source: ModelHandle<navigation::DataSource>,
+    recent_tabs_data_source: ModelHandle<navigation::RecentTabsDataSource>,
     warp_drive_data_source: ModelHandle<warp_drive::DataSource>,
     launch_config_data_source: ModelHandle<launch_config::DataSource>,
     new_session_data_source: Option<ModelHandle<NewSessionDataSource>>,
@@ -44,6 +45,9 @@ impl DataSourceStore {
     ) -> Self {
         let actions_data_source =
             ctx.add_model(|ctx| CommandBindingDataSource::new(binding_source.clone(), ctx));
+
+        let recent_tabs_data_source =
+            ctx.add_model(|_| navigation::RecentTabsDataSource::new(active_session_handle.clone()));
 
         let sessions_data_source =
             ctx.add_model(|_| navigation::DataSource::new(active_session_handle));
@@ -67,6 +71,7 @@ impl DataSourceStore {
         Self {
             actions_data_source,
             sessions_data_source,
+            recent_tabs_data_source,
             warp_drive_data_source,
             launch_config_data_source,
             new_session_data_source,
@@ -96,6 +101,11 @@ impl DataSourceStore {
             mixer.add_sync_source(
                 self.sessions_data_source.clone(),
                 HashSet::from([QueryFilter::Sessions]),
+            );
+
+            mixer.add_sync_source(
+                self.recent_tabs_data_source.clone(),
+                HashSet::from([QueryFilter::RecentTabs]),
             );
 
             if WarpDriveSettings::is_warp_drive_enabled(ctx) {

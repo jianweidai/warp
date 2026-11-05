@@ -12002,6 +12002,15 @@ impl Workspace {
         ctx.notify();
     }
 
+    fn open_recent_tabs_palette(&mut self, ctx: &mut ViewContext<Self>) {
+        self.palette.update(ctx, |view, ctx| {
+            view.reset(ctx);
+            view.set_active_query_filter(QueryFilter::RecentTabs, ctx);
+            view.set_initial_selection_offset(0, ctx);
+        });
+        ctx.notify();
+    }
+
     fn open_conversations_palette(&mut self, ctx: &mut ViewContext<Self>) {
         self.palette.update(ctx, |view, ctx| {
             view.reset(ctx);
@@ -12183,6 +12192,7 @@ impl Workspace {
             PaletteMode::ZapDrive => self.open_warp_drive_palette(ctx),
             PaletteMode::Files => self.open_files_palette(ctx),
             PaletteMode::Conversations => self.open_conversations_palette(ctx),
+            PaletteMode::RecentTabs => self.open_recent_tabs_palette(ctx),
         }
 
         ctx.focus(&self.palette);

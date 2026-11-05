@@ -42,6 +42,15 @@ impl OpenedFilesModel {
         self.opened_files.get(repo_path)
     }
 
+    /// 遍历所有仓库中打开过的文件，返回 (仓库路径, 相对路径, 最近打开时间)。
+    pub fn all_opened_files(&self) -> impl Iterator<Item = (&PathBuf, &PathBuf, &Instant)> {
+        self.opened_files.iter().flat_map(|(repo_path, files)| {
+            files
+                .iter()
+                .map(move |(file_path, opened_at)| (repo_path, file_path, opened_at))
+        })
+    }
+
     /// Record that a file has been opened in a repository. If the `file_path` is not within the `repo_path`,
     /// then the file is not recorded.
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]

@@ -226,6 +226,9 @@ pub enum QueryFilter {
 
     /// Include only conversations whose most recent directory matches the session's current working directory.
     CurrentDirectoryConversations,
+
+    /// Filter results for recently focused sessions and recently opened editor files.
+    RecentTabs,
 }
 
 impl QueryFilter {
@@ -279,6 +282,7 @@ impl QueryFilter {
             QueryFilter::CurrentDirectoryConversations => {
                 crate::t!("search-filter-placeholder-current-directory-conversations")
             }
+            QueryFilter::RecentTabs => crate::t!("search-filter-placeholder-recent-tabs"),
         }
     }
 
@@ -312,6 +316,7 @@ impl QueryFilter {
             QueryFilter::BaseModels => &NO_FILTER_ATOM,
             QueryFilter::FullTerminalUseModels => &NO_FILTER_ATOM,
             QueryFilter::CurrentDirectoryConversations => &NO_FILTER_ATOM,
+            QueryFilter::RecentTabs => &NO_FILTER_ATOM,
         }
     }
 
@@ -359,6 +364,7 @@ impl QueryFilter {
             QueryFilter::CurrentDirectoryConversations => {
                 crate::t!("search-filter-display-current-directory-conversations")
             }
+            QueryFilter::RecentTabs => crate::t!("search-filter-display-recent-tabs"),
         }
     }
 
@@ -400,6 +406,7 @@ impl QueryFilter {
             QueryFilter::BaseModels => None,
             QueryFilter::FullTerminalUseModels => None,
             QueryFilter::CurrentDirectoryConversations => None,
+            QueryFilter::RecentTabs => Some("bundled/svg/history.svg"),
         }
     }
 }

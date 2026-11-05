@@ -402,6 +402,7 @@ impl View {
                 | (PaletteMode::LaunchConfig, QueryFilter::LaunchConfigurations)
                 | (PaletteMode::Files, QueryFilter::Files)
                 | (PaletteMode::Conversations, QueryFilter::Conversations)
+                | (PaletteMode::RecentTabs, QueryFilter::RecentTabs)
                 | (PaletteMode::ZapDrive, QueryFilter::Drive)
         )
     }
@@ -769,6 +770,14 @@ impl View {
                     }) => {
                         self.reset(ctx);
                         self.set_active_query_filter(QueryFilter::Files, ctx);
+                        return;
+                    }
+                    Some(WorkspaceAction::TogglePalette {
+                        mode: PaletteMode::RecentTabs,
+                        source: _,
+                    }) => {
+                        self.reset(ctx);
+                        self.set_active_query_filter(QueryFilter::RecentTabs, ctx);
                         return;
                     }
                     Some(WorkspaceAction::TogglePalette {

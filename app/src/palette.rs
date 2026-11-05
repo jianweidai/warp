@@ -8,4 +8,5 @@ pub enum PaletteMode {
     ZapDrive,
     Files,
     Conversations,
+    RecentTabs,
 }

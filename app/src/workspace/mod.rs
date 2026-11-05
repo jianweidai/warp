@@ -1036,6 +1036,17 @@ pub fn init(app: &mut AppContext) {
         .with_context_predicate(id!("Workspace") & !id!("Workspace_ViewOnlySharedSession"))
         .with_custom_action(CustomAction::FilesPalette),
         EditableBinding::new(
+            "workspace:toggle_recent_tabs_palette",
+            crate::t!("keybinding-desc-workspace-toggle-recent-tabs-palette"),
+            WorkspaceAction::TogglePalette {
+                mode: PaletteMode::RecentTabs,
+                source: PaletteSource::Keybinding,
+            },
+        )
+        .with_group(bindings::BindingGroup::Navigation.as_str())
+        .with_context_predicate(id!("Workspace"))
+        .with_mac_key_binding("cmd-e"),
+        EditableBinding::new(
             "workspace:open_launch_config_save_modal",
             crate::t!("keybinding-desc-workspace-save-launch-config"),
             WorkspaceAction::OpenLaunchConfigSaveModal,
