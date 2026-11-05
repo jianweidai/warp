@@ -127,9 +127,18 @@ impl TypeScriptLanguageServerCandidate {
             return None;
         }
         let global_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let global = Path::new(&global_root).join("typescript/lib/tsserver.js");
+        let global_typescript = Path::new(&global_root).join("typescript");
+        let global = global_typescript.join("lib/tsserver.js");
         if !global.is_file() {
-            log::info!("Global typescript not found at {}", global.display());
+            if global_typescript.is_dir() {
+                // TypeScript 7+ 是 Go 原生实现，不再提供 tsserver.js，typescript-language-server 无法使用。
+                log::info!(
+                    "Global typescript at {} has no lib/tsserver.js (TypeScript 7+ is not supported by typescript-language-server; install typescript@6)",
+                    global_typescript.display()
+                );
+            } else {
+                log::info!("Global typescript not found at {}", global.display());
+            }
             return None;
         }
         Some(global.to_string_lossy().to_string())
@@ -218,7 +227,8 @@ impl LanguageServerCandidate for TypeScriptLanguageServerCandidate {
         cmd.arg("install")
             .arg("--ignore-scripts")
             .arg(format!("typescript-language-server@{}", metadata.version))
-            .arg("typescript")
+            // TypeScript 7+ 不再提供 tsserver.js，typescript-language-server 无法使用，固定到 6.x
+            .arg("typescript@6")
             .current_dir(&install_dir);
 
         let output = cmd.output().await.context("Failed to run npm install")?;
