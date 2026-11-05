@@ -97,7 +97,9 @@ impl LSPServerType {
                         prepend_args: vec![],
                     })
             }
-            LSPServerType::GoPls => GoPlsCandidate::find_installed_binary_config().await,
+            LSPServerType::GoPls => {
+                GoPlsCandidate::find_installed_binary_config(path_env_var).await
+            }
             LSPServerType::Pyright => {
                 PyrightCandidate::find_installed_binary_config(path_env_var).await
             }
