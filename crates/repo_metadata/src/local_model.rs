@@ -302,6 +302,17 @@ impl LocalRepoMetadataModel {
         // Phase 1 (background thread): compute lightweight mutations via filesystem I/O.
         // Phase 2 (main thread callback): apply mutations directly to the tree — no clone needed.
         for (repo_path, repo_scoped_update) in repo_updates {
+            // The tracked root itself was deleted (e.g. `rm -rf` followed by a re-clone).
+            // Applying `Remove(root)` would wipe the whole tree, root included, and nothing
+            // would rebuild it: later additions need a parent in the tree and
+            // `index_directory` skips already-indexed repos. Drop the repository instead so
+            // it is indexed from scratch the next time it is detected or lazily loaded.
+            if Self::update_removes_root(&repo_path, &repo_scoped_update) {
+                self.lazy_loaded_paths.remove(&repo_path);
+                let _ = self.remove_repository(&repo_path, ctx);
+                continue;
+            }
+
             if let Some(IndexedRepoState::Indexed(state)) = self.repositories.get_mut(&repo_path) {
                 let repo_path_clone = repo_path.clone();
                 let gitignores_clone = state.gitignores.clone();
@@ -339,6 +350,19 @@ impl LocalRepoMetadataModel {
                 );
             }
         }
+    }
+
+    /// Whether `update` deletes (or moves away) the tracked root itself.
+    #[cfg(feature = "local_fs")]
+    fn update_removes_root(repo_path: &StandardizedPath, update: &RepoUpdate) -> bool {
+        let Some(root) = repo_path.to_local_path() else {
+            return false;
+        };
+        update
+            .deleted
+            .iter()
+            .chain(update.moved.values())
+            .any(|path| *path == root)
     }
 
     #[cfg(feature = "local_fs")]

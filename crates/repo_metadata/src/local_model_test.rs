@@ -197,6 +197,45 @@ mod tests {
         });
     }
 
+    /// Regression: `rm -rf <root>` followed by a re-clone used to leave an indexed
+    /// repository whose tree had lost its root entry, so the file tree loaded forever.
+    #[cfg(feature = "local_fs")]
+    #[test]
+    fn test_watcher_deleting_root_drops_repository() {
+        VirtualFS::test("watcher_deletes_root", |dirs, mut vfs| {
+            vfs.mkdir("repo")
+                .with_files(vec![Stub::FileWithContent("repo/file.txt", "content")]);
+
+            let repo_root = dirs.tests().join("repo");
+
+            App::test((), |mut app| async move {
+                let model_handle = app.add_model(|_| LocalRepoMetadataModel::new_for_test());
+                let repo_std = StandardizedPath::from_local_canonicalized(&repo_root).unwrap();
+                let repo_local = repo_std.to_local_path().unwrap();
+
+                model_handle.update(&mut app, |model, ctx| {
+                    model.index_lazy_loaded_path(&repo_std, ctx).unwrap();
+
+                    let event = ::watcher::BulkFilesystemWatcherEvent {
+                        deleted: [repo_local.join("file.txt"), repo_local.clone()].into(),
+                        ..Default::default()
+                    };
+                    model.handle_watcher_event(&event, ctx);
+                });
+
+                model_handle.update(&mut app, |model, ctx| {
+                    assert!(model.repository_state(&repo_std).is_none());
+                    assert!(!model.is_lazy_loaded_path(&repo_std));
+
+                    // The re-created directory can be indexed again with its root intact.
+                    model.index_lazy_loaded_path(&repo_std, ctx).unwrap();
+                    let state = model.get_repository(&repo_std).expect("re-indexed");
+                    assert!(state.entry.contains(&repo_std));
+                });
+            });
+        });
+    }
+
     #[cfg(feature = "local_fs")]
     #[test]
     fn test_index_directory_upgrades_lazy_loaded_path_to_repo() {
